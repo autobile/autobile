@@ -580,7 +580,14 @@ data class AppUiState(
     val touchIndicatorEnabled: Boolean = true,
     val nanoDownloadConsented: Boolean = false,
     val nanoDownload: ModelDownloadProgress? = null,
-    val teachLabel: String = "My automation",
+    /**
+     * The name offered when teaching starts, when something has suggested one.
+     *
+     * Null means no suggestion, and the screen fills in the translated default. A
+     * literal here would have put an English name on every automation taught on a phone
+     * set to any other language.
+     */
+    val teachLabel: String? = null,
     val loading: Boolean = true,
     val message: String? = null,
 ) {

@@ -16,7 +16,7 @@
 
     <!-- Onboarding -->
     <string name="onboarding_tagline">한 번만 보여주세요.\n나머지는 폰이 배웁니다.</string>
-    <string name="onboarding_step">%2$d단계 중 %1$d</string>
+    <string name="onboarding_step">%2$d단계 중 %1$d단계</string>
     <string name="onboarding_capability_title">이 폰이 할 수 있는 것</string>
     <string name="onboarding_permissions_title">준비되면 권한을 주세요</string>
     <string name="onboarding_permissions_body">화면 제어는 Autobile이 작업을 배우고 반복하기 위한 권한입니다. 진행 알림은 자동화가 다른 앱을 연 뒤 이곳으로 돌아오는 수단입니다.</string>
@@ -61,7 +61,7 @@
     <string name="home_empty_detail">한 번만 보여주면 다시 실행할 수 있는 자동화가 됩니다.</string>
 
     <!-- Agent activity -->
-    <string name="agent_step_progress">%2$d단계 중 %1$d</string>
+    <string name="agent_step_progress">%2$d단계 중 %1$d단계</string>
     <string name="agent_adapting">적응 중: %1$s</string>
 
     <!-- Skill detail -->
@@ -337,4 +337,32 @@
     <string name="msg_cloud_credential_updated">클라우드 자격 증명을 업데이트했습니다</string>
     <string name="msg_generic_error">문제가 발생했습니다</string>
     <string name="default_automation_name">내 자동화</string>
+    <string name="starter_skill_name">휴대폰 설정 열기</string>
+    <string name="starter_skill_goal">Android 설정 열기</string>
+    <string name="starter_skill_description">언제든 다시 실행해 볼 수 있는 안전한 첫 자동화입니다.</string>
+    <string name="starter_skill_target">Android 설정</string>
+    <string name="starter_skill_target_description">Android 설정 앱</string>
+    <string name="compiled_new_automation">새 자동화</string>
+    <string name="compiled_repeat_task">%2$s에서 %1$d단계 작업 반복</string>
+    <string name="compiled_app_separator">, </string>
+    <string name="compiled_the_app">%1$s 앱</string>
+    <string name="compiled_nothing_recorded">기록된 것이 없습니다</string>
+    <string name="compiled_no_repeatable_steps">이 시연에서 반복할 수 있는 단계를 찾지 못했습니다</string>
+    <string name="compiled_steps_not_understood">기록된 동작을 단계로 바꾸지 못했습니다</string>
+    <string name="compiled_step_launch_app">%1$s 열기</string>
+    <string name="compiled_step_navigate">%1$s(으)로 이동</string>
+    <string name="compiled_step_select_item">%1$s 선택</string>
+    <string name="compiled_step_open_target">%1$s 열기</string>
+    <string name="compiled_step_read_value">%1$s 읽기</string>
+    <string name="compiled_step_enter_text">%1$s에 입력</string>
+    <string name="compiled_step_set_option">%1$s 설정</string>
+    <string name="compiled_step_scroll_to">%1$s까지 스크롤</string>
+    <string name="compiled_step_confirm">%1$s 확인</string>
+    <string name="compiled_step_send">%1$s(으)로 보내기</string>
+    <string name="compiled_step_share">%1$s(으)로 공유</string>
+    <string name="compiled_step_save">%1$s(으)로 저장</string>
+    <string name="compiled_step_delete">%1$s(으)로 삭제</string>
+    <string name="compiled_step_go_back">뒤로 가기</string>
+    <string name="compiled_step_go_home">홈 화면으로 이동</string>
+    <string name="compiled_step_wait">기다리기</string>
 </resources>

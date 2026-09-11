@@ -338,4 +338,33 @@
     <string name="msg_cloud_credential_updated">Cloud credential updated</string>
     <string name="msg_generic_error">Something went wrong</string>
     <string name="default_automation_name">My automation</string>
+    <string name="starter_skill_name">Open phone settings</string>
+    <string name="starter_skill_goal">Open Android settings</string>
+    <string name="starter_skill_description">A safe first automation you can replay any time.</string>
+    <string name="starter_skill_target">Android settings</string>
+    <string name="starter_skill_target_description">the Android settings app</string>
+    <!-- Words the compiler writes into an automation when no model names it. -->
+    <string name="compiled_new_automation">New automation</string>
+    <string name="compiled_repeat_task">Repeat a %1$d-step task in %2$s</string>
+    <string name="compiled_app_separator"> and </string>
+    <string name="compiled_the_app">the %1$s app</string>
+    <string name="compiled_nothing_recorded">Nothing was recorded</string>
+    <string name="compiled_no_repeatable_steps">No repeatable steps were found in this demonstration</string>
+    <string name="compiled_steps_not_understood">The recorded actions could not be turned into steps</string>
+    <string name="compiled_step_launch_app">Open %1$s</string>
+    <string name="compiled_step_navigate">Go to %1$s</string>
+    <string name="compiled_step_select_item">Select %1$s</string>
+    <string name="compiled_step_open_target">Open %1$s</string>
+    <string name="compiled_step_read_value">Read %1$s</string>
+    <string name="compiled_step_enter_text">Enter text in %1$s</string>
+    <string name="compiled_step_set_option">Set %1$s</string>
+    <string name="compiled_step_scroll_to">Scroll to %1$s</string>
+    <string name="compiled_step_confirm">Confirm %1$s</string>
+    <string name="compiled_step_send">Send using %1$s</string>
+    <string name="compiled_step_share">Share via %1$s</string>
+    <string name="compiled_step_save">Save with %1$s</string>
+    <string name="compiled_step_delete">Delete using %1$s</string>
+    <string name="compiled_step_go_back">Go back</string>
+    <string name="compiled_step_go_home">Go to the home screen</string>
+    <string name="compiled_step_wait">Wait</string>
 </resources>

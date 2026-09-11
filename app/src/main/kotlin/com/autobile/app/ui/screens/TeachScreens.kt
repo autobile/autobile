@@ -53,7 +53,8 @@ import com.autobile.core.model.TriggerSpec
 
 @Composable
 fun TeachScreen(state: AppUiState, viewModel: AppViewModel, context: Context) {
-    var label by remember { mutableStateOf(state.teachLabel) }
+    val suggestedName = state.teachLabel ?: stringResource(R.string.default_automation_name)
+    var label by remember(suggestedName) { mutableStateOf(suggestedName) }
 
     Column(
         Modifier
