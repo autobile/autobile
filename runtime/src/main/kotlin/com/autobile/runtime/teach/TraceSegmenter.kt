@@ -22,7 +22,22 @@ import com.autobile.core.model.TraceEvent
  * ambiguous is sent to a reasoning tier, which keeps most teaching sessions free of
  * inference entirely.
  */
-class TraceSegmenter(private val router: AiRuntimeRouter) {
+class TraceSegmenter(
+    private val router: AiRuntimeRouter,
+    /**
+     * Packages that are how a person moves between apps, rather than an app they use.
+     *
+     * The home screen, the recents switcher and the system UI are unavoidable in a
+     * demonstration: leaving Autobile to show it something means passing through them.
+     * Without this they are recorded as part of the task, and an automation taught by
+     * pressing home and opening Notes begins by opening the launcher — or, when that is
+     * all the trace contains, becomes an automation for opening the home screen.
+     *
+     * Supplied rather than hardcoded because the launcher is whichever one the user
+     * installed, and they can change it.
+     */
+    private val transitPackages: Set<String> = emptySet(),
+) {
 
     suspend fun segment(trace: DemonstrationTrace, localOnly: Boolean = false): SegmentedTrace {
         if (trace.events.isEmpty()) return SegmentedTrace(emptyList(), usedInference = false, usedCloud = false)
@@ -95,6 +110,10 @@ class TraceSegmenter(private val router: AiRuntimeRouter) {
             val next = out.getOrNull(index + 1)
 
             val classification = when {
+                // Getting to the app is not the task. Recorded so the session stays a
+                // faithful account of what happened, but never compiled into a step.
+                event.packageName in transitPackages -> EventClassification.NOISE
+
                 // Opening an app is always how the user got somewhere, never the point.
                 event.action is ObservedAction.AppOpen -> EventClassification.NAVIGATION
 
