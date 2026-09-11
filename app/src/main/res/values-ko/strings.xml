@@ -399,4 +399,16 @@
     <string name="run_own_screen">Autobile 자신의 화면이 떠 있어 이 단계가 다룰 대상이 없습니다</string>
     <string name="run_could_not_complete">\"%1$s\"을(를) 마치지 못했습니다</string>
     <string name="run_awaiting_runtime">\"%1$s\"을(를) 판단할 수 있는 실행 환경을 기다리는 중입니다</string>
+    <string name="risk_why_moves_money">이 단계는 돈을 옮깁니다</string>
+    <string name="risk_why_purchase">이 단계는 구매를 완료합니다</string>
+    <string name="risk_why_delete">이 단계는 무언가를 삭제합니다</string>
+    <string name="risk_why_message_send">이 단계는 메시지를 보냅니다</string>
+    <string name="risk_why_external_post">이 단계는 다른 사람이 볼 글을 올립니다</string>
+    <string name="risk_why_cancellation">이 단계는 무언가를 취소합니다</string>
+    <string name="risk_why_permission_change">이 단계는 권한을 바꿉니다</string>
+    <string name="risk_why_account_change">이 단계는 계정 설정을 바꿉니다</string>
+    <string name="risk_why_subscription">이 단계는 구독을 바꿉니다</string>
+    <string name="risk_why_booking">이 단계는 예약을 진행합니다</string>
+    <string name="risk_why_app_set_to_ask">이 앱에서는 확인 후 진행하도록 설정하셨습니다</string>
+    <string name="risk_why_confirmation_required">확인이 필요합니다</string>
 </resources>

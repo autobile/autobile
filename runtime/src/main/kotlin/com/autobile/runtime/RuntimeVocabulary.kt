@@ -18,6 +18,21 @@ interface RuntimeVocabulary {
     // Lifecycle.
     fun taskCreated(): String
 
+    // What makes a step worth stopping for. Shown in the confirmation the user answers,
+    // so this is the wording a decision actually gets made on.
+    fun riskMovesMoney(): String
+    fun riskPurchase(): String
+    fun riskDelete(): String
+    fun riskMessageSend(): String
+    fun riskExternalPost(): String
+    fun riskCancellation(): String
+    fun riskPermissionChange(): String
+    fun riskAccountChange(): String
+    fun riskSubscription(): String
+    fun riskBooking(): String
+    fun riskAppSetToAsk(): String
+    fun riskConfirmationRequired(): String
+
     // Why a step was allowed, refused, or put to the user.
     fun automationStopped(): String
     fun categoryBlocked(category: String): String
@@ -67,6 +82,19 @@ interface RuntimeVocabulary {
 /** The wording used when nothing supplies translations. */
 object EnglishRuntimeVocabulary : RuntimeVocabulary {
     override fun taskCreated() = "Task created"
+
+    override fun riskMovesMoney() = "this step moves money"
+    override fun riskPurchase() = "this step completes a purchase"
+    override fun riskDelete() = "this step deletes something"
+    override fun riskMessageSend() = "this step sends a message"
+    override fun riskExternalPost() = "this step posts something others will see"
+    override fun riskCancellation() = "this step cancels something"
+    override fun riskPermissionChange() = "this step changes a permission"
+    override fun riskAccountChange() = "this step changes account settings"
+    override fun riskSubscription() = "this step changes a subscription"
+    override fun riskBooking() = "this step makes a booking"
+    override fun riskAppSetToAsk() = "you asked to confirm actions in this app"
+    override fun riskConfirmationRequired() = "confirmation required"
 
     override fun automationStopped() = "Automation is stopped"
     override fun categoryBlocked(category: String) = "$category apps are blocked"

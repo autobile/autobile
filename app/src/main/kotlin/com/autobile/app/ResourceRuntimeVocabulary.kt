@@ -14,6 +14,19 @@ class ResourceRuntimeVocabulary(private val context: Context) : RuntimeVocabular
 
     override fun taskCreated(): String = context.getString(R.string.run_task_created)
 
+    override fun riskMovesMoney(): String = context.getString(R.string.risk_why_moves_money)
+    override fun riskPurchase(): String = context.getString(R.string.risk_why_purchase)
+    override fun riskDelete(): String = context.getString(R.string.risk_why_delete)
+    override fun riskMessageSend(): String = context.getString(R.string.risk_why_message_send)
+    override fun riskExternalPost(): String = context.getString(R.string.risk_why_external_post)
+    override fun riskCancellation(): String = context.getString(R.string.risk_why_cancellation)
+    override fun riskPermissionChange(): String = context.getString(R.string.risk_why_permission_change)
+    override fun riskAccountChange(): String = context.getString(R.string.risk_why_account_change)
+    override fun riskSubscription(): String = context.getString(R.string.risk_why_subscription)
+    override fun riskBooking(): String = context.getString(R.string.risk_why_booking)
+    override fun riskAppSetToAsk(): String = context.getString(R.string.risk_why_app_set_to_ask)
+    override fun riskConfirmationRequired(): String = context.getString(R.string.risk_why_confirmation_required)
+
     override fun automationStopped(): String = context.getString(R.string.run_automation_stopped)
     override fun categoryBlocked(category: String): String =
         context.getString(R.string.run_category_blocked, category)

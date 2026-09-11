@@ -300,17 +300,40 @@ class SkillExecutor(
 
         var attempt = 0
         var awaitingReasoning = false
+        var openedTargetApp = false
         val attemptedMoves = mutableListOf<String>()
         val navigationSteps = mutableListOf<SkillStep>()
 
         while (attempt <= step.fallback.maxRetries) {
-            // Refused before resolution rather than after. Autobile's own screen contains
-            // text drawn from the automation itself — its name, its goal, its steps — so
-            // a label match against it succeeds readily and the agent taps its own
-            // interface, then proposes doing it again. Retrying cannot help: nothing here
-            // belongs to the app the step is for.
+            // Autobile's own screen is never something to act on. It carries the
+            // automation's name, goal and step descriptions, so a label match against it
+            // succeeds readily and the agent ends up tapping its own interface.
+            //
+            // But being here is normal, not a fault: every run started from the app
+            // begins with Autobile in front. The answer is to open the app this step was
+            // taught in, and only give up if there is nothing to open or it did not take.
             if (snapshot.packageName == ownPackage) {
-                return failedOutcome(step, index, startedAt, words.ownScreenInFront(), cloudCalls, deviceAiCalls)
+                val targetApp = step.appToOpen(skill)
+                if (openedTargetApp || targetApp == null) {
+                    return failedOutcome(step, index, startedAt, words.ownScreenInFront(), cloudCalls, deviceAiCalls)
+                }
+                openedTargetApp = true
+                val opened = performContextFree(ActionSpec.LaunchApp(targetApp), context)
+                observer.onEvent(
+                    event(
+                        task.id,
+                        ExecutionEventType.ACTION_EXECUTED,
+                        step.id,
+                        index,
+                        opened.describe,
+                        success = opened.succeeded,
+                    ),
+                )
+                snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)
+                    ?.snapshot ?: snapshot
+                if (snapshot.packageName == ownPackage) {
+                    return failedOutcome(step, index, startedAt, words.ownScreenInFront(), cloudCalls, deviceAiCalls)
+                }
             }
 
             val screenshot = if (step.preferredResolver == ResolverKind.VISION || attempt > 0) {
@@ -446,6 +469,21 @@ class SkillExecutor(
             awaitingReasoning = awaitingReasoning,
         )
     }
+
+    /**
+     * The app this step belongs to, when the screen in front is not it.
+     *
+     * Taken from what the step itself expects before the skill's requirements, because a
+     * skill can span more than one app and the requirement list does not say which one
+     * this step needed. Autobile is never the answer.
+     */
+    private fun SkillStep.appToOpen(skill: SemanticSkill): String? = sequenceOf(
+        expectedState.requiredPackage,
+        expectedState.screen?.packageName,
+        target.screen?.packageName,
+    ).plus(skill.runtimeRequirements.requiredPackages.asSequence())
+        .filterNotNull()
+        .firstOrNull { it.isNotBlank() && it != ownPackage }
 
     /** A step that cannot proceed, with the reason kept rather than retried into noise. */
     private fun failedOutcome(
