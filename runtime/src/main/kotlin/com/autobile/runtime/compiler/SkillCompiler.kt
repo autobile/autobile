@@ -71,6 +71,7 @@ class SkillCompiler(
     private val riskEngine: RiskEngine,
     private val time: TimeSource = TimeSource.System,
     private val today: () -> LocalDate = { LocalDate.now(ZoneId.systemDefault()) },
+    private val vocabulary: CompilerVocabulary = EnglishCompilerVocabulary,
 ) {
 
     suspend fun compile(
@@ -78,13 +79,13 @@ class SkillCompiler(
         localOnly: Boolean = false,
     ): CompilationResult {
         if (trace.events.isEmpty()) {
-            return CompilationResult.Failed("Nothing was recorded")
+            return CompilationResult.Failed(vocabulary.nothingRecorded())
         }
 
         val segmented = segmenter.segment(trace, localOnly)
         val compilable = segmented.compilable()
         if (compilable.isEmpty()) {
-            return CompilationResult.Failed("No repeatable steps were found in this demonstration")
+            return CompilationResult.Failed(vocabulary.noRepeatableSteps())
         }
 
         val rendered = renderSteps(compilable)
@@ -100,7 +101,7 @@ class SkillCompiler(
             buildStep(event, index, compilable, variables)
         }
         if (steps.isEmpty()) {
-            return CompilationResult.Failed("The recorded actions could not be turned into steps")
+            return CompilationResult.Failed(vocabulary.stepsNotUnderstood())
         }
 
         val now = time.nowMillis()
@@ -178,13 +179,13 @@ class SkillCompiler(
                 intent = StepIntent.LAUNCH_APP,
                 target = TargetSemantics(
                     intentLabel = action.packageName.substringAfterLast('.'),
-                    description = "the ${action.packageName.substringAfterLast('.')} app",
+                    description = vocabulary.theApp(action.packageName.substringAfterLast('.')),
                 ),
                 preferredResolver = ResolverKind.DIRECT_API,
                 action = ActionSpec.LaunchApp(action.packageName),
                 expectedState = ExpectedState(requiredPackage = action.packageName),
                 validation = ValidationSpec(mode = ValidationMode.STRUCTURAL, timeoutMs = APP_LAUNCH_TIMEOUT_MS),
-                description = "Open ${action.packageName.substringAfterLast('.')}",
+                description = describeStep(StepIntent.LAUNCH_APP, action.packageName.substringAfterLast('.')),
             )
         }
 
@@ -437,32 +438,15 @@ class SkillCompiler(
     private fun defaultName(trace: DemonstrationTrace): String =
         trace.label.ifBlank {
             trace.packages.firstOrNull()?.substringAfterLast('.')?.replaceFirstChar { it.uppercase() }
-                ?: "New automation"
+                ?: vocabulary.newAutomation()
         }
 
     private fun defaultGoal(events: List<TraceEvent>): String {
         val apps = events.map { it.packageName.substringAfterLast('.') }.filter { it.isNotBlank() }.distinct()
-        return "Repeat a ${events.size}-step task in ${apps.joinToString(" and ")}"
+        return vocabulary.repeatTask(events.size, apps)
     }
 
-    private fun describeStep(intent: StepIntent, target: String): String = when (intent) {
-        StepIntent.LAUNCH_APP -> "Open $target"
-        StepIntent.NAVIGATE -> "Go to $target"
-        StepIntent.SELECT_ITEM -> "Select $target"
-        StepIntent.OPEN_TARGET -> "Open $target"
-        StepIntent.READ_VALUE -> "Read $target"
-        StepIntent.ENTER_TEXT -> "Enter text in $target"
-        StepIntent.SET_OPTION -> "Set $target"
-        StepIntent.SCROLL_TO -> "Scroll to $target"
-        StepIntent.CONFIRM -> "Confirm $target"
-        StepIntent.SEND -> "Send using $target"
-        StepIntent.SHARE -> "Share via $target"
-        StepIntent.SAVE -> "Save with $target"
-        StepIntent.DELETE -> "Delete using $target"
-        StepIntent.GO_BACK -> "Go back"
-        StepIntent.GO_HOME -> "Go to the home screen"
-        StepIntent.WAIT -> "Wait"
-    }
+    private fun describeStep(intent: StepIntent, target: String): String = vocabulary.step(intent, target)
 
     private companion object {
         const val INITIAL_CONFIDENCE = 0.55f

@@ -2,6 +2,8 @@ package com.autobile.runtime.validation
 
 import com.autobile.ai.context.ContextMinimizer
 import com.autobile.ai.router.AiRuntimeRouter
+import com.autobile.runtime.EnglishRuntimeVocabulary
+import com.autobile.runtime.RuntimeVocabulary
 import com.autobile.ai.task.AiTasks
 import com.autobile.core.model.Condition
 import com.autobile.core.model.ExpectedState
@@ -30,6 +32,7 @@ import java.time.format.DateTimeFormatter
 class ValidationEngine(
     private val router: AiRuntimeRouter,
     private val minimizer: ContextMinimizer = ContextMinimizer(),
+    private val words: RuntimeVocabulary = EnglishRuntimeVocabulary,
 ) {
 
     suspend fun validate(
@@ -40,7 +43,7 @@ class ValidationEngine(
         localOnly: Boolean = false,
         today: LocalDate = LocalDate.now(ZoneId.systemDefault()),
     ): ValidationOutcome = when (spec.mode) {
-        ValidationMode.NONE -> ValidationOutcome(spec.mode, passed = true, reason = "no validation required")
+        ValidationMode.NONE -> ValidationOutcome(spec.mode, passed = true, reason = words.noValidationRequired())
         ValidationMode.STRUCTURAL -> validateStructure(spec, expected, snapshot)
         ValidationMode.VALUE -> validateValue(spec, extractedValue, snapshot, today)
         ValidationMode.SEMANTIC -> validateSemantically(spec, expected, snapshot, localOnly)
@@ -53,14 +56,14 @@ class ValidationEngine(
         snapshot: ScreenSnapshot,
     ): ValidationOutcome {
         if (expected.isEmpty) {
-            return ValidationOutcome(spec.mode, passed = true, reason = "no expectation declared")
+            return ValidationOutcome(spec.mode, passed = true, reason = words.noExpectationDeclared())
         }
         expected.requiredPackage?.let { pkg ->
             if (snapshot.packageName != pkg) {
                 return ValidationOutcome(
                     spec.mode,
                     passed = false,
-                    reason = "expected $pkg but the foreground app is ${snapshot.packageName}",
+                    reason = words.wrongApp(pkg, snapshot.packageName),
                     observed = snapshot.packageName,
                 )
             }
@@ -70,7 +73,7 @@ class ValidationEngine(
             return ValidationOutcome(
                 spec.mode,
                 passed = false,
-                reason = "screen does not show ${missing.joinToString(", ")}",
+                reason = words.screenMissing(missing.joinToString(", ")),
             )
         }
         val forbidden = expected.forbiddenTexts.filter { snapshot.containsText(it) }
@@ -78,10 +81,10 @@ class ValidationEngine(
             return ValidationOutcome(
                 spec.mode,
                 passed = false,
-                reason = "screen shows ${forbidden.joinToString(", ")}",
+                reason = words.screenShowsForbidden(forbidden.joinToString(", ")),
             )
         }
-        return ValidationOutcome(spec.mode, passed = true, reason = "expected screen confirmed", confidence = 1f)
+        return ValidationOutcome(spec.mode, passed = true, reason = words.expectedScreenConfirmed(), confidence = 1f)
     }
 
     /**
@@ -98,13 +101,13 @@ class ValidationEngine(
         today: LocalDate,
     ): ValidationOutcome {
         val constraints = spec.valueConstraints
-            ?: return ValidationOutcome(spec.mode, passed = false, reason = "value validation has no constraints")
+            ?: return ValidationOutcome(spec.mode, passed = false, reason = words.noValueConstraints())
 
         if (extractedValue.isNullOrBlank()) {
             return if (constraints.nonEmpty) {
-                ValidationOutcome(spec.mode, passed = false, reason = "no value was read")
+                ValidationOutcome(spec.mode, passed = false, reason = words.noValueRead())
             } else {
-                ValidationOutcome(spec.mode, passed = true, reason = "empty value accepted")
+                ValidationOutcome(spec.mode, passed = true, reason = words.emptyValueAccepted())
             }
         }
 
@@ -113,7 +116,7 @@ class ValidationEngine(
                 return ValidationOutcome(
                     spec.mode,
                     passed = false,
-                    reason = "value does not match the expected format",
+                    reason = words.valueFormatMismatch(),
                     observed = extractedValue,
                 )
             }
@@ -124,7 +127,7 @@ class ValidationEngine(
                 ?: return ValidationOutcome(
                     spec.mode,
                     passed = false,
-                    reason = "value is not numeric",
+                    reason = words.valueNotNumeric(),
                     observed = extractedValue,
                 )
             constraints.minValue?.let {
@@ -132,7 +135,7 @@ class ValidationEngine(
                     return ValidationOutcome(
                         spec.mode,
                         passed = false,
-                        reason = "value $numeric is below the expected minimum",
+                        reason = words.valueBelowMinimum(numeric.toString()),
                         observed = extractedValue,
                     )
                 }
@@ -142,7 +145,7 @@ class ValidationEngine(
                     return ValidationOutcome(
                         spec.mode,
                         passed = false,
-                        reason = "value $numeric is above the expected maximum",
+                        reason = words.valueAboveMaximum(numeric.toString()),
                         observed = extractedValue,
                     )
                 }
@@ -153,7 +156,7 @@ class ValidationEngine(
             return ValidationOutcome(
                 spec.mode,
                 passed = false,
-                reason = "the screen does not show a \"${constraints.fieldName}\" field",
+                reason = words.fieldNotOnScreen(constraints.fieldName),
                 observed = extractedValue,
                 confidence = 0.5f,
             )
@@ -166,7 +169,7 @@ class ValidationEngine(
         return ValidationOutcome(
             spec.mode,
             passed = true,
-            reason = "${constraints.fieldName} read successfully",
+            reason = words.fieldRead(constraints.fieldName),
             observed = extractedValue,
             confidence = 1f,
         )
@@ -225,7 +228,7 @@ class ValidationEngine(
                 passed = false,
                 // No runtime could judge the outcome. Reporting this as a pass would be
                 // the single most damaging failure the system can produce.
-                reason = "the outcome could not be verified",
+                reason = words.outcomeNotVerified(),
                 confidence = 0f,
             )
 
@@ -250,7 +253,7 @@ class ValidationEngine(
         localOnly: Boolean = false,
     ): ValidationOutcome {
         if (postconditions.isEmpty()) {
-            return ValidationOutcome(ValidationMode.NONE, passed = true, reason = "no post-conditions declared")
+            return ValidationOutcome(ValidationMode.NONE, passed = true, reason = words.noPostConditions())
         }
         for (condition in postconditions) {
             val outcome = when (condition.kind) {
@@ -276,7 +279,7 @@ class ValidationEngine(
             }
             if (!outcome.passed) return outcome
         }
-        return ValidationOutcome(ValidationMode.SEMANTIC, passed = true, reason = "goal confirmed", confidence = 1f)
+        return ValidationOutcome(ValidationMode.SEMANTIC, passed = true, reason = words.goalConfirmed(), confidence = 1f)
     }
 
     /** Parses a displayed number, tolerating thousands separators and currency symbols. */

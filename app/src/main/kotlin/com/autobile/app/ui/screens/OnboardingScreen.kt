@@ -183,13 +183,19 @@ private fun PermissionsStep(
         granted = state.capability.accessibilityConnected,
         onOpen = { context.openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
     )
+    // Posting notifications and reading them are different grants that happen to share
+    // a word. They were one row, which meant granting the reader marked the row done and
+    // the permission an automation needs to be visible at all was never asked for.
+    PermissionLine(
+        label = stringResource(R.string.permission_post_notifications),
+        granted = state.capability.canPostNotifications,
+        action = stringResource(R.string.permission_allow),
+        onOpen = requestNotificationPermission,
+    )
     PermissionLine(
         label = stringResource(R.string.permission_notifications),
         granted = state.capability.notificationAccessGranted,
-        onOpen = {
-            requestNotificationPermission()
-            context.openSettings("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
-        },
+        onOpen = { context.openSettings("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS") },
     )
     PermissionLine(
         label = stringResource(R.string.permission_overlay),
@@ -204,7 +210,12 @@ private fun PermissionsStep(
 }
 
 @Composable
-private fun PermissionLine(label: String, granted: Boolean, onOpen: () -> Unit) {
+private fun PermissionLine(
+    label: String,
+    granted: Boolean,
+    onOpen: () -> Unit,
+    action: String? = null,
+) {
     Column {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 56.dp),
@@ -215,7 +226,7 @@ private fun PermissionLine(label: String, granted: Boolean, onOpen: () -> Unit) 
             if (granted) {
                 Text(stringResource(R.string.permission_granted), style = TypeScale.label, color = theme.ink)
             } else {
-                TextAction(stringResource(R.string.action_open_settings), onOpen, color = theme.live)
+                TextAction(action ?: stringResource(R.string.action_open_settings), onOpen, color = theme.live)
             }
         }
         Hairline()

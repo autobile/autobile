@@ -29,6 +29,8 @@ import com.autobile.core.model.TaskOrigin
 import com.autobile.core.model.TaskOutcome
 import com.autobile.core.model.TaskState
 import com.autobile.core.model.UiNode
+import com.autobile.runtime.EnglishRuntimeVocabulary
+import com.autobile.runtime.RuntimeVocabulary
 import com.autobile.runtime.background.ExecutabilityEvaluator
 import com.autobile.runtime.capability.CapabilityDetector
 import com.autobile.runtime.executor.SkillExecutor
@@ -69,6 +71,7 @@ class AgentOrchestrator(
     private val capabilityDetector: CapabilityDetector,
     private val minimizer: ContextMinimizer = ContextMinimizer(),
     private val time: TimeSource = TimeSource.System,
+    private val words: RuntimeVocabulary = EnglishRuntimeVocabulary,
 ) {
 
     private val runLock = Mutex()
@@ -114,7 +117,7 @@ class AgentOrchestrator(
                     deferredUntil = time.nowMillis() + executability.retryDelayMillis(state),
                 )
                 historyStore.saveTask(task)
-                historyStore.appendEvent(task.lifecycleEvent(ExecutionEventType.TASK_CREATED, "Task created", time.nowMillis()))
+                historyStore.appendEvent(task.lifecycleEvent(ExecutionEventType.TASK_CREATED, words.taskCreated(), time.nowMillis()))
                 historyStore.appendEvent(
                     ExecutionEvent(
                         id = Ids.event(),
@@ -142,16 +145,21 @@ class AgentOrchestrator(
         val startedAt = time.nowMillis()
         var task = newTask(skill, origin, triggerPayload).copy(state = TaskState.RUNNING, startedAt = startedAt)
         historyStore.saveTask(task)
-        historyStore.appendEvent(task.lifecycleEvent(ExecutionEventType.TASK_CREATED, "Task created", time.nowMillis()))
+        historyStore.appendEvent(task.lifecycleEvent(ExecutionEventType.TASK_CREATED, words.taskCreated(), time.nowMillis()))
         metrics.increment(Metric.TASKS_STARTED)
         metrics.increment(Metric.SKILLS_REPEATED)
 
+        val attended = origin == TaskOrigin.MANUAL || origin == TaskOrigin.REPLAY
         _activity.value = AgentActivity.Running(
             taskId = task.id,
             skillName = skill.name,
-            stepDescription = "Starting",
+            // Left blank rather than worded. The orchestrator has no Context by design,
+            // and every surface that shows this has one; a literal here would be the one
+            // untranslated string in an otherwise translated run.
+            stepDescription = "",
             stepIndex = 0,
             totalSteps = skill.steps.size,
+            attended = attended,
         )
 
         val observer = RecordingObserver(task.id, skill, confirmation)
@@ -418,6 +426,7 @@ class AgentOrchestrator(
                 stepDescription = step.describeForUser(),
                 stepIndex = index,
                 totalSteps = skill.steps.size,
+                attended = (_activity.value as? AgentActivity.Running)?.attended ?: false,
             )
         }
 
@@ -492,6 +501,15 @@ sealed interface AgentActivity {
         val totalSteps: Int,
         val touchTarget: com.autobile.core.model.Bounds? = null,
         val repairNote: String? = null,
+        /**
+         * Whether the user started this run and is waiting on it.
+         *
+         * An attended run ends by returning to Autobile, because the user asked for it
+         * and is owed the result. A scheduled or notification-triggered run must not:
+         * pulling someone out of what they were doing to announce a background task is
+         * the behaviour that gets an automation app uninstalled.
+         */
+        val attended: Boolean = false,
     ) : AgentActivity
 }
 

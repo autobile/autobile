@@ -107,10 +107,11 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
 
     private val minimizer = ContextMinimizer()
     private val perception = PerceptionEngine(context)
+    private val runtimeWords = ResourceRuntimeVocabulary(appContext)
     private val controller = ScreenController(context)
     private val resolver = ExecutionResolver(aiRouter, minimizer)
-    private val riskEngine = RiskEngine(policyStore, settings)
-    private val validation = ValidationEngine(aiRouter, minimizer)
+    private val riskEngine = RiskEngine(policyStore, settings, runtimeWords)
+    private val validation = ValidationEngine(aiRouter, minimizer, runtimeWords)
     private val healing = SelfHealingEngine(aiRouter, riskEngine, minimizer)
     private val executor = SkillExecutor(
         perception = perception,
@@ -122,6 +123,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         router = aiRouter,
         skillStore = skillStore,
         minimizer = minimizer,
+        words = runtimeWords,
     )
     val capabilityDetector = CapabilityDetector(
         context = context,
@@ -141,10 +143,16 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         executability = executability,
         capabilityDetector = capabilityDetector,
         minimizer = minimizer,
+        words = runtimeWords,
     )
     override val triggerScheduler = TriggerScheduler(context)
     private val segmenter = TraceSegmenter(aiRouter)
-    val compiler = SkillCompiler(aiRouter, segmenter, riskEngine)
+    val compiler = SkillCompiler(
+        aiRouter,
+        segmenter,
+        riskEngine,
+        vocabulary = ResourceCompilerVocabulary(appContext),
+    )
     val recorder = DemonstrationRecorder(perception, scope)
     val skillEditor = SkillEditor(aiRouter, skillStore, triggerScheduler)
     private val visibility = AgentVisibilityCoordinator(context, orchestrator, settings)
@@ -167,20 +175,27 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
             SemanticSkill(
                 id = STARTER_SKILL_ID,
                 version = 1,
-                name = "Open phone settings",
-                goal = "Open Android settings",
-                description = "A safe first automation you can replay any time.",
+                // Written in the user's language at the moment it is created. This is
+                // the first automation anyone sees, sitting on the home screen under
+                // their own list; generating it in English made the app look like it had
+                // only been half translated.
+                name = appContext.getString(R.string.starter_skill_name),
+                goal = appContext.getString(R.string.starter_skill_goal),
+                description = appContext.getString(R.string.starter_skill_description),
                 trigger = TriggerSpec.Manual,
                 steps = listOf(
                     SkillStep(
                         id = Ids.step(),
                         intent = StepIntent.LAUNCH_APP,
-                        target = TargetSemantics("Android settings", "the Android settings app"),
+                        target = TargetSemantics(
+                            appContext.getString(R.string.starter_skill_target),
+                            appContext.getString(R.string.starter_skill_target_description),
+                        ),
                         preferredResolver = ResolverKind.DIRECT_API,
                         action = ActionSpec.LaunchApp("com.android.settings"),
                         expectedState = ExpectedState(requiredPackage = "com.android.settings"),
                         validation = ValidationSpec(mode = ValidationMode.STRUCTURAL, goalCritical = true),
-                        description = "Open Android settings",
+                        description = appContext.getString(R.string.starter_skill_goal),
                     ),
                 ),
                 riskPolicy = RiskPolicy(requireConfirmation = false),

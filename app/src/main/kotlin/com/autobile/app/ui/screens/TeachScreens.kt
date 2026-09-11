@@ -53,7 +53,8 @@ import com.autobile.core.model.TriggerSpec
 
 @Composable
 fun TeachScreen(state: AppUiState, viewModel: AppViewModel, context: Context) {
-    var label by remember { mutableStateOf(state.teachLabel) }
+    val suggestedName = state.teachLabel ?: stringResource(R.string.default_automation_name)
+    var label by remember(suggestedName) { mutableStateOf(suggestedName) }
 
     Column(
         Modifier
@@ -66,7 +67,17 @@ fun TeachScreen(state: AppUiState, viewModel: AppViewModel, context: Context) {
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.teach_title), style = TypeScale.display, color = theme.ink)
             Spacer(Modifier.height(10.dp))
-            Statement(stringResource(R.string.teach_body))
+            Statement(
+                stringResource(
+                    // Promising a notification the platform will not show would strand
+                    // the user in the app they demonstrated in.
+                    if (state.capability.canPostNotifications) {
+                        R.string.teach_body
+                    } else {
+                        R.string.teach_body_no_notification
+                    },
+                ),
+            )
             Spacer(Modifier.height(28.dp))
             OutlinedTextField(
                 value = label,
@@ -105,12 +116,18 @@ fun TeachScreen(state: AppUiState, viewModel: AppViewModel, context: Context) {
                 Spacer(Modifier.height(6.dp))
                 Text(stringResource(R.string.teach_current_app, appLabel(it)), style = TypeScale.body, color = theme.muted)
             }
-            state.recording.lastAction.takeIf { it.isNotBlank() }?.let {
+            state.recording.lastAction?.let { action ->
                 Spacer(Modifier.height(24.dp))
                 Hairline()
                 Row(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
                     Text(stringResource(R.string.teach_last_action), style = TypeScale.body, color = theme.muted, modifier = Modifier.weight(1f))
-                    Text(it, style = TypeScale.label, color = theme.ink)
+                    Text(
+                        text = action.argument
+                            ?.let { stringResource(action.res, it) }
+                            ?: stringResource(action.res),
+                        style = TypeScale.label,
+                        color = theme.ink,
+                    )
                 }
                 Hairline()
             }

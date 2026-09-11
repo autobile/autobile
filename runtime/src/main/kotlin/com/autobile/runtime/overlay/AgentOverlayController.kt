@@ -1,11 +1,17 @@
 package com.autobile.runtime.overlay
 
 import android.content.Context
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.Gravity as ViewGravity
 import android.view.View
 import android.view.WindowManager
+import android.widget.TextView
 import com.autobile.core.common.Logx
 import com.autobile.core.model.Bounds
 
@@ -18,27 +24,60 @@ import com.autobile.core.model.Bounds
  *
  * The overlay is entirely optional: without the permission the agent runs normally and
  * only the visibility is lost, so the feature is never a prerequisite for automation.
+ *
+ * Every method here marshals onto the main thread. A run is driven from background
+ * dispatchers, and attaching a window from one throws — which the callers turned into a
+ * logged warning, so the banner silently never appeared while the permission, the
+ * notification and the rest of the run all looked correct.
  */
 class AgentOverlayController(private val context: Context) {
 
     private val windowManager: WindowManager? =
         context.getSystemService(WindowManager::class.java)
 
-    private var bannerView: View? = null
+    private val main = Handler(Looper.getMainLooper())
+
+    private var bannerView: TextView? = null
     private var indicatorView: TouchIndicatorView? = null
+
+    /**
+     * Runs UI work on the main thread, always by posting.
+     *
+     * Posting even when already on the main thread keeps these in the order they were
+     * requested. Running some inline and queueing others would let a dismissal overtake
+     * the attachment it is meant to undo and strand a banner on screen after the run.
+     */
+    private fun onMain(block: () -> Unit) {
+        main.post(block)
+    }
 
     val isPermitted: Boolean get() = Settings.canDrawOverlays(context)
 
     /**
-     * Shows the status banner.
+     * Shows the status banner, creating it on first use and updating it afterwards.
+     *
+     * The view is owned here rather than handed in, because it may only be built and
+     * touched on the main thread while every caller is driving a run from a background
+     * dispatcher. Updating in place also matters: the text changes on every step, and
+     * reattaching a window that often makes the banner visibly flicker over the app
+     * being operated.
      *
      * Attached at the top of the screen and explicitly not focusable or touchable, so it
      * cannot intercept input intended for the app underneath — including input the agent
      * itself is about to deliver.
      */
-    fun showBanner(view: View) {
-        if (!isPermitted) return
-        hideBanner()
+    fun showBanner(text: CharSequence) = onMain {
+        if (!isPermitted) return@onMain
+        bannerView?.let { existing ->
+            existing.text = text
+            existing.contentDescription = text
+            return@onMain
+        }
+        val view = TextView(context).apply {
+            styleAsBanner()
+            this.text = text
+            contentDescription = text
+        }
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -56,7 +95,9 @@ class AgentOverlayController(private val context: Context) {
             .onFailure { Logx.w("Could not show the agent banner", it) }
     }
 
-    fun hideBanner() {
+    fun hideBanner() = onMain { hideBannerNow() }
+
+    private fun hideBannerNow() {
         bannerView?.let { view ->
             runCatching { windowManager?.removeView(view) }
             bannerView = null
@@ -64,8 +105,8 @@ class AgentOverlayController(private val context: Context) {
     }
 
     /** Marks the element the agent is about to act on. */
-    fun showTouchIndicator(bounds: Bounds) {
-        if (!isPermitted || bounds.isEmpty) return
+    fun showTouchIndicator(bounds: Bounds) = onMain {
+        if (!isPermitted || bounds.isEmpty) return@onMain
         val view = indicatorView ?: TouchIndicatorView(context).also { created ->
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -83,7 +124,9 @@ class AgentOverlayController(private val context: Context) {
         view.highlight(bounds)
     }
 
-    fun hideTouchIndicator() {
+    fun hideTouchIndicator() = onMain { hideTouchIndicatorNow() }
+
+    private fun hideTouchIndicatorNow() {
         indicatorView?.let { view ->
             view.clear()
             runCatching { windowManager?.removeView(view) }
@@ -91,9 +134,9 @@ class AgentOverlayController(private val context: Context) {
         }
     }
 
-    fun dismissAll() {
-        hideTouchIndicator()
-        hideBanner()
+    fun dismissAll() = onMain {
+        hideTouchIndicatorNow()
+        hideBannerNow()
     }
 
     /**
@@ -103,4 +146,15 @@ class AgentOverlayController(private val context: Context) {
      * and it is gated behind the display-over-apps permission checked in [isPermitted].
      */
     private fun overlayType(): Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+
+    private fun TextView.styleAsBanner() {
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.argb(235, 28, 32, 38))
+        setPadding(dp(20), dp(12), dp(20), dp(12))
+        textSize = 14f
+        setTypeface(typeface, Typeface.BOLD)
+        gravity = ViewGravity.CENTER_VERTICAL
+    }
+
+    private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).toInt()
 }

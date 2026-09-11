@@ -19,7 +19,7 @@
     <string name="onboarding_step">Step %1$d of %2$d</string>
     <string name="onboarding_capability_title">What this phone can do</string>
     <string name="onboarding_permissions_title">Give access when you are ready</string>
-    <string name="onboarding_permissions_body">Autobile needs screen control to learn a task and repeat it. Notification and overlay access add triggers and visible progress.</string>
+    <string name="onboarding_permissions_body">Screen control is what lets Autobile learn a task and repeat it. Progress notifications are how you get back here once an automation has opened another app.</string>
     <string name="onboarding_permissions_note">Only screen control is required. The rest stay optional.</string>
     <string name="onboarding_first_run_title">See a task run</string>
     <string name="onboarding_first_run_body">Your first automation opens Android settings, then checks that the settings app actually appeared.</string>
@@ -44,9 +44,11 @@
 
     <!-- Permissions -->
     <string name="permission_screen_control">Screen control</string>
+    <string name="permission_post_notifications">Progress notifications</string>
     <string name="permission_notifications">Notification triggers</string>
     <string name="permission_overlay">Progress over other apps</string>
     <string name="permission_granted">Granted</string>
+    <string name="permission_allow">Allow</string>
 
     <!-- Home -->
     <string name="home_agent_ready">Agent ready</string>
@@ -92,6 +94,7 @@
     <!-- Teaching -->
     <string name="teach_title">Teach by doing</string>
     <string name="teach_body">Start recording, switch to the app you use, and do the task once. Come back through the notification when you are done.</string>
+    <string name="teach_body_no_notification">Start recording, switch to the app you use, and do the task once. Progress notifications are off, so come back through your recent apps when you are done.</string>
     <string name="teach_name_label">Name this automation</string>
     <string name="teach_start">Start recording</string>
     <string name="teach_recording_title">Learning %1$s</string>
@@ -313,4 +316,87 @@
     <string name="teach_notification_channel">Teaching sessions</string>
     <string name="teach_notification_title">Autobile is learning</string>
     <string name="teach_notification_body">Do the task, then come back here to finish.</string>
+    <!-- Confirmations and refusals shown as a brief message at the bottom of the screen. -->
+    <string name="msg_accessibility_required">Turn on screen control before teaching</string>
+    <string name="msg_recording_started">Recording. Switch to the app you use and do the task once.</string>
+    <string name="msg_recording_no_notification">Recording. Notifications are off, so return through your recent apps when you are done.</string>
+    <string name="msg_teaching_interrupted">Your last teaching session ended when Autobile closed. Nothing was saved — start it again when you are ready.</string>
+    <string name="msg_correction_applied">Updated: %1$s</string>
+    <string name="msg_name_goal_required">Give it a name and a goal first</string>
+    <string name="msg_schedule_range">Pick a time between 00:00 and 23:59</string>
+    <string name="msg_automation_saved">Automation saved</string>
+    <string name="msg_automation_deleted">Automation deleted</string>
+    <string name="msg_automation_finished">Automation finished</string>
+    <string name="msg_first_run_complete">First automation completed</string>
+    <string name="msg_version_unavailable">That version is no longer available</string>
+    <string name="msg_version_restored">Restored as version %1$d</string>
+    <string name="msg_show_me_how">Show me how to %1$s</string>
+    <string name="msg_change_applied">Change applied</string>
+    <string name="msg_repair_applied">Repair applied as version %1$d</string>
+    <string name="msg_repair_dismissed">Repair dismissed</string>
+    <string name="msg_repair_failed">Could not apply the repair</string>
+    <string name="msg_cloud_credential_updated">Cloud credential updated</string>
+    <string name="msg_generic_error">Something went wrong</string>
+    <string name="default_automation_name">My automation</string>
+    <string name="starter_skill_name">Open phone settings</string>
+    <string name="starter_skill_goal">Open Android settings</string>
+    <string name="starter_skill_description">A safe first automation you can replay any time.</string>
+    <string name="starter_skill_target">Android settings</string>
+    <string name="starter_skill_target_description">the Android settings app</string>
+    <!-- Words the compiler writes into an automation when no model names it. -->
+    <string name="compiled_new_automation">New automation</string>
+    <string name="compiled_repeat_task">Repeat a %1$d-step task in %2$s</string>
+    <string name="compiled_app_separator"> and </string>
+    <string name="compiled_the_app">the %1$s app</string>
+    <string name="compiled_nothing_recorded">Nothing was recorded</string>
+    <string name="compiled_no_repeatable_steps">No repeatable steps were found in this demonstration</string>
+    <string name="compiled_steps_not_understood">The recorded actions could not be turned into steps</string>
+    <string name="compiled_step_launch_app">Open %1$s</string>
+    <string name="compiled_step_navigate">Go to %1$s</string>
+    <string name="compiled_step_select_item">Select %1$s</string>
+    <string name="compiled_step_open_target">Open %1$s</string>
+    <string name="compiled_step_read_value">Read %1$s</string>
+    <string name="compiled_step_enter_text">Enter text in %1$s</string>
+    <string name="compiled_step_set_option">Set %1$s</string>
+    <string name="compiled_step_scroll_to">Scroll to %1$s</string>
+    <string name="compiled_step_confirm">Confirm %1$s</string>
+    <string name="compiled_step_send">Send using %1$s</string>
+    <string name="compiled_step_share">Share via %1$s</string>
+    <string name="compiled_step_save">Save with %1$s</string>
+    <string name="compiled_step_delete">Delete using %1$s</string>
+    <string name="compiled_step_go_back">Go back</string>
+    <string name="compiled_step_go_home">Go to the home screen</string>
+    <string name="compiled_step_wait">Wait</string>
+    <!-- How a run explains itself in the execution timeline. -->
+    <string name="run_stopped">Stopped</string>
+    <string name="run_step_failed">Step failed</string>
+    <string name="run_screen_protected">This screen is protected and cannot be read</string>
+    <string name="run_no_text">Could not determine what to type</string>
+    <string name="run_action_needs_element">Action does not operate on an element</string>
+    <string name="run_unsupported_action">Unsupported action</string>
+    <string name="validate_none">no validation required</string>
+    <string name="validate_no_expectation">no expectation declared</string>
+    <string name="validate_wrong_app">expected %1$s but the foreground app is %2$s</string>
+    <string name="validate_screen_missing">screen does not show %1$s</string>
+    <string name="validate_screen_forbidden">screen shows %1$s</string>
+    <string name="validate_screen_confirmed">expected screen confirmed</string>
+    <string name="validate_no_constraints">value validation has no constraints</string>
+    <string name="validate_no_value">no value was read</string>
+    <string name="validate_empty_value">empty value accepted</string>
+    <string name="validate_format_mismatch">value does not match the expected format</string>
+    <string name="validate_not_numeric">value is not numeric</string>
+    <string name="validate_below_minimum">value %1$s is below the expected minimum</string>
+    <string name="validate_above_maximum">value %1$s is above the expected maximum</string>
+    <string name="validate_field_missing">the screen does not show a \"%1$s\" field</string>
+    <string name="validate_field_read">%1$s read successfully</string>
+    <string name="validate_unverified">the outcome could not be verified</string>
+    <string name="validate_no_post_conditions">no post-conditions declared</string>
+    <string name="validate_goal_confirmed">goal confirmed</string>
+    <string name="run_task_created">Task created</string>
+    <string name="run_automation_stopped">Automation is stopped</string>
+    <string name="run_category_blocked">%1$s apps are blocked</string>
+    <string name="run_app_observe_only">this app is set to observe only</string>
+    <string name="run_suspended_review">this automation is suspended until you review it</string>
+    <string name="run_low_risk">low risk action</string>
+    <string name="run_risk_decision">%1$s: %2$s</string>
 </resources>

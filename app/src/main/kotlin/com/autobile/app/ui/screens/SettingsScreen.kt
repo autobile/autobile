@@ -101,6 +101,12 @@ fun SettingsScreen(state: AppUiState, viewModel: AppViewModel, context: Context)
             stringResource(R.string.permission_screen_control),
             state.capability.accessibilityConnected,
         ) { context.openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) }
+        // Reachable from here as well as onboarding: someone who declined during setup
+        // has no other way to discover that running automations are invisible to them.
+        PermissionSetting(
+            stringResource(R.string.permission_post_notifications),
+            state.capability.canPostNotifications,
+        ) { context.openAppNotificationSettings() }
         PermissionSetting(
             stringResource(R.string.permission_notifications),
             state.capability.notificationAccessGranted,
@@ -329,4 +335,19 @@ private fun MetricRow(label: String, value: String) {
 
 private fun Context.openSettings(action: String) {
     runCatching { startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
+
+/**
+ * This app's notification settings.
+ *
+ * Not the runtime permission dialog: by the time someone comes looking in settings they
+ * have usually already declined it, and Android will not show that dialog again.
+ */
+private fun Context.openAppNotificationSettings() {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { startActivity(intent) }.onFailure {
+        openSettings(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+    }
 }

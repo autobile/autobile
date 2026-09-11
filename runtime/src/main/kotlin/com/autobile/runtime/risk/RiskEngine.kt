@@ -1,6 +1,8 @@
 package com.autobile.runtime.risk
 
 import com.autobile.core.data.AppPolicyStore
+import com.autobile.runtime.EnglishRuntimeVocabulary
+import com.autobile.runtime.RuntimeVocabulary
 import com.autobile.core.data.SettingsStore
 import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AppPolicyMode
@@ -27,6 +29,7 @@ import com.autobile.core.model.StepIntent
 class RiskEngine(
     private val policyStore: AppPolicyStore,
     private val settings: SettingsStore,
+    private val words: RuntimeVocabulary = EnglishRuntimeVocabulary,
 ) {
 
     suspend fun evaluate(
@@ -38,7 +41,7 @@ class RiskEngine(
         settings.killSwitch().takeIf { it.engaged }?.let { state ->
             return RiskDecision(
                 verdict = RiskVerdict.DENY,
-                reason = state.reason.ifBlank { "Automation is stopped" },
+                reason = state.reason.ifBlank { words.automationStopped() },
             )
         }
 
@@ -46,14 +49,14 @@ class RiskEngine(
         when (policy.mode) {
             AppPolicyMode.BLOCK -> return RiskDecision(
                 verdict = RiskVerdict.DENY,
-                reason = "${policy.category.name.lowercase().replace('_', ' ')} apps are blocked",
+                reason = words.categoryBlocked(policy.category.name.lowercase().replace('_', ' ')),
                 appPolicy = policy.mode,
             )
 
             AppPolicyMode.OBSERVE_ONLY -> if (mutatesState(step)) {
                 return RiskDecision(
                     verdict = RiskVerdict.DENY,
-                    reason = "this app is set to observe only",
+                    reason = words.appObserveOnly(),
                     appPolicy = policy.mode,
                 )
             }
@@ -68,7 +71,7 @@ class RiskEngine(
             return RiskDecision(
                 verdict = RiskVerdict.DENY,
                 categories = categories,
-                reason = "this automation is suspended until you review it",
+                reason = words.suspendedPendingReview(),
             )
         }
 
@@ -93,7 +96,7 @@ class RiskEngine(
             RiskDecision(
                 verdict = RiskVerdict.ALLOW,
                 categories = categories,
-                reason = "low risk action",
+                reason = words.lowRiskAction(),
                 appPolicy = policy.mode,
             )
         }

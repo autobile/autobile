@@ -17,6 +17,15 @@ data class DeviceCapabilityProfile(
     val gestureDispatchSupported: Boolean = false,
     val screenshotSupported: Boolean = false,
     val notificationAccessGranted: Boolean = false,
+    /**
+     * Whether Autobile may post its own notifications.
+     *
+     * Separate from [notificationAccessGranted], which is permission to *read* other
+     * apps' notifications for triggers. This one decides whether a running automation
+     * and an open teaching session are visible at all, and with them whether the user
+     * has any way back into Autobile from the app it navigated them into.
+     */
+    val canPostNotifications: Boolean = false,
     val overlayGranted: Boolean = false,
     val deviceAi: DeviceAiCapability = DeviceAiCapability(),
     val localModel: LocalModelCapability = LocalModelCapability(),

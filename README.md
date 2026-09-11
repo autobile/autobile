@@ -35,7 +35,7 @@ You teach it once. After that it runs without you, and shows you what it did.
 
 ### 1. Install
 
-Download `autobile-0.1.0.apk` from the
+Download `autobile-0.1.1.apk` from the
 [latest release](https://github.com/autobile/autobile/releases/latest) and install it.
 Autobile is not on Google Play — see [Distribution](#distribution).
 
@@ -47,9 +47,13 @@ Autobile walks you through this on first launch. It needs Android's **accessibil
 access**, which is what lets it read what is on screen and tap for you.
 
 This is a large permission and the app says so plainly. Without it Autobile cannot do
-anything at all; with it, it can see any screen you open. Two optional permissions add
-features: notification access enables notification triggers, and display-over-apps shows
-progress while a run is happening.
+anything at all; with it, it can see any screen you open.
+
+Setup also asks to post notifications. Worth allowing: an automation works by opening
+someone else's app, and the notification is how you see what is running, stop it, and get
+back to Autobile afterwards. Two further permissions are genuinely optional —
+notification *access* enables notification triggers, and display-over-apps draws progress
+on top of the app being operated.
 
 ### 3. Watch one run
 
@@ -167,7 +171,7 @@ because a record that changes language later is no longer a record of what happe
 ## Project status
 
 Early. The core loop — teach, confirm, compile, replay, validate, repair — works and is
-covered by 173 unit tests plus instrumentation tests that run on a device against the
+covered by 182 unit tests plus instrumentation tests that run on a device against the
 shrunk release build. What has not been measured at scale is how reliably learned
 automations hold up across the long tail of third-party apps.
 

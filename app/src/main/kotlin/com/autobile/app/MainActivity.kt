@@ -1,8 +1,11 @@
 package com.autobile.app
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -73,6 +76,7 @@ import com.autobile.app.ui.screens.SkillDetailScreen
 import com.autobile.app.ui.screens.TeachReviewScreen
 import com.autobile.app.ui.screens.TeachScreen
 import com.autobile.runtime.agent.AgentActivity
+import com.autobile.runtime.background.AppReturn
 import com.autobile.runtime.edit.SkillEditPreview
 
 class MainActivity : ComponentActivity() {
@@ -91,13 +95,21 @@ class MainActivity : ComponentActivity() {
             AutobileTheme {
                 val notificationPermission = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission(),
-                ) { viewModel.refreshCapabilities() }
+                ) { granted ->
+                    viewModel.refreshCapabilities()
+                    // Android stops showing the dialog once someone has declined twice,
+                    // and silently does nothing on every later request. Without this the
+                    // row would stay on "Allow" and never respond again.
+                    if (!granted && !shouldShowNotificationRationale()) openNotificationSettings()
+                }
 
                 AutobileApp(
                     viewModel = viewModel,
                     requestNotificationPermission = {
                         if (Build.VERSION.SDK_INT >= 33) {
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            openNotificationSettings()
                         }
                     },
                 )
@@ -107,7 +119,30 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        AppReturn.onInterfaceVisible(true)
         viewModel.refreshCapabilities()
+    }
+
+    override fun onPause() {
+        AppReturn.onInterfaceVisible(false)
+        super.onPause()
+    }
+
+    private fun shouldShowNotificationRationale(): Boolean =
+        Build.VERSION.SDK_INT >= 33 &&
+            shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+
+    /** The settings page for this app's notifications, for when the dialog is spent. */
+    private fun openNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        runCatching { startActivity(intent) }.onFailure {
+            runCatching {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)),
+                )
+            }
+        }
     }
 }
 

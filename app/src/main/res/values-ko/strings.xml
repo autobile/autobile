@@ -16,10 +16,10 @@
 
     <!-- Onboarding -->
     <string name="onboarding_tagline">한 번만 보여주세요.\n나머지는 폰이 배웁니다.</string>
-    <string name="onboarding_step">%2$d단계 중 %1$d</string>
+    <string name="onboarding_step">%2$d단계 중 %1$d단계</string>
     <string name="onboarding_capability_title">이 폰이 할 수 있는 것</string>
     <string name="onboarding_permissions_title">준비되면 권한을 주세요</string>
-    <string name="onboarding_permissions_body">작업을 배우고 다시 실행하려면 화면 제어 권한이 필요합니다. 알림과 오버레이 권한은 트리거와 진행 상황 표시를 더해 줍니다.</string>
+    <string name="onboarding_permissions_body">화면 제어는 Autobile이 작업을 배우고 반복하기 위한 권한입니다. 진행 알림은 자동화가 다른 앱을 연 뒤 이곳으로 돌아오는 수단입니다.</string>
     <string name="onboarding_permissions_note">화면 제어만 필수입니다. 나머지는 선택입니다.</string>
     <string name="onboarding_first_run_title">실행되는 모습 보기</string>
     <string name="onboarding_first_run_body">첫 자동화는 안드로이드 설정을 연 뒤, 설정 앱이 실제로 떴는지 확인합니다.</string>
@@ -44,9 +44,11 @@
 
     <!-- Permissions -->
     <string name="permission_screen_control">화면 제어</string>
+    <string name="permission_post_notifications">진행 알림</string>
     <string name="permission_notifications">알림 트리거</string>
     <string name="permission_overlay">다른 앱 위에 진행 상황 표시</string>
     <string name="permission_granted">허용됨</string>
+    <string name="permission_allow">허용</string>
 
     <!-- Home -->
     <string name="home_agent_ready">대기 중</string>
@@ -59,7 +61,7 @@
     <string name="home_empty_detail">한 번만 보여주면 다시 실행할 수 있는 자동화가 됩니다.</string>
 
     <!-- Agent activity -->
-    <string name="agent_step_progress">%2$d단계 중 %1$d</string>
+    <string name="agent_step_progress">%2$d단계 중 %1$d단계</string>
     <string name="agent_adapting">적응 중: %1$s</string>
 
     <!-- Skill detail -->
@@ -92,6 +94,7 @@
     <!-- Teaching -->
     <string name="teach_title">직접 보여주며 가르치기</string>
     <string name="teach_body">기록을 시작하고 평소 쓰는 앱으로 옮겨 작업을 한 번 해 보세요. 끝나면 알림을 눌러 돌아오면 됩니다.</string>
+    <string name="teach_body_no_notification">기록을 시작하고 평소 쓰는 앱으로 옮겨 작업을 한 번 해 보세요. 진행 알림이 꺼져 있으니 끝나면 최근 앱 목록에서 돌아오세요.</string>
     <string name="teach_name_label">자동화 이름</string>
     <string name="teach_start">기록 시작</string>
     <string name="teach_recording_title">%1$s 배우는 중</string>
@@ -313,4 +316,84 @@
     <string name="teach_notification_channel">가르치는 중</string>
     <string name="teach_notification_title">Autobile이 배우는 중입니다</string>
     <string name="teach_notification_body">작업을 해 보신 뒤 여기로 돌아와 마치세요.</string>
+    <string name="msg_accessibility_required">가르치기 전에 화면 제어를 켜세요</string>
+    <string name="msg_recording_started">기록 중입니다. 사용하는 앱으로 전환해 작업을 한 번 해보세요.</string>
+    <string name="msg_recording_no_notification">기록 중입니다. 알림이 꺼져 있으니 마치면 최근 앱 목록에서 돌아오세요.</string>
+    <string name="msg_teaching_interrupted">Autobile이 종료되면서 지난 가르치기가 중단되었습니다. 저장된 것은 없으니 준비되면 다시 시작하세요.</string>
+    <string name="msg_correction_applied">수정됨: %1$s</string>
+    <string name="msg_name_goal_required">이름과 목표를 먼저 입력하세요</string>
+    <string name="msg_schedule_range">00:00에서 23:59 사이의 시각을 선택하세요</string>
+    <string name="msg_automation_saved">자동화를 저장했습니다</string>
+    <string name="msg_automation_deleted">자동화를 삭제했습니다</string>
+    <string name="msg_automation_finished">자동화를 마쳤습니다</string>
+    <string name="msg_first_run_complete">첫 자동화를 마쳤습니다</string>
+    <string name="msg_version_unavailable">그 버전은 더 이상 남아 있지 않습니다</string>
+    <string name="msg_version_restored">버전 %1$d(으)로 되돌렸습니다</string>
+    <string name="msg_show_me_how">%1$s 방법을 보여주세요</string>
+    <string name="msg_change_applied">변경을 적용했습니다</string>
+    <string name="msg_repair_applied">버전 %1$d(으)로 복구를 적용했습니다</string>
+    <string name="msg_repair_dismissed">복구를 무시했습니다</string>
+    <string name="msg_repair_failed">복구를 적용하지 못했습니다</string>
+    <string name="msg_cloud_credential_updated">클라우드 자격 증명을 업데이트했습니다</string>
+    <string name="msg_generic_error">문제가 발생했습니다</string>
+    <string name="default_automation_name">내 자동화</string>
+    <string name="starter_skill_name">휴대폰 설정 열기</string>
+    <string name="starter_skill_goal">Android 설정 열기</string>
+    <string name="starter_skill_description">언제든 다시 실행해 볼 수 있는 안전한 첫 자동화입니다.</string>
+    <string name="starter_skill_target">Android 설정</string>
+    <string name="starter_skill_target_description">Android 설정 앱</string>
+    <string name="compiled_new_automation">새 자동화</string>
+    <string name="compiled_repeat_task">%2$s에서 %1$d단계 작업 반복</string>
+    <string name="compiled_app_separator">, </string>
+    <string name="compiled_the_app">%1$s 앱</string>
+    <string name="compiled_nothing_recorded">기록된 것이 없습니다</string>
+    <string name="compiled_no_repeatable_steps">이 시연에서 반복할 수 있는 단계를 찾지 못했습니다</string>
+    <string name="compiled_steps_not_understood">기록된 동작을 단계로 바꾸지 못했습니다</string>
+    <string name="compiled_step_launch_app">%1$s 열기</string>
+    <string name="compiled_step_navigate">%1$s(으)로 이동</string>
+    <string name="compiled_step_select_item">%1$s 선택</string>
+    <string name="compiled_step_open_target">%1$s 열기</string>
+    <string name="compiled_step_read_value">%1$s 읽기</string>
+    <string name="compiled_step_enter_text">%1$s에 입력</string>
+    <string name="compiled_step_set_option">%1$s 설정</string>
+    <string name="compiled_step_scroll_to">%1$s까지 스크롤</string>
+    <string name="compiled_step_confirm">%1$s 확인</string>
+    <string name="compiled_step_send">%1$s(으)로 보내기</string>
+    <string name="compiled_step_share">%1$s(으)로 공유</string>
+    <string name="compiled_step_save">%1$s(으)로 저장</string>
+    <string name="compiled_step_delete">%1$s(으)로 삭제</string>
+    <string name="compiled_step_go_back">뒤로 가기</string>
+    <string name="compiled_step_go_home">홈 화면으로 이동</string>
+    <string name="compiled_step_wait">기다리기</string>
+    <string name="run_stopped">중지됨</string>
+    <string name="run_step_failed">단계 실패</string>
+    <string name="run_screen_protected">보호된 화면이라 읽을 수 없습니다</string>
+    <string name="run_no_text">무엇을 입력할지 판단하지 못했습니다</string>
+    <string name="run_action_needs_element">이 동작은 요소를 대상으로 하지 않습니다</string>
+    <string name="run_unsupported_action">지원하지 않는 동작</string>
+    <string name="validate_none">확인이 필요 없음</string>
+    <string name="validate_no_expectation">기대한 상태가 지정되지 않음</string>
+    <string name="validate_wrong_app">%1$s을(를) 기대했지만 현재 앱은 %2$s입니다</string>
+    <string name="validate_screen_missing">화면에 %1$s이(가) 없습니다</string>
+    <string name="validate_screen_forbidden">화면에 %1$s이(가) 있습니다</string>
+    <string name="validate_screen_confirmed">기대한 화면을 확인했습니다</string>
+    <string name="validate_no_constraints">값을 확인할 조건이 없습니다</string>
+    <string name="validate_no_value">읽어 온 값이 없습니다</string>
+    <string name="validate_empty_value">빈 값을 허용했습니다</string>
+    <string name="validate_format_mismatch">값이 기대한 형식과 다릅니다</string>
+    <string name="validate_not_numeric">값이 숫자가 아닙니다</string>
+    <string name="validate_below_minimum">값 %1$s이(가) 기대한 최솟값보다 작습니다</string>
+    <string name="validate_above_maximum">값 %1$s이(가) 기대한 최댓값보다 큽니다</string>
+    <string name="validate_field_missing">화면에 \"%1$s\" 항목이 없습니다</string>
+    <string name="validate_field_read">%1$s을(를) 읽었습니다</string>
+    <string name="validate_unverified">결과를 확인하지 못했습니다</string>
+    <string name="validate_no_post_conditions">확인할 사후 조건이 없습니다</string>
+    <string name="validate_goal_confirmed">목표를 확인했습니다</string>
+    <string name="run_task_created">실행을 만들었습니다</string>
+    <string name="run_automation_stopped">자동화가 중지되어 있습니다</string>
+    <string name="run_category_blocked">%1$s 앱은 차단되어 있습니다</string>
+    <string name="run_app_observe_only">이 앱은 보기만 하도록 설정되어 있습니다</string>
+    <string name="run_suspended_review">검토할 때까지 이 자동화는 보류되어 있습니다</string>
+    <string name="run_low_risk">위험이 낮은 동작</string>
+    <string name="run_risk_decision">%1$s: %2$s</string>
 </resources>

@@ -22,6 +22,7 @@ import com.autobile.core.model.SkillVersionRecord
 import com.autobile.core.model.TaskOrigin
 import com.autobile.core.model.TaskOutcome
 import com.autobile.core.model.TriggerSpec
+import com.autobile.runtime.accessibility.AccessibilityBridge
 import com.autobile.runtime.agent.AgentActivity
 import com.autobile.runtime.agent.CommandResolution
 import com.autobile.runtime.agent.ConfirmationMode
@@ -32,6 +33,7 @@ import com.autobile.runtime.edit.SkillEditApplyResult
 import com.autobile.runtime.edit.SkillEditPreview
 import com.autobile.runtime.teach.RecordingState
 import com.autobile.app.AppGraph
+import com.autobile.app.R
 import com.autobile.app.TeachingForegroundService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -93,7 +95,32 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
         viewModelScope.launch {
             graph.recorder.state.collectLatest { recording -> _state.update { it.copy(recording = recording) } }
         }
+        // The screen-control capability is the one the user is watching on the first
+        // screen, and it flips without any interaction of theirs: the service binds a
+        // moment after launch, and the system can withdraw it at any time. Polling on
+        // resume misses both, leaving "Not available" on screen while the service is in
+        // fact connected — the app declaring itself broken when it is working.
+        viewModelScope.launch {
+            AccessibilityBridge.connected.collectLatest { refreshCapabilities() }
+        }
+        recoverInterruptedTeaching()
         refreshCapabilities()
+    }
+
+    /**
+     * Accounts for a teaching session that the process did not outlive.
+     *
+     * A demonstration is performed with Autobile in the background, which is when
+     * Android is most willing to reclaim it, and the recording only exists in memory.
+     * Saying so is the whole point: the alternative is the user returning to an ordinary
+     * home screen, with no sign that the five minutes they just spent were discarded.
+     */
+    private fun recoverInterruptedTeaching() {
+        if (!graph.settings.teachingSessionOpen) return
+        if (graph.recorder.state.value.recording) return
+        graph.settings.teachingSessionOpen = false
+        TeachingForegroundService.stop(graph.appContext)
+        _state.update { it.copy(message = graph.appContext.getString(R.string.msg_teaching_interrupted)) }
     }
 
     fun navigate(screen: AppScreen) {
@@ -123,7 +150,11 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
             is RunResult.Completed -> {
                 _state.update {
                     it.copy(
-                        message = if (result.outcome.goalValidated) "First automation completed" else result.outcome.message,
+                        message = if (result.outcome.goalValidated) {
+                            graph.appContext.getString(R.string.msg_first_run_complete)
+                        } else {
+                            result.outcome.message
+                        },
                         onboardingStep = OnboardingStep.TEACH,
                     )
                 }
@@ -133,32 +164,47 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
         }
     }
 
-    fun startTeaching(label: String = "My automation") = launchAction {
+    fun startTeaching(label: String? = null) = launchAction {
         if (!_state.value.capability.accessibilityConnected) {
-            showMessage("Enable accessibility access before teaching")
+            showMessageRes(R.string.msg_accessibility_required)
             return@launchAction
         }
+        val name = label?.takeIf { it.isNotBlank() }
+            ?: graph.appContext.getString(R.string.default_automation_name)
         graph.metricsStore.increment(Metric.TEACH_SESSIONS_STARTED)
-        graph.recorder.start(label.ifBlank { "My automation" })
+        graph.recorder.start(name)
+        graph.settings.teachingSessionOpen = true
         TeachingForegroundService.start(graph.appContext)
-        _state.update { it.copy(screen = AppScreen.TEACH, message = "Recording started. Demonstrate the task in another app.") }
+        // The instruction has to match what the user will actually find. Telling someone
+        // to come back through a notification that the platform is not going to show is
+        // how a session ends with them force-quitting the app.
+        val instruction = if (_state.value.capability.canPostNotifications) {
+            R.string.msg_recording_started
+        } else {
+            R.string.msg_recording_no_notification
+        }
+        _state.update {
+            it.copy(screen = AppScreen.TEACH, message = graph.appContext.getString(instruction))
+        }
     }
 
     fun cancelTeaching() {
         graph.recorder.cancel()
+        graph.settings.teachingSessionOpen = false
         TeachingForegroundService.stop(graph.appContext)
         _state.update { it.copy(screen = AppScreen.HOME, compilation = null) }
     }
 
     fun finishTeaching() = launchAction {
         val trace = graph.recorder.stop()
+        graph.settings.teachingSessionOpen = false
         TeachingForegroundService.stop(graph.appContext)
         if (trace == null || trace.events.isEmpty()) {
-            showMessage("No actions were recorded. Try again and perform the task in another app.")
+            showMessageRes(R.string.teach_nothing_recorded)
             return@launchAction
         }
         graph.traceStore.save(trace)
-        _state.update { it.copy(loading = true, message = "Understanding your demonstration…") }
+        _state.update { it.copy(loading = true, message = graph.appContext.getString(R.string.teach_understanding)) }
         when (val result = graph.compiler.compile(trace, localOnly = !graph.settings.privacy().cloudEnabled)) {
             is CompilationResult.Failed -> _state.update {
                 it.copy(loading = false, message = result.reason, screen = AppScreen.TEACH)
@@ -224,7 +270,7 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
                             skill = preview.updated.copy(version = draft.skill.version),
                             summary = preview.summary,
                         ),
-                        message = "Updated: ${preview.summary}",
+                        message = graph.appContext.getString(R.string.msg_correction_applied, preview.summary),
                     )
                 }
             }
@@ -242,12 +288,12 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
     fun saveTeaching() = launchAction {
         val draft = _state.value.compilation ?: return@launchAction
         if (draft.skill.name.isBlank() || draft.skill.goal.isBlank()) {
-            showMessage("Name and goal are required")
+            showMessageRes(R.string.msg_name_goal_required)
             return@launchAction
         }
         val timeTrigger = draft.skill.trigger as? TriggerSpec.Time
         if (timeTrigger != null && (timeTrigger.hour !in 0..23 || timeTrigger.minute !in 0..59)) {
-            showMessage("Schedule time must be between 00:00 and 23:59")
+            showMessageRes(R.string.msg_schedule_range)
             return@launchAction
         }
         val saved = graph.skillStore.save(draft.skill)
@@ -260,7 +306,7 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
                 selectedSkillId = saved.id,
                 screen = if (it.onboardingComplete) AppScreen.SKILL_DETAIL else AppScreen.HOME,
                 onboardingStep = if (it.onboardingComplete) it.onboardingStep else OnboardingStep.REPLAY,
-                message = "Automation saved",
+                message = graph.appContext.getString(R.string.msg_automation_saved),
             )
         }
     }
@@ -302,18 +348,24 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
 
     fun rollbackSkill(skillId: String, version: Int) = launchAction {
         val restored = graph.skillStore.rollbackTo(skillId, version)
-        if (restored == null) showMessage("That version is no longer available") else {
+        if (restored == null) showMessageRes(R.string.msg_version_unavailable) else {
             graph.triggerScheduler.cancel(skillId)
             graph.triggerScheduler.schedule(restored)
             selectSkill(skillId)
-            showMessage("Restored as version ${restored.version}")
+            showMessage(graph.appContext.getString(R.string.msg_version_restored, restored.version))
         }
     }
 
     fun deleteSkill(skill: SemanticSkill) = launchAction {
         graph.triggerScheduler.cancel(skill.id)
         graph.skillStore.delete(skill.id)
-        _state.update { it.copy(screen = AppScreen.HOME, selectedSkillId = null, message = "Automation deleted") }
+        _state.update {
+            it.copy(
+                screen = AppScreen.HOME,
+                selectedSkillId = null,
+                message = graph.appContext.getString(R.string.msg_automation_deleted),
+            )
+        }
     }
 
     fun runSkill(skillId: String, replay: Boolean = false) = launchAction {
@@ -323,7 +375,13 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
             confirmation = ConfirmationMode.AskUser(),
         )) {
             is RunResult.Completed -> {
-                _state.update { it.copy(message = result.outcome.message.ifBlank { "Automation finished" }) }
+                _state.update {
+                    it.copy(
+                        message = result.outcome.message.ifBlank {
+                            graph.appContext.getString(R.string.msg_automation_finished)
+                        },
+                    )
+                }
                 if (!itIsOnboarded()) {
                     _state.update { it.copy(onboardingStep = OnboardingStep.COMPLETE) }
                     finishOnboarding()
@@ -345,7 +403,7 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
             is CommandResolution.NeedsTeaching -> _state.update {
                 it.copy(
                     loading = false,
-                    message = "Show me how to ${resolution.goal}",
+                    message = graph.appContext.getString(R.string.msg_show_me_how, resolution.goal),
                     teachLabel = resolution.goal,
                     screen = AppScreen.TEACH,
                 )
@@ -373,7 +431,9 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
     fun applyEdit(preview: SkillEditPreview.Ready) = launchAction {
         when (val result = graph.skillEditor.apply(preview)) {
             is SkillEditApplyResult.Applied -> {
-                _state.update { it.copy(editPreview = null, message = "Change applied") }
+                _state.update {
+                    it.copy(editPreview = null, message = graph.appContext.getString(R.string.msg_change_applied))
+                }
                 selectSkill(result.skill.id)
             }
             is SkillEditApplyResult.Rejected -> _state.update {
@@ -385,12 +445,12 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
     fun reviewPatch(candidate: SkillPatchCandidate, accept: Boolean) = launchAction {
         if (accept) {
             graph.acceptPatch(candidate).fold(
-                onSuccess = { showMessage("Repair applied as version ${it.version}") },
-                onFailure = { showMessage(it.message ?: "Could not apply repair") },
+                onSuccess = { showMessage(graph.appContext.getString(R.string.msg_repair_applied, it.version)) },
+                onFailure = { showMessage(it.message ?: graph.appContext.getString(R.string.msg_repair_failed)) },
             )
         } else {
             graph.rejectPatch(candidate)
-            showMessage("Repair dismissed")
+            showMessageRes(R.string.msg_repair_dismissed)
         }
         _state.update { it.copy(patches = graph.skillStore.pendingPatches()) }
     }
@@ -419,7 +479,9 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
 
     fun setCloudApiKey(value: String) {
         graph.settings.setCloudApiKey(value.trim())
-        _state.update { it.copy(privacy = graph.settings.privacy(), message = "Cloud credential updated") }
+        _state.update {
+            it.copy(privacy = graph.settings.privacy(), message = graph.appContext.getString(R.string.msg_cloud_credential_updated))
+        }
         refreshCapabilities()
     }
 
@@ -473,7 +535,8 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
 
     private fun launchAction(block: suspend () -> Unit) {
         viewModelScope.launch {
-            runCatching { block() }.onFailure { showMessage(it.message ?: "Something went wrong") }
+            runCatching { block() }
+                .onFailure { showMessage(it.message ?: graph.appContext.getString(R.string.msg_generic_error)) }
         }
     }
 
@@ -517,7 +580,14 @@ data class AppUiState(
     val touchIndicatorEnabled: Boolean = true,
     val nanoDownloadConsented: Boolean = false,
     val nanoDownload: ModelDownloadProgress? = null,
-    val teachLabel: String = "My automation",
+    /**
+     * The name offered when teaching starts, when something has suggested one.
+     *
+     * Null means no suggestion, and the screen fills in the translated default. A
+     * literal here would have put an English name on every automation taught on a phone
+     * set to any other language.
+     */
+    val teachLabel: String? = null,
     val loading: Boolean = true,
     val message: String? = null,
 ) {
