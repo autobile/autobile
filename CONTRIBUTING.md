@@ -15,6 +15,8 @@ Set `sdk.dir` in `local.properties` or export `ANDROID_HOME`, then:
 ./gradlew lintDebug test assembleDebug
 ```
 
+That is the same command CI runs on every pull request.
+
 
 ## Running on a device
 
