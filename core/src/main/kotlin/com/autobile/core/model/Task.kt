@@ -62,29 +62,7 @@ enum class TaskState {
     COMPLETED,
     FAILED,
     CANCELLED,
-    BLOCKED;
-
-    /**
-     * How this state is described to the user.
-     *
-     * Written out rather than derived from the enum name: "Waiting for reasoning" is
-     * engineering vocabulary, and the person reading it needs to know what their phone
-     * is missing and whether they have to do anything about it.
-     */
-    val displayName: String
-        get() = when (this) {
-            CREATED -> "Queued"
-            PLANNING -> "Working out what to do"
-            AWAITING_CONFIRMATION -> "Waiting for you"
-            RUNNING -> "Running"
-            WAITING_FOR_REASONING -> "Paused until this phone can decide"
-            WAITING_FOR_USER -> "Waiting for you"
-            DEFERRED -> "Postponed"
-            COMPLETED -> "Completed"
-            FAILED -> "Failed"
-            CANCELLED -> "Stopped"
-            BLOCKED -> "Blocked"
-        }
+    BLOCKED,
 }
 
 /**
@@ -96,23 +74,29 @@ enum class TaskState {
  */
 enum class ExecutabilityState {
     EXECUTABLE,
+
+    /**
+     * Accessibility access is not connected, so nothing can be read or touched.
+     *
+     * Kept apart from [OS_BLOCKED] because the two need opposite things from the user:
+     * this one is fixed by granting access, and telling someone Android blocked their
+     * automation sends them looking in the wrong place entirely.
+     */
+    SCREEN_CONTROL_UNAVAILABLE,
+
+    /** The user engaged the global stop. */
+    STOPPED_BY_USER,
+
     DEVICE_LOCKED,
     USER_UNLOCK_REQUIRED,
     USER_INTERACTION_REQUIRED,
+    NETWORK_UNAVAILABLE,
+
+    /** Android itself refused the start, which the app cannot work around. */
     OS_BLOCKED,
     APP_BLOCKED;
 
     val isRunnable: Boolean get() = this == EXECUTABLE
-
-    val message: String
-        get() = when (this) {
-            EXECUTABLE -> "Ready to run"
-            DEVICE_LOCKED -> "Device is locked"
-            USER_UNLOCK_REQUIRED -> "Unlock required to continue"
-            USER_INTERACTION_REQUIRED -> "Needs you to confirm something"
-            OS_BLOCKED -> "Android blocked background start"
-            APP_BLOCKED -> "Blocked by your app policy"
-        }
 }
 
 /**

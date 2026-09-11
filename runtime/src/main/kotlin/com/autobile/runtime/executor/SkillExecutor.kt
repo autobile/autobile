@@ -320,7 +320,7 @@ class SkillExecutor(
                         ExecutionEventType.RESOLVER_SELECTED,
                         step.id,
                         index,
-                        "${resolution.resolver} via ${resolution.tier.displayName} (${resolution.explanation})",
+                        "${resolution.resolver} via ${resolution.tier.diagnosticName} (${resolution.explanation})",
                         tier = resolution.tier,
                         resolver = resolution.resolver,
                     ),
@@ -540,7 +540,7 @@ class SkillExecutor(
         )
         val extracted = routed.value
         return if (extracted != null && extracted.found) {
-            ValueReading(extracted.value, routed.tier, routed.usedCloud, "read by ${routed.tier.displayName}")
+            ValueReading(extracted.value, routed.tier, routed.usedCloud, "read by ${routed.tier.diagnosticName}")
         } else {
             ValueReading(null, routed.tier, routed.usedCloud, "\"$fieldName\" was not found on this screen")
         }

@@ -1,6 +1,8 @@
 package com.autobile.app.ui
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.autobile.ai.mlkit.DownloadState
 import com.autobile.ai.mlkit.ModelDownloadProgress
@@ -126,7 +128,7 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
                     )
                 }
             }
-            is RunResult.Deferred -> showMessage(result.state.message)
+            is RunResult.Deferred -> showMessageRes(result.state.labelRes())
             is RunResult.Rejected -> showMessage(result.reason)
         }
     }
@@ -293,7 +295,7 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
                 version = skill.version + 1,
                 createdAt = System.currentTimeMillis(),
                 author = com.autobile.core.model.PatchAuthor.USER,
-                reason = "Changed autonomy to ${autonomy.label}",
+                reason = "Changed autonomy to ${autonomy.name}",
             ),
         )
     }
@@ -327,7 +329,7 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
                     finishOnboarding()
                 }
             }
-            is RunResult.Deferred -> showMessage(result.state.message)
+            is RunResult.Deferred -> showMessageRes(result.state.labelRes())
             is RunResult.Rejected -> showMessage(result.reason)
         }
     }
@@ -454,6 +456,17 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
         refreshCapabilities()
     }
 
+    /**
+     * Shows a translated message.
+     *
+     * The view model resolves the string itself so that a reason produced deep in the
+     * runtime still reaches the user in their own language, without the runtime needing
+     * to know anything about resources.
+     */
+    private fun showMessageRes(@StringRes res: Int) {
+        showMessage(graph.appContext.getString(res))
+    }
+
     private fun showMessage(message: String) {
         _state.update { it.copy(message = message, loading = false) }
     }
@@ -509,4 +522,16 @@ data class AppUiState(
     val message: String? = null,
 ) {
     val selectedSkill: SemanticSkill? get() = skills.firstOrNull { it.id == selectedSkillId }
+}
+
+/**
+ * Builds the view model with the process-wide graph.
+ *
+ * The graph is owned by the application rather than created per screen, so a run started
+ * from the interface and one started by a scheduled trigger are driven by the same
+ * orchestrator and cannot disagree about what is happening.
+ */
+class AppViewModelFactory(private val graph: AppGraph) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T = AppViewModel(graph) as T
 }

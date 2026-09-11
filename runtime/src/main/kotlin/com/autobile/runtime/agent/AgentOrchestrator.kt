@@ -121,7 +121,7 @@ class AgentOrchestrator(
                         taskId = task.id,
                         timestamp = time.nowMillis(),
                         type = ExecutionEventType.TASK_DEFERRED,
-                        message = state.message,
+                        message = state.name,
                     ),
                 )
                 return@withLock RunResult.Deferred(task, state)
@@ -166,8 +166,8 @@ class AgentOrchestrator(
             ) {
                 if (label !in EXECUTION_ROUTING_LABELS) return
                 val message = buildString {
-                    append(label.replace('-', ' ')).append(" via ").append(tier.displayName)
-                    reason?.let { append(" · ").append(it.displayName) }
+                    append(label.replace('-', ' ')).append(" via ").append(tier.diagnosticName)
+                    reason?.let { append(", ").append(it.diagnosticName) }
                 }
                 routingEvents += ExecutionEvent(
                     id = Ids.event(),

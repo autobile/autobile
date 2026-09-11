@@ -160,26 +160,4 @@ enum class DeviceRuntimeProfile {
     C_CLOUD_HYBRID,
     D_OFFLINE_DETERMINISTIC;
 
-    val displayName: String
-        get() = when (this) {
-            A_NANO_NATIVE -> "On-device AI"
-            B_LOCAL_MODEL -> "Local model"
-            C_CLOUD_HYBRID -> "Cloud assisted"
-            D_OFFLINE_DETERMINISTIC -> "Offline deterministic"
-        }
-
-    /**
-     * User-facing explanation of what this profile means in practice.
-     *
-     * The absence of on-device AI is stated plainly rather than hidden: a user whose
-     * device escalates to the cloud is entitled to know that before they teach it
-     * anything.
-     */
-    val explanation: String
-        get() = when (this) {
-            A_NANO_NATIVE -> "Most screen decisions are handled on this device."
-            B_LOCAL_MODEL -> "A downloaded local model handles screen decisions."
-            C_CLOUD_HYBRID -> "This device has no on-device AI. Difficult decisions are sent to the cloud."
-            D_OFFLINE_DETERMINISTIC -> "No AI runtime is available. Only previously learned deterministic steps can run."
-        }
 }

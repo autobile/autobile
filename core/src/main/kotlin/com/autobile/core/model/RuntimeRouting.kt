@@ -20,13 +20,20 @@ enum class RuntimeTier {
     val isCloud: Boolean get() = this == CLOUD_LIGHT || this == CLOUD_ADVANCED
     val isLocal: Boolean get() = !isCloud
 
-    val displayName: String
+    /**
+     * Name used in stored execution history.
+     *
+     * Not translated on purpose: history is a record of what happened, and a run recorded
+     * before the user changed language should still read the way it did when it ran. The
+     * interface translates what it renders live.
+     */
+    val diagnosticName: String
         get() = when (this) {
-            DETERMINISTIC -> "Deterministic"
-            DEVICE_AI -> "On-device AI"
-            LOCAL_LLM -> "Local model"
-            CLOUD_LIGHT -> "Cloud (light)"
-            CLOUD_ADVANCED -> "Cloud (advanced)"
+            DETERMINISTIC -> "deterministic"
+            DEVICE_AI -> "on-device AI"
+            LOCAL_LLM -> "local model"
+            CLOUD_LIGHT -> "cloud (light)"
+            CLOUD_ADVANCED -> "cloud (advanced)"
         }
 }
 
@@ -48,7 +55,8 @@ enum class EscalationReason {
     STRUCTURED_OUTPUT_UNSUPPORTED,
     POLICY_REQUIRED;
 
-    val displayName: String
+    /** Reason text written into stored history. See [RuntimeTier.diagnosticName]. */
+    val diagnosticName: String
         get() = when (this) {
             RUNTIME_UNAVAILABLE -> "runtime unavailable"
             CONFIDENCE_BELOW_THRESHOLD -> "confidence below threshold"

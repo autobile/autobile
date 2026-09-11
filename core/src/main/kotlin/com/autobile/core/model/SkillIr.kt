@@ -408,16 +408,7 @@ enum class AutonomyLevel {
     L1_SUGGEST,
     L2_ASK_BEFORE_ACTION,
     L3_AUTONOMOUS_LOW_RISK,
-    L4_EXPLICITLY_TRUSTED;
-
-    val label: String
-        get() = when (this) {
-            L0_OBSERVE -> "Observe"
-            L1_SUGGEST -> "Suggest"
-            L2_ASK_BEFORE_ACTION -> "Ask before action"
-            L3_AUTONOMOUS_LOW_RISK -> "Autonomous (low risk)"
-            L4_EXPLICITLY_TRUSTED -> "Trusted"
-        }
+    L4_EXPLICITLY_TRUSTED,
 }
 
 enum class RiskCategory {
