@@ -27,6 +27,9 @@ interface RuntimeVocabulary {
     fun riskDecision(verdict: String, reason: String): String
 
     // How a run ended.
+    fun ownScreenInFront(): String
+    fun couldNotComplete(step: String): String
+    fun awaitingRuntime(step: String): String
     fun stopped(): String
     fun stepFailed(): String
     fun screenProtected(): String
@@ -72,6 +75,10 @@ object EnglishRuntimeVocabulary : RuntimeVocabulary {
     override fun lowRiskAction() = "low risk action"
     override fun riskDecision(verdict: String, reason: String) = "$verdict: $reason"
 
+    override fun ownScreenInFront() =
+        "Autobile's own screen is in front, so this step has nothing to act on"
+    override fun couldNotComplete(step: String) = "Could not complete \"$step\""
+    override fun awaitingRuntime(step: String) = "Waiting for a runtime that can decide \"$step\""
     override fun stopped() = "Stopped"
     override fun stepFailed() = "Step failed"
     override fun screenProtected() = "This screen is protected and cannot be read"

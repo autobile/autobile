@@ -396,4 +396,7 @@
     <string name="run_suspended_review">검토할 때까지 이 자동화는 보류되어 있습니다</string>
     <string name="run_low_risk">위험이 낮은 동작</string>
     <string name="run_risk_decision">%1$s: %2$s</string>
+    <string name="run_own_screen">Autobile 자신의 화면이 떠 있어 이 단계가 다룰 대상이 없습니다</string>
+    <string name="run_could_not_complete">\"%1$s\"을(를) 마치지 못했습니다</string>
+    <string name="run_awaiting_runtime">\"%1$s\"을(를) 판단할 수 있는 실행 환경을 기다리는 중입니다</string>
 </resources>

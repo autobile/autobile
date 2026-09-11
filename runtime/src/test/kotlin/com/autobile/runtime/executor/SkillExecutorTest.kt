@@ -80,7 +80,11 @@ class SkillExecutorTest {
         riskEngine = RiskEngine(AppPolicyStore(database), settings)
     }
 
-    private fun executor(screen: FakeScreen, provider: ScriptedProvider): SkillExecutor {
+    private fun executor(
+        screen: FakeScreen,
+        provider: ScriptedProvider,
+        ownPackage: String = "com.autobile",
+    ): SkillExecutor {
         val router = routerWith(provider)
         return SkillExecutor(
             perception = screen,
@@ -91,6 +95,7 @@ class SkillExecutorTest {
             riskEngine = riskEngine,
             router = router,
             skillStore = skillStore,
+            ownPackage = ownPackage,
         )
     }
 
@@ -477,5 +482,44 @@ class SkillExecutorTest {
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.PARTIAL)
         assertThat(recorder.typesOf(ExecutionEventType.VALIDATION_RESULT).any { it.success == false }).isTrue()
+    }
+
+    @Test
+    fun `the agent never acts on Autobile's own interface`() = runTest {
+        // Autobile's own screen carries the automation's name, goal and step
+        // descriptions, so a label match against it succeeds readily. A run that had
+        // lost its place resolved a target inside Autobile, tapped it, and the repair
+        // proposed tapping it again — three presses on its own interface.
+        val ownScreen = FakeScreen(
+            screen(
+                packageName = "com.autobile",
+                windowTitle = "Autobile",
+                node("n1", text = "Daily totals", clickable = true),
+            ),
+        )
+        val skill = skill(listOf(clickStep(label = "Daily totals", resourceId = null)))
+        val recorder = Recorder()
+
+        val outcome = executor(ownScreen, ScriptedProvider())
+            .execute(skill, task(skill), recorder)
+
+        assertThat(ownScreen.clicked).isEmpty()
+        assertThat(outcome.status).isNotEqualTo(OutcomeStatus.SUCCESS)
+    }
+
+    @Test
+    fun `the same step runs normally on the app it was taught in`() = runTest {
+        val appScreen = FakeScreen(
+            screen(
+                packageName = "com.example.business",
+                windowTitle = "Reports",
+                node("n1", text = "Daily totals", clickable = true),
+            ),
+        )
+        val skill = skill(listOf(clickStep(label = "Daily totals", resourceId = null)))
+
+        executor(appScreen, ScriptedProvider()).execute(skill, task(skill), Recorder())
+
+        assertThat(appScreen.clicked).isNotEmpty()
     }
 }

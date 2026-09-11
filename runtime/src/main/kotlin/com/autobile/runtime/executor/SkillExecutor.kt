@@ -64,6 +64,14 @@ class SkillExecutor(
     private val minimizer: ContextMinimizer = ContextMinimizer(),
     private val time: TimeSource = TimeSource.System,
     private val words: RuntimeVocabulary = EnglishRuntimeVocabulary,
+    /**
+     * Autobile's own package.
+     *
+     * An automation operates other apps. If Autobile's interface is what is on screen
+     * when a step looks for its target, the run has lost its place, and the one thing
+     * that must not happen next is the agent driving its own interface.
+     */
+    private val ownPackage: String = "com.autobile",
 ) {
 
     suspend fun execute(
@@ -296,6 +304,15 @@ class SkillExecutor(
         val navigationSteps = mutableListOf<SkillStep>()
 
         while (attempt <= step.fallback.maxRetries) {
+            // Refused before resolution rather than after. Autobile's own screen contains
+            // text drawn from the automation itself — its name, its goal, its steps — so
+            // a label match against it succeeds readily and the agent taps its own
+            // interface, then proposes doing it again. Retrying cannot help: nothing here
+            // belongs to the app the step is for.
+            if (snapshot.packageName == ownPackage) {
+                return failedOutcome(step, index, startedAt, words.ownScreenInFront(), cloudCalls, deviceAiCalls)
+            }
+
             val screenshot = if (step.preferredResolver == ResolverKind.VISION || attempt > 0) {
                 (perception.captureScreenshot() as? ScreenshotCapture.Success)?.bitmap
             } else {
@@ -418,9 +435,9 @@ class SkillExecutor(
         }
 
         val message = if (awaitingReasoning) {
-            "Waiting for a runtime that can decide \"${step.describeForUser()}\""
+            words.awaitingRuntime(step.describeForUser())
         } else {
-            "Could not complete \"${step.describeForUser()}\""
+            words.couldNotComplete(step.describeForUser())
         }
         return StepOutcome(
             result = failedStep(step, index, startedAt, message, step.validation.mode),
@@ -429,6 +446,20 @@ class SkillExecutor(
             awaitingReasoning = awaitingReasoning,
         )
     }
+
+    /** A step that cannot proceed, with the reason kept rather than retried into noise. */
+    private fun failedOutcome(
+        step: SkillStep,
+        index: Int,
+        startedAt: Long,
+        reason: String,
+        cloudCalls: Int,
+        deviceAiCalls: Int,
+    ) = StepOutcome(
+        result = failedStep(step, index, startedAt, reason, ValidationMode.NONE),
+        cloudCalls = cloudCalls,
+        deviceAiCalls = deviceAiCalls,
+    )
 
     private suspend fun applyRecoveryMove(
         move: RecoveryMove,
