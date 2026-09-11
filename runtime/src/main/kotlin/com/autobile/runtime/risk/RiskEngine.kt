@@ -169,19 +169,19 @@ class RiskEngine(
 
     private fun describe(categories: Set<RiskCategory>, policyMode: AppPolicyMode): String = when {
         categories.contains(RiskCategory.PAYMENT) || categories.contains(RiskCategory.TRANSFER) ->
-            "this step moves money"
+            words.riskMovesMoney()
 
-        categories.contains(RiskCategory.PURCHASE) -> "this step completes a purchase"
-        categories.contains(RiskCategory.DELETE) -> "this step deletes something"
-        categories.contains(RiskCategory.MESSAGE_SEND) -> "this step sends a message"
-        categories.contains(RiskCategory.EXTERNAL_POST) -> "this step posts something others will see"
-        categories.contains(RiskCategory.CANCELLATION) -> "this step cancels something"
-        categories.contains(RiskCategory.PERMISSION_CHANGE) -> "this step changes a permission"
-        categories.contains(RiskCategory.ACCOUNT_CHANGE) -> "this step changes account settings"
-        categories.contains(RiskCategory.SUBSCRIPTION) -> "this step changes a subscription"
-        categories.contains(RiskCategory.BOOKING) -> "this step makes a booking"
-        policyMode == AppPolicyMode.ASK -> "you asked to confirm actions in this app"
-        else -> "confirmation required"
+        categories.contains(RiskCategory.PURCHASE) -> words.riskPurchase()
+        categories.contains(RiskCategory.DELETE) -> words.riskDelete()
+        categories.contains(RiskCategory.MESSAGE_SEND) -> words.riskMessageSend()
+        categories.contains(RiskCategory.EXTERNAL_POST) -> words.riskExternalPost()
+        categories.contains(RiskCategory.CANCELLATION) -> words.riskCancellation()
+        categories.contains(RiskCategory.PERMISSION_CHANGE) -> words.riskPermissionChange()
+        categories.contains(RiskCategory.ACCOUNT_CHANGE) -> words.riskAccountChange()
+        categories.contains(RiskCategory.SUBSCRIPTION) -> words.riskSubscription()
+        categories.contains(RiskCategory.BOOKING) -> words.riskBooking()
+        policyMode == AppPolicyMode.ASK -> words.riskAppSetToAsk()
+        else -> words.riskConfirmationRequired()
     }
 
     private companion object {

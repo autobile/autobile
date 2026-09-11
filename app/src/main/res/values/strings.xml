@@ -402,4 +402,16 @@
     <string name="run_own_screen">Autobile\'s own screen is in front, so this step has nothing to act on</string>
     <string name="run_could_not_complete">Could not complete \"%1$s\"</string>
     <string name="run_awaiting_runtime">Waiting for a runtime that can decide \"%1$s\"</string>
+    <string name="risk_why_moves_money">this step moves money</string>
+    <string name="risk_why_purchase">this step completes a purchase</string>
+    <string name="risk_why_delete">this step deletes something</string>
+    <string name="risk_why_message_send">this step sends a message</string>
+    <string name="risk_why_external_post">this step posts something others will see</string>
+    <string name="risk_why_cancellation">this step cancels something</string>
+    <string name="risk_why_permission_change">this step changes a permission</string>
+    <string name="risk_why_account_change">this step changes account settings</string>
+    <string name="risk_why_subscription">this step changes a subscription</string>
+    <string name="risk_why_booking">this step makes a booking</string>
+    <string name="risk_why_app_set_to_ask">you asked to confirm actions in this app</string>
+    <string name="risk_why_confirmation_required">confirmation required</string>
 </resources>

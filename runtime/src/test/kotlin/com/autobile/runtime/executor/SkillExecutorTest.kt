@@ -508,6 +508,36 @@ class SkillExecutorTest {
     }
 
     @Test
+    fun `a run started from inside Autobile opens the app the step was taught in`() = runTest {
+        // Pressing run happens in Autobile, so its own screen is what is in front when
+        // the first step looks around. That is ordinary, not a fault: the step knows
+        // which app it belongs to, and the run opens it rather than giving up.
+        val screen = FakeScreen(
+            current = screen(packageName = "com.autobile", windowTitle = "Autobile"),
+            nextScreen = screen(
+                packageName = "com.example.business",
+                windowTitle = "Reports",
+                node("n1", text = "Daily totals", clickable = true),
+            ),
+        )
+        val skill = skill(
+            listOf(
+                clickStep(
+                    label = "Daily totals",
+                    resourceId = null,
+                    expected = ExpectedState(requiredPackage = "com.example.business"),
+                ),
+            ),
+        )
+
+        val outcome = executor(screen, ScriptedProvider()).execute(skill, task(skill), Recorder())
+
+        assertThat(screen.launched).containsExactly("com.example.business")
+        assertThat(screen.clicked).isNotEmpty()
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+    }
+
+    @Test
     fun `the same step runs normally on the app it was taught in`() = runTest {
         val appScreen = FakeScreen(
             screen(
