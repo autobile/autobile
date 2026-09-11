@@ -12,10 +12,10 @@ Autobile은 기기에서 먼저 판단하는 Android 자동화 에이전트입�
 검사하며, 의미 있는 모든 단계는 실행 후 화면과 대조해 검증합니다.
 
 <p align="center">
-  <img src="docs/screenshots/onboarding-capability.png" width="24%" alt="이 기기가 할 수 있는 것을 보여주는 온보딩" />
   <img src="docs/screenshots/home.png" width="24%" alt="저장된 자동화 목록" />
-  <img src="docs/screenshots/replay.png" width="24%" alt="학습한 자동화 재실행" />
-  <img src="docs/screenshots/history.png" width="24%" alt="실행 이력" />
+  <img src="docs/screenshots/automation.png" width="24%" alt="자동화 하나의 실행 시점과 신뢰도" />
+  <img src="docs/screenshots/settings.png" width="24%" alt="설정 화면, 클라우드는 기본으로 꺼져 있음" />
+  <img src="docs/screenshots/korean.png" width="24%" alt="한국어로 표시된 화면" />
 </p>
 
 ## 구현된 기능
@@ -122,6 +122,24 @@ Android 접근성 정책과 스토어 규정은 시간이 지나며 바뀝니다
 계획하고 수행할 수 있는 빌드를 공개하기 전에 현재 배포 정책을 확인하세요. 전체 런타임을
 포함한 빌드라면 일반 스토어 등록보다 비공개 테스트나 직접 배포 채널이 더 적합할 수
 있습니다.
+
+## 언어
+
+현재 영어와 한국어를 지원합니다. 안드로이드 설정에서 앱별 언어를 고르면 그대로 따릅니다.
+
+언어 추가는 파일 하나면 됩니다.
+
+1. `app/src/main/res/values/strings.xml`을 `app/src/main/res/values-<코드>/strings.xml`로 복사
+2. `name` 속성은 그대로 두고 값만 번역
+3. 빌드
+
+그 외에 고칠 곳은 없습니다. 안드로이드 언어 선택 목록은 존재하는 `values-<코드>` 폴더에서
+자동 생성되므로, 매니페스트의 목록이 번역과 어긋날 일이 없습니다.
+
+의도적으로 번역하지 않는 것이 두 가지 있습니다. 저장된 실행 기록은 실행 당시의 문구를
+유지합니다. 나중에 언어가 바뀌는 기록은 더 이상 무슨 일이 있었는지에 대한 기록이 아니기
+때문입니다. 그리고 내장 서체는 라틴 문자만 포함하므로, 다른 문자는 기기가 제공하는 서체로
+표시됩니다.
 
 ## 프로젝트 상태
 

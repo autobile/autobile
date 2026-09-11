@@ -85,6 +85,13 @@ android {
         compose = true
     }
 
+    androidResources {
+        // Builds the per-app language list from whichever values-XX folders exist, so a new
+        // translation is added by dropping in one file rather than by editing a manifest
+        // list that would quietly fall out of step with the resources.
+        generateLocaleConfig = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

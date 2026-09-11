@@ -22,15 +22,7 @@ enum class AppPolicyMode {
     ALLOW,
     ASK,
     OBSERVE_ONLY,
-    BLOCK;
-
-    val displayName: String
-        get() = when (this) {
-            ALLOW -> "Allow"
-            ASK -> "Ask"
-            OBSERVE_ONLY -> "Observe only"
-            BLOCK -> "Block"
-        }
+    BLOCK,
 }
 
 enum class AppCategory {

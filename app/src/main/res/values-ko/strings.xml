@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Autobile</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">홈</string>
+    <string name="nav_history">기록</string>
+    <string name="nav_settings">설정</string>
+    <string name="action_back">뒤로</string>
+    <string name="action_continue">계속</string>
+    <string name="action_stop">중지</string>
+    <string name="action_cancel">취소</string>
+    <string name="action_ok">확인</string>
+    <string name="action_refresh">다시 확인</string>
+    <string name="action_open_settings">설정 열기</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_tagline">한 번만 보여주세요.\n나머지는 폰이 배웁니다.</string>
+    <string name="onboarding_step">%2$d단계 중 %1$d</string>
+    <string name="onboarding_capability_title">이 폰이 할 수 있는 것</string>
+    <string name="onboarding_permissions_title">준비되면 권한을 주세요</string>
+    <string name="onboarding_permissions_body">작업을 배우고 다시 실행하려면 화면 제어 권한이 필요합니다. 알림과 오버레이 권한은 트리거와 진행 상황 표시를 더해 줍니다.</string>
+    <string name="onboarding_permissions_note">화면 제어만 필수입니다. 나머지는 선택입니다.</string>
+    <string name="onboarding_first_run_title">실행되는 모습 보기</string>
+    <string name="onboarding_first_run_body">첫 자동화는 안드로이드 설정을 연 뒤, 설정 앱이 실제로 떴는지 확인합니다.</string>
+    <string name="onboarding_first_run_action">첫 자동화 실행</string>
+    <string name="onboarding_first_run_skip">이 예제 건너뛰기</string>
+    <string name="onboarding_teach_title">짧은 작업 가르치기</string>
+    <string name="onboarding_teach_body">서너 단계짜리 작업을 고르세요. Autobile은 어디를 눌렀는지가 아니라 그 버튼이 무엇을 뜻하는지 기록합니다.</string>
+    <string name="onboarding_teach_action">가르치기 시작</string>
+    <string name="onboarding_teach_later">나중에 가르치기</string>
+    <string name="onboarding_replay_title">배운 것을 다시 실행하기</string>
+    <string name="onboarding_replay_action">%1$s 다시 실행</string>
+    <string name="onboarding_finish">설정 마치기</string>
+
+    <!-- Capability -->
+    <string name="capability_phone_control">화면 제어</string>
+    <string name="capability_screen_understanding">화면 이해</string>
+    <string name="capability_on_device_ai">기기 내 AI</string>
+    <string name="capability_cloud_ai">클라우드 AI</string>
+    <string name="capability_available">사용 가능</string>
+    <string name="capability_unavailable">사용 불가</string>
+    <string name="capability_runtime_profile">실행 방식</string>
+
+    <!-- Permissions -->
+    <string name="permission_screen_control">화면 제어</string>
+    <string name="permission_notifications">알림 트리거</string>
+    <string name="permission_overlay">다른 앱 위에 진행 상황 표시</string>
+    <string name="permission_granted">허용됨</string>
+
+    <!-- Home -->
+    <string name="home_agent_ready">대기 중</string>
+    <string name="home_agent_ready_detail">실행 중에는 항상 화면에 표시되고, 언제든 멈출 수 있습니다.</string>
+    <string name="home_command_hint">폰이 무엇을 해 주면 될까요?</string>
+    <string name="home_command_send">요청 해석하기</string>
+    <string name="home_automations">자동화</string>
+    <string name="home_teach">가르치기</string>
+    <string name="home_empty_title">아직 배운 것이 없습니다</string>
+    <string name="home_empty_detail">한 번만 보여주면 다시 실행할 수 있는 자동화가 됩니다.</string>
+
+    <!-- Agent activity -->
+    <string name="agent_step_progress">%2$d단계 중 %1$d</string>
+    <string name="agent_adapting">적응 중: %1$s</string>
+
+    <!-- Skill detail -->
+    <string name="skill_run_now">지금 실행</string>
+    <string name="skill_trigger">실행 시점</string>
+    <string name="skill_autonomy">자율성</string>
+    <string name="skill_runtime_requirements">필요한 것</string>
+    <string name="skill_last_run">마지막 실행</string>
+    <string name="skill_never_run">실행한 적 없음</string>
+    <string name="skill_success_rate">%2$d번 중 %1$d번 성공</string>
+    <string name="skill_confidence">신뢰도</string>
+    <string name="skill_enabled">사용</string>
+    <string name="skill_edit_heading">직접 말로 바꾸기</string>
+    <string name="skill_edit_hint">9시 말고 8시 30분에</string>
+    <string name="skill_edit_review">변경 내용 확인</string>
+    <string name="skill_repairs">확인할 수리 제안</string>
+    <string name="skill_repair_meaning_warning">이 수리는 자동화가 하는 일 자체를 바꿉니다. 자세히 읽어 보세요.</string>
+    <string name="skill_repair_apply">적용</string>
+    <string name="skill_repair_dismiss">무시</string>
+    <string name="skill_versions">버전 기록</string>
+    <string name="skill_version_label">버전 %1$d</string>
+    <string name="skill_version_restore">되돌리기</string>
+    <string name="skill_version_saved">저장된 버전</string>
+    <string name="skill_delete">자동화 삭제</string>
+    <string name="skill_delete_confirm_title">%1$s을(를) 삭제할까요?</string>
+    <string name="skill_delete_confirm_body">저장된 버전과 수리 제안도 함께 사라집니다. 실행 기록은 남습니다.</string>
+    <string name="skill_unavailable_title">자동화를 찾을 수 없습니다</string>
+    <string name="skill_unavailable_detail">삭제되었을 수 있습니다.</string>
+
+    <!-- Teaching -->
+    <string name="teach_title">직접 보여주며 가르치기</string>
+    <string name="teach_body">기록을 시작하고 평소 쓰는 앱으로 옮겨 작업을 한 번 해 보세요. 끝나면 알림을 눌러 돌아오면 됩니다.</string>
+    <string name="teach_name_label">자동화 이름</string>
+    <string name="teach_start">기록 시작</string>
+    <string name="teach_recording_title">%1$s 배우는 중</string>
+    <string name="teach_actions_captured">동작 %1$d개 기록됨</string>
+    <string name="teach_current_app">%1$s에서</string>
+    <string name="teach_last_action">마지막 동작</string>
+    <string name="teach_continue">계속 시연하기</string>
+    <string name="teach_finish">마치고 이해시키기</string>
+    <string name="teach_cancel">기록 취소</string>
+    <string name="teach_understanding">시연을 이해하는 중…</string>
+    <string name="teach_nothing_recorded">기록된 동작이 없습니다. 다시 시작해 다른 앱에서 작업해 보세요.</string>
+
+    <!-- Teach review -->
+    <string name="review_title">이렇게 이해했습니다</string>
+    <string name="review_body">저장하기 전에 목표와 값을 확인해 주세요. 부수적인 동작 %1$d개는 제외했습니다.</string>
+    <string name="review_name">이름</string>
+    <string name="review_goal">목표</string>
+    <string name="review_variables">실행할 때마다 달라지는 값</string>
+    <string name="review_variables_none">달라지는 값이 없습니다</string>
+    <string name="review_constants">항상 같은 값</string>
+    <string name="review_constants_none">고정된 값이 없습니다</string>
+    <string name="review_steps">단계</string>
+    <string name="review_schedule">정해진 시각에 실행</string>
+    <string name="review_hour">시</string>
+    <string name="review_minute">분</string>
+    <string name="review_autonomy">어디까지 맡길지</string>
+    <string name="review_correction_heading">잘못 이해했나요?</string>
+    <string name="review_correction_body">바로잡을 내용을 적으면 문구만이 아니라 단계 자체를 다시 씁니다.</string>
+    <string name="review_correction_hint">총매출 말고 순매출을 보내기</string>
+    <string name="review_correction_action">이해 바로잡기</string>
+    <string name="review_used_cloud">이 시연을 읽는 데 클라우드를 사용했습니다.</string>
+    <string name="review_save">자동화 저장</string>
+    <string name="review_empty_title">확인할 내용이 없습니다</string>
+    <string name="review_empty_detail">먼저 가르치기를 끝내 주세요.</string>
+    <string name="review_updated">수정함: %1$s</string>
+
+    <!-- History -->
+    <string name="history_title">실행 기록</string>
+    <string name="history_empty_title">아직 실행한 적이 없습니다</string>
+    <string name="history_empty_detail">실행할 때마다 어떤 단계를 거쳤고 무엇을 확인했는지 여기에 남습니다.</string>
+    <string name="history_result">결과</string>
+    <string name="history_runtime">실행 방식</string>
+    <string name="history_runtime_breakdown">규칙 %1$d · 기기 내 %2$d · 클라우드 %3$d</string>
+    <string name="history_what_happened">무슨 일이 있었나</string>
+    <string name="history_replay">다시 실행</string>
+    <string name="history_timeline">진행 순서</string>
+    <string name="history_unavailable_title">기록을 찾을 수 없습니다</string>
+    <string name="history_unavailable_detail">불러오지 못했습니다.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">설정</string>
+    <string name="settings_device">이 기기</string>
+    <string name="settings_permissions">권한</string>
+    <string name="settings_cloud">클라우드 보조</string>
+    <string name="settings_cloud_enabled">클라우드 사용</string>
+    <string name="settings_cloud_enabled_detail">기기에서 판단할 수 없을 때만 사용합니다.</string>
+    <string name="settings_cloud_screenshots">스크린샷 전송</string>
+    <string name="settings_cloud_screenshots_detail">기본으로 꺼져 있으며, 텍스트 전송과 별개입니다.</string>
+    <string name="settings_masking">민감한 텍스트 가리기</string>
+    <string name="settings_masking_detail">인증번호, 카드번호, 주소를 기기 밖으로 내보내기 전에 가립니다.</string>
+    <string name="settings_cloud_endpoint">엔드포인트</string>
+    <string name="settings_cloud_key">API 키</string>
+    <string name="settings_cloud_key_set">키가 저장되어 있습니다</string>
+    <string name="settings_touch_indicator">누르는 위치 표시</string>
+    <string name="settings_touch_indicator_detail">에이전트가 다음에 사용할 항목을 표시합니다.</string>
+    <string name="settings_kill_switch">모든 자동화 중지</string>
+    <string name="settings_kill_switch_detail">다시 끄기 전까지 아무것도 실행되지 않습니다.</string>
+    <string name="settings_model_download">기기 내 모델</string>
+    <string name="settings_model_download_body">모델을 내려받으면 화면 판단을 기기 안에서 처리할 수 있습니다.</string>
+    <string name="settings_model_download_action">동의하고 내려받기</string>
+    <string name="settings_model_download_retry">다시 시도</string>
+    <string name="settings_app_policy">앱별 정책</string>
+    <string name="settings_app_policy_detail">각 앱 안에서 Autobile이 무엇을 할 수 있는지 정합니다.</string>
+    <string name="settings_metrics">측정값</string>
+    <string name="metric_weekly_autonomous">이번 주 스스로 실행</string>
+    <string name="metric_no_cloud">클라우드 없이 완료</string>
+    <string name="metric_local_resolution">기기에서 판단</string>
+    <string name="metric_recovery">변경 후 복구 성공</string>
+    <string name="metric_task_success">완료된 실행</string>
+
+    <!-- Risk confirmation -->
+    <string name="risk_title">계속하기 전에 확인해 주세요</string>
+    <string name="risk_allow">진행</string>
+    <string name="risk_decline">하지 않기</string>
+
+    <!-- Edit confirmation -->
+    <string name="edit_title">이대로 바꿀까요?</string>
+    <string name="edit_meaning_warning">찾는 방식이 아니라 자동화가 하는 일 자체가 바뀝니다.</string>
+    <string name="edit_before">지금</string>
+    <string name="edit_after">변경 후</string>
+    <string name="edit_apply">변경 적용</string>
+    <string name="edit_rejected_title">변경하지 못했습니다</string>
+
+    <!-- Command -->
+    <string name="command_matched">맞는 자동화를 찾았습니다</string>
+    <string name="command_needs_teaching">아직 배우지 않은 작업입니다. 한 번 가르쳐 두면 다음부터 실행할 수 있습니다.</string>
+
+    <!-- Trigger descriptions -->
+    <string name="trigger_manual">직접 실행</string>
+    <string name="trigger_time_daily">매일 %1$s</string>
+    <string name="trigger_time_days">%1$s %2$s</string>
+    <string name="trigger_notification">알림이 오면</string>
+    <string name="trigger_notification_condition">조건: %1$s</string>
+
+    <!-- Task states -->
+    <string name="task_state_created">대기 중</string>
+    <string name="task_state_planning">무엇을 할지 정하는 중</string>
+    <string name="task_state_awaiting_confirmation">확인을 기다리는 중</string>
+    <string name="task_state_running">실행 중</string>
+    <string name="task_state_waiting_for_reasoning">이 폰이 판단할 수 있을 때까지 멈춤</string>
+    <string name="task_state_waiting_for_user">확인을 기다리는 중</string>
+    <string name="task_state_deferred">미뤄짐</string>
+    <string name="task_state_completed">완료</string>
+    <string name="task_state_failed">실패</string>
+    <string name="task_state_cancelled">중지됨</string>
+    <string name="task_state_blocked">차단됨</string>
+
+    <!-- Task origins -->
+    <string name="origin_manual">직접 실행</string>
+    <string name="origin_command">요청으로 실행</string>
+    <string name="origin_time">예약 실행</string>
+    <string name="origin_notification">알림으로 실행</string>
+    <string name="origin_replay">다시 실행</string>
+
+    <!-- Autonomy levels -->
+    <string name="autonomy_observe">보기만 함</string>
+    <string name="autonomy_suggest">제안만</string>
+    <string name="autonomy_ask">먼저 묻기</string>
+    <string name="autonomy_low_risk">위험 없는 단계는 직접</string>
+    <string name="autonomy_trusted">전부 맡김</string>
+
+    <!-- Runtime profiles -->
+    <string name="profile_nano">기기 내 AI</string>
+    <string name="profile_local">로컬 모델</string>
+    <string name="profile_cloud">클라우드 보조</string>
+    <string name="profile_offline">규칙 기반 오프라인</string>
+    <string name="profile_nano_detail">화면 판단 대부분을 이 폰에서 처리합니다.</string>
+    <string name="profile_local_detail">내려받은 모델이 화면 판단을 처리합니다.</string>
+    <string name="profile_cloud_detail">이 폰에는 기기 내 AI가 없어 어려운 판단은 클라우드로 보냅니다.</string>
+    <string name="profile_offline_detail">쓸 수 있는 AI가 없습니다. 이미 배운 단계만 실행됩니다.</string>
+
+    <!-- Runtime tiers -->
+    <string name="tier_deterministic">규칙</string>
+    <string name="tier_device">기기 내 AI</string>
+    <string name="tier_local">로컬 모델</string>
+    <string name="tier_cloud_light">클라우드 소형 모델</string>
+    <string name="tier_cloud_advanced">클라우드 대형 모델</string>
+
+    <!-- App policy modes -->
+    <string name="policy_allow">허용</string>
+    <string name="policy_ask">물어보기</string>
+    <string name="policy_observe">보기만</string>
+    <string name="policy_block">차단</string>
+
+    <!-- Risk categories -->
+    <string name="risk_message_send">메시지를 보냅니다</string>
+    <string name="risk_external_post">공개적으로 게시합니다</string>
+    <string name="risk_purchase">구매합니다</string>
+    <string name="risk_payment">결제합니다</string>
+    <string name="risk_transfer">돈을 옮깁니다</string>
+    <string name="risk_subscription">구독을 변경합니다</string>
+    <string name="risk_booking">예약합니다</string>
+    <string name="risk_cancellation">취소합니다</string>
+    <string name="risk_delete">삭제합니다</string>
+    <string name="risk_permission_change">권한을 변경합니다</string>
+    <string name="risk_account_change">계정 설정을 변경합니다</string>
+
+    <!-- Execution events -->
+    <string name="event_task_created">실행 시작</string>
+    <string name="event_skill_matched">자동화 선택</string>
+    <string name="event_precondition">사전 조건 확인</string>
+    <string name="event_step_started">단계 시작</string>
+    <string name="event_resolver_selected">대상 찾음</string>
+    <string name="event_runtime_selected">실행 방식 선택</string>
+    <string name="event_action_executed">동작 수행</string>
+    <string name="event_validation">결과 확인</string>
+    <string name="event_recovery_started">다른 방법 찾는 중</string>
+    <string name="event_recovery_completed">다른 방법 찾음</string>
+    <string name="event_step_failed">단계 실패</string>
+    <string name="event_risk_decision">위험 확인</string>
+    <string name="event_user_confirmation">사용자 확인 요청</string>
+    <string name="event_patch_proposed">수리 제안</string>
+    <string name="event_task_deferred">미룸</string>
+    <string name="event_task_completed">완료</string>
+    <string name="event_task_failed">완료하지 못함</string>
+    <string name="event_task_cancelled">중지됨</string>
+
+    <!-- Days of the week, for trigger descriptions -->
+    <string name="day_mon">월</string>
+    <string name="day_tue">화</string>
+    <string name="day_wed">수</string>
+    <string name="day_thu">목</string>
+    <string name="day_fri">금</string>
+    <string name="day_sat">토</string>
+    <string name="day_sun">일</string>
+
+    <!-- Messages -->
+    <string name="message_saved">자동화를 저장했습니다</string>
+    <string name="message_name_and_goal_required">이름과 목표를 모두 적어 주세요</string>
+    <string name="message_schedule_invalid">00:00에서 23:59 사이의 시각을 입력해 주세요</string>
+    <string name="message_repair_applied">수리를 적용했습니다</string>
+    <string name="message_repair_dismissed">수리를 무시했습니다</string>
+    <string name="message_rolled_back">버전 %1$d(으)로 되돌렸습니다</string>
+    <string name="message_deleted">자동화를 삭제했습니다</string>
+    <string name="message_stopped">이번 단계까지만 하고 멈춥니다</string>
+    <string name="settings_during_run">실행 중에는</string>
+    <string name="settings_app_policy_empty">아직 정책이 필요한 앱이 없습니다. 자동화가 앱을 처음 다룰 때 추가됩니다.</string>
+    <string name="onboarding_ready_title">준비되었습니다</string>
+    <string name="onboarding_ready_body">원할 때 언제든 작업을 가르치면 됩니다. 가르친 것은 홈 화면에 나타납니다.</string>
+    <string name="executability_ready">실행 준비됨</string>
+    <string name="executability_no_screen_control">실행하려면 화면 제어 권한이 필요합니다</string>
+    <string name="executability_stopped">자동화가 중지되어 있습니다. 설정에서 다시 켜 주세요.</string>
+    <string name="executability_locked">폰이 잠겨 있습니다. 잠금을 풀면 실행됩니다.</string>
+    <string name="executability_unlock">잠금을 풀어야 실행할 수 있습니다</string>
+    <string name="executability_needs_you">중간에 확인이 필요해서, 곁에 계실 때까지 기다립니다</string>
+    <string name="executability_offline">연결이 없습니다. 온라인이 되면 실행됩니다.</string>
+    <string name="executability_os_blocked">안드로이드가 백그라운드 실행을 막았습니다. 다시 시도합니다.</string>
+    <string name="executability_app_blocked">이 앱에 설정한 정책이 허용하지 않습니다</string>
+    <string name="teach_notification_channel">가르치는 중</string>
+    <string name="teach_notification_title">Autobile이 배우는 중입니다</string>
+    <string name="teach_notification_body">작업을 해 보신 뒤 여기로 돌아와 마치세요.</string>
+</resources>

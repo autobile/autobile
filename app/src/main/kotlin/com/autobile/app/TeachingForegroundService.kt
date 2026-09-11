@@ -15,7 +15,7 @@ class TeachingForegroundService : Service() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
         manager?.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Teaching sessions", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CHANNEL_ID, getString(R.string.teach_notification_channel), NotificationManager.IMPORTANCE_LOW),
         )
         val reopen = PendingIntent.getActivity(
             this,
@@ -27,8 +27,8 @@ class TeachingForegroundService : Service() {
             NOTIFICATION_ID,
             NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(com.autobile.runtime.R.drawable.ic_autobile_agent)
-                .setContentTitle("Autobile is learning")
-                .setContentText("Perform the task, then return here to finish teaching.")
+                .setContentTitle(getString(R.string.teach_notification_title))
+                .setContentText(getString(R.string.teach_notification_body))
                 .setContentIntent(reopen)
                 .setOngoing(true)
                 .setSilent(true)

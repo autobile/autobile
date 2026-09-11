@@ -1,4 +1,316 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Autobile</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_history">History</string>
+    <string name="nav_settings">Settings</string>
+    <string name="action_back">Back</string>
+    <string name="action_continue">Continue</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_ok">OK</string>
+    <string name="action_refresh">Check again</string>
+    <string name="action_open_settings">Open settings</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_tagline">Show it once.\nYour phone learns the rest.</string>
+    <string name="onboarding_step">Step %1$d of %2$d</string>
+    <string name="onboarding_capability_title">What this phone can do</string>
+    <string name="onboarding_permissions_title">Give access when you are ready</string>
+    <string name="onboarding_permissions_body">Autobile needs screen control to learn a task and repeat it. Notification and overlay access add triggers and visible progress.</string>
+    <string name="onboarding_permissions_note">Only screen control is required. The rest stay optional.</string>
+    <string name="onboarding_first_run_title">See a task run</string>
+    <string name="onboarding_first_run_body">Your first automation opens Android settings, then checks that the settings app actually appeared.</string>
+    <string name="onboarding_first_run_action">Run first automation</string>
+    <string name="onboarding_first_run_skip">Skip this example</string>
+    <string name="onboarding_teach_title">Teach a short routine</string>
+    <string name="onboarding_teach_body">Pick something three to five steps long. Autobile records what the controls mean, not where you tapped.</string>
+    <string name="onboarding_teach_action">Start teaching</string>
+    <string name="onboarding_teach_later">I will teach one later</string>
+    <string name="onboarding_replay_title">Replay what your phone learned</string>
+    <string name="onboarding_replay_action">Replay %1$s</string>
+    <string name="onboarding_finish">Finish setup</string>
+
+    <!-- Capability -->
+    <string name="capability_phone_control">Phone control</string>
+    <string name="capability_screen_understanding">Screen understanding</string>
+    <string name="capability_on_device_ai">On-device AI</string>
+    <string name="capability_cloud_ai">Cloud AI</string>
+    <string name="capability_available">Available</string>
+    <string name="capability_unavailable">Not available</string>
+    <string name="capability_runtime_profile">Runtime profile</string>
+
+    <!-- Permissions -->
+    <string name="permission_screen_control">Screen control</string>
+    <string name="permission_notifications">Notification triggers</string>
+    <string name="permission_overlay">Progress over other apps</string>
+    <string name="permission_granted">Granted</string>
+
+    <!-- Home -->
+    <string name="home_agent_ready">Agent ready</string>
+    <string name="home_agent_ready_detail">A run stays visible and can be stopped at any time.</string>
+    <string name="home_command_hint">What should your phone do?</string>
+    <string name="home_command_send">Interpret this request</string>
+    <string name="home_automations">Automations</string>
+    <string name="home_teach">Teach</string>
+    <string name="home_empty_title">Nothing learned yet</string>
+    <string name="home_empty_detail">Show Autobile a routine once and it becomes an automation you can replay.</string>
+
+    <!-- Agent activity -->
+    <string name="agent_step_progress">Step %1$d of %2$d</string>
+    <string name="agent_adapting">Adapting: %1$s</string>
+
+    <!-- Skill detail -->
+    <string name="skill_run_now">Run now</string>
+    <string name="skill_trigger">Trigger</string>
+    <string name="skill_autonomy">Autonomy</string>
+    <string name="skill_runtime_requirements">Needs</string>
+    <string name="skill_last_run">Last run</string>
+    <string name="skill_never_run">Never run</string>
+    <string name="skill_success_rate">Succeeded %1$d of %2$d runs</string>
+    <string name="skill_confidence">Confidence</string>
+    <string name="skill_enabled">Enabled</string>
+    <string name="skill_edit_heading">Change it in your own words</string>
+    <string name="skill_edit_hint">Run at 8:30 instead</string>
+    <string name="skill_edit_review">Review change</string>
+    <string name="skill_repairs">Repairs to review</string>
+    <string name="skill_repair_meaning_warning">This repair changes what the automation does. Read it closely.</string>
+    <string name="skill_repair_apply">Apply</string>
+    <string name="skill_repair_dismiss">Dismiss</string>
+    <string name="skill_versions">Version history</string>
+    <string name="skill_version_label">Version %1$d</string>
+    <string name="skill_version_restore">Restore</string>
+    <string name="skill_version_saved">Saved version</string>
+    <string name="skill_delete">Delete automation</string>
+    <string name="skill_delete_confirm_title">Delete %1$s?</string>
+    <string name="skill_delete_confirm_body">Its saved versions and repair proposals go too. Execution history stays.</string>
+    <string name="skill_unavailable_title">Automation unavailable</string>
+    <string name="skill_unavailable_detail">It may have been deleted.</string>
+
+    <!-- Teaching -->
+    <string name="teach_title">Teach by doing</string>
+    <string name="teach_body">Start recording, switch to the app you use, and do the task once. Come back through the notification when you are done.</string>
+    <string name="teach_name_label">Name this automation</string>
+    <string name="teach_start">Start recording</string>
+    <string name="teach_recording_title">Learning %1$s</string>
+    <string name="teach_actions_captured">%1$d actions captured</string>
+    <string name="teach_current_app">In %1$s</string>
+    <string name="teach_last_action">Last action</string>
+    <string name="teach_continue">Continue demonstrating</string>
+    <string name="teach_finish">Finish and understand</string>
+    <string name="teach_cancel">Cancel recording</string>
+    <string name="teach_understanding">Understanding your demonstration…</string>
+    <string name="teach_nothing_recorded">Nothing was recorded. Start again and do the task in another app.</string>
+
+    <!-- Teach review -->
+    <string name="review_title">This is what I understood</string>
+    <string name="review_body">Check the goal and the values before saving. %1$d incidental actions were left out.</string>
+    <string name="review_name">Name</string>
+    <string name="review_goal">Goal</string>
+    <string name="review_variables">Changes each run</string>
+    <string name="review_variables_none">Nothing changes between runs</string>
+    <string name="review_constants">Stays the same</string>
+    <string name="review_constants_none">No fixed values found</string>
+    <string name="review_steps">Steps</string>
+    <string name="review_schedule">Run on a schedule</string>
+    <string name="review_hour">Hour</string>
+    <string name="review_minute">Minute</string>
+    <string name="review_autonomy">How much freedom it has</string>
+    <string name="review_correction_heading">Something not right?</string>
+    <string name="review_correction_body">Describe the correction and the steps are rewritten, not just the wording.</string>
+    <string name="review_correction_hint">Send net sales, not gross</string>
+    <string name="review_correction_action">Correct my understanding</string>
+    <string name="review_used_cloud">The cloud helped read this demonstration.</string>
+    <string name="review_save">Save automation</string>
+    <string name="review_empty_title">Nothing to review</string>
+    <string name="review_empty_detail">Finish a teaching session first.</string>
+    <string name="review_updated">Updated: %1$s</string>
+
+    <!-- History -->
+    <string name="history_title">Execution history</string>
+    <string name="history_empty_title">No runs yet</string>
+    <string name="history_empty_detail">Every run is recorded here, with the steps it took and what it checked.</string>
+    <string name="history_result">Result</string>
+    <string name="history_runtime">Runtime</string>
+    <string name="history_runtime_breakdown">%1$d deterministic, %2$d on-device, %3$d cloud</string>
+    <string name="history_what_happened">What happened</string>
+    <string name="history_replay">Replay</string>
+    <string name="history_timeline">Timeline</string>
+    <string name="history_unavailable_title">Run unavailable</string>
+    <string name="history_unavailable_detail">Its history could not be loaded.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_device">This device</string>
+    <string name="settings_permissions">Access</string>
+    <string name="settings_cloud">Cloud assistance</string>
+    <string name="settings_cloud_enabled">Use the cloud</string>
+    <string name="settings_cloud_enabled_detail">Only when nothing on the device can answer.</string>
+    <string name="settings_cloud_screenshots">Send screenshots</string>
+    <string name="settings_cloud_screenshots_detail">Off by default, separately from text.</string>
+    <string name="settings_masking">Mask sensitive text</string>
+    <string name="settings_masking_detail">Hides codes, cards and addresses before anything leaves.</string>
+    <string name="settings_cloud_endpoint">Endpoint</string>
+    <string name="settings_cloud_key">API key</string>
+    <string name="settings_cloud_key_set">A key is saved</string>
+    <string name="settings_touch_indicator">Show what is being tapped</string>
+    <string name="settings_touch_indicator_detail">Marks the control the agent is about to use.</string>
+    <string name="settings_kill_switch">Stop all automation</string>
+    <string name="settings_kill_switch_detail">Nothing runs until you turn this back off.</string>
+    <string name="settings_model_download">On-device model</string>
+    <string name="settings_model_download_body">This device can download a model so screen decisions stay local.</string>
+    <string name="settings_model_download_action">Agree and download</string>
+    <string name="settings_model_download_retry">Try again</string>
+    <string name="settings_app_policy">App policy</string>
+    <string name="settings_app_policy_detail">What Autobile may do inside each app.</string>
+    <string name="settings_metrics">Measurements</string>
+    <string name="metric_weekly_autonomous">Ran by itself this week</string>
+    <string name="metric_no_cloud">Finished without the cloud</string>
+    <string name="metric_local_resolution">Decided on this device</string>
+    <string name="metric_recovery">Recovered after a change</string>
+    <string name="metric_task_success">Runs that finished</string>
+
+    <!-- Risk confirmation -->
+    <string name="risk_title">Confirm before continuing</string>
+    <string name="risk_allow">Do it</string>
+    <string name="risk_decline">Not now</string>
+
+    <!-- Edit confirmation -->
+    <string name="edit_title">Apply this change?</string>
+    <string name="edit_meaning_warning">This changes what the automation does, not just how it finds things.</string>
+    <string name="edit_before">Now</string>
+    <string name="edit_after">After</string>
+    <string name="edit_apply">Apply change</string>
+    <string name="edit_rejected_title">Change not applied</string>
+
+    <!-- Command -->
+    <string name="command_matched">Found a matching automation</string>
+    <string name="command_needs_teaching">Nothing learned for that yet. Teach it once and it will run next time.</string>
+
+    <!-- Trigger descriptions -->
+    <string name="trigger_manual">You start it</string>
+    <string name="trigger_time_daily">Every day at %1$s</string>
+    <string name="trigger_time_days">%1$s at %2$s</string>
+    <string name="trigger_notification">When a notification arrives</string>
+    <string name="trigger_notification_condition">When: %1$s</string>
+
+    <!-- Task states -->
+    <string name="task_state_created">Queued</string>
+    <string name="task_state_planning">Working out what to do</string>
+    <string name="task_state_awaiting_confirmation">Waiting for you</string>
+    <string name="task_state_running">Running</string>
+    <string name="task_state_waiting_for_reasoning">Paused until this phone can decide</string>
+    <string name="task_state_waiting_for_user">Waiting for you</string>
+    <string name="task_state_deferred">Postponed</string>
+    <string name="task_state_completed">Completed</string>
+    <string name="task_state_failed">Failed</string>
+    <string name="task_state_cancelled">Stopped</string>
+    <string name="task_state_blocked">Blocked</string>
+
+    <!-- Task origins -->
+    <string name="origin_manual">Started by you</string>
+    <string name="origin_command">From a request</string>
+    <string name="origin_time">On a schedule</string>
+    <string name="origin_notification">From a notification</string>
+    <string name="origin_replay">Replayed</string>
+
+    <!-- Autonomy levels -->
+    <string name="autonomy_observe">Watch only</string>
+    <string name="autonomy_suggest">Suggest</string>
+    <string name="autonomy_ask">Ask first</string>
+    <string name="autonomy_low_risk">Run low-risk steps</string>
+    <string name="autonomy_trusted">Fully trusted</string>
+
+    <!-- Runtime profiles -->
+    <string name="profile_nano">On-device AI</string>
+    <string name="profile_local">Local model</string>
+    <string name="profile_cloud">Cloud assisted</string>
+    <string name="profile_offline">Offline deterministic</string>
+    <string name="profile_nano_detail">Most screen decisions happen on this phone.</string>
+    <string name="profile_local_detail">A downloaded model handles screen decisions.</string>
+    <string name="profile_cloud_detail">This phone has no on-device AI, so hard decisions go to the cloud.</string>
+    <string name="profile_offline_detail">No AI runtime is available. Only steps already learned can run.</string>
+
+    <!-- Runtime tiers -->
+    <string name="tier_deterministic">Deterministic</string>
+    <string name="tier_device">On-device AI</string>
+    <string name="tier_local">Local model</string>
+    <string name="tier_cloud_light">Cloud, small model</string>
+    <string name="tier_cloud_advanced">Cloud, large model</string>
+
+    <!-- App policy modes -->
+    <string name="policy_allow">Allow</string>
+    <string name="policy_ask">Ask</string>
+    <string name="policy_observe">Watch only</string>
+    <string name="policy_block">Block</string>
+
+    <!-- Risk categories -->
+    <string name="risk_message_send">Sends a message</string>
+    <string name="risk_external_post">Posts publicly</string>
+    <string name="risk_purchase">Buys something</string>
+    <string name="risk_payment">Pays</string>
+    <string name="risk_transfer">Moves money</string>
+    <string name="risk_subscription">Changes a subscription</string>
+    <string name="risk_booking">Books something</string>
+    <string name="risk_cancellation">Cancels something</string>
+    <string name="risk_delete">Deletes something</string>
+    <string name="risk_permission_change">Changes a permission</string>
+    <string name="risk_account_change">Changes account settings</string>
+
+    <!-- Execution events -->
+    <string name="event_task_created">Run started</string>
+    <string name="event_skill_matched">Automation matched</string>
+    <string name="event_precondition">Precondition checked</string>
+    <string name="event_step_started">Step started</string>
+    <string name="event_resolver_selected">Element found</string>
+    <string name="event_runtime_selected">Runtime chosen</string>
+    <string name="event_action_executed">Action performed</string>
+    <string name="event_validation">Checked the result</string>
+    <string name="event_recovery_started">Looking for another way</string>
+    <string name="event_recovery_completed">Found another way</string>
+    <string name="event_step_failed">Step did not work</string>
+    <string name="event_risk_decision">Risk checked</string>
+    <string name="event_user_confirmation">You were asked</string>
+    <string name="event_patch_proposed">Repair proposed</string>
+    <string name="event_task_deferred">Postponed</string>
+    <string name="event_task_completed">Finished</string>
+    <string name="event_task_failed">Did not finish</string>
+    <string name="event_task_cancelled">Stopped</string>
+
+    <!-- Days of the week, for trigger descriptions -->
+    <string name="day_mon">Mon</string>
+    <string name="day_tue">Tue</string>
+    <string name="day_wed">Wed</string>
+    <string name="day_thu">Thu</string>
+    <string name="day_fri">Fri</string>
+    <string name="day_sat">Sat</string>
+    <string name="day_sun">Sun</string>
+
+    <!-- Messages -->
+    <string name="message_saved">Automation saved</string>
+    <string name="message_name_and_goal_required">A name and a goal are both needed</string>
+    <string name="message_schedule_invalid">Use a time between 00:00 and 23:59</string>
+    <string name="message_repair_applied">Repair applied</string>
+    <string name="message_repair_dismissed">Repair dismissed</string>
+    <string name="message_rolled_back">Restored version %1$d</string>
+    <string name="message_deleted">Automation deleted</string>
+    <string name="message_stopped">Stopping after this step</string>
+    <string name="settings_during_run">While a run is happening</string>
+    <string name="settings_app_policy_empty">No apps needing a policy were found yet. Autobile adds one the first time an automation touches an app.</string>
+    <string name="onboarding_ready_title">You are set up</string>
+    <string name="onboarding_ready_body">Teach a routine whenever you are ready. Everything you teach appears on the home screen.</string>
+    <string name="executability_ready">Ready to run</string>
+    <string name="executability_no_screen_control">Autobile needs screen control before it can run this</string>
+    <string name="executability_stopped">Automation is stopped. Turn it back on in settings.</string>
+    <string name="executability_locked">The phone is locked. This will run once it is unlocked.</string>
+    <string name="executability_unlock">Unlock the phone to let this run</string>
+    <string name="executability_needs_you">This needs you to confirm a step, so it will wait until you are here</string>
+    <string name="executability_offline">No connection. This will run when the phone is back online.</string>
+    <string name="executability_os_blocked">Android would not let this start in the background. It will try again.</string>
+    <string name="executability_app_blocked">Your policy for this app does not allow it</string>
+    <string name="teach_notification_channel">Teaching sessions</string>
+    <string name="teach_notification_title">Autobile is learning</string>
+    <string name="teach_notification_body">Do the task, then come back here to finish.</string>
 </resources>

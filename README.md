@@ -12,10 +12,10 @@ explicitly enabled cloud provider. Important actions are checked by deterministi
 policy and every meaningful step is validated against the resulting screen.
 
 <p align="center">
-  <img src="docs/screenshots/onboarding-capability.png" width="24%" alt="Onboarding showing what the device can do" />
   <img src="docs/screenshots/home.png" width="24%" alt="Home screen listing saved automations" />
-  <img src="docs/screenshots/replay.png" width="24%" alt="Replaying a learned automation" />
-  <img src="docs/screenshots/history.png" width="24%" alt="Execution history" />
+  <img src="docs/screenshots/automation.png" width="24%" alt="One automation, its trigger and its confidence" />
+  <img src="docs/screenshots/settings.png" width="24%" alt="Settings, with cloud access off by default" />
+  <img src="docs/screenshots/korean.png" width="24%" alt="The same app in Korean" />
 </p>
 
 ## What works
@@ -120,6 +120,26 @@ Android accessibility policy and store rules change over time. Review the curren
 distribution policy before publishing a build that can plan and operate tasks across
 other apps. Private testing and direct release channels may be more appropriate for the
 full runtime than a general-purpose store listing.
+
+## Languages
+
+English and Korean ship today. The app follows the per-app language a user picks in
+Android settings.
+
+Adding a language is one file:
+
+1. Copy `app/src/main/res/values/strings.xml` to `app/src/main/res/values-<code>/strings.xml`
+2. Translate the values, leaving the `name` attributes alone
+3. Build
+
+Nothing else needs editing. The list Android offers in its language picker is generated
+from whichever `values-<code>` folders exist, so a manifest list cannot drift out of step
+with the translations.
+
+Two things deliberately stay untranslated. Stored execution history keeps the wording it
+had when the run happened, because a record that changes language later is no longer a
+record of what happened. And the bundled typeface covers Latin only — other scripts are
+rendered with the face the device provides.
 
 ## Project status
 

@@ -26,8 +26,8 @@ class ExecutabilityEvaluator(
 ) {
 
     suspend fun evaluate(skill: SemanticSkill, profile: DeviceCapabilityProfile): ExecutabilityState {
-        if (settings.killSwitch().engaged) return ExecutabilityState.OS_BLOCKED
-        if (!profile.canControlScreen) return ExecutabilityState.OS_BLOCKED
+        if (settings.killSwitch().engaged) return ExecutabilityState.STOPPED_BY_USER
+        if (!profile.canControlScreen) return ExecutabilityState.SCREEN_CONTROL_UNAVAILABLE
 
         for (packageName in skill.runtimeRequirements.requiredPackages) {
             val policy = policyStore.policyFor(packageName)
@@ -58,7 +58,7 @@ class ExecutabilityEvaluator(
         }
 
         if (skill.runtimeRequirements.requiresNetwork && !profile.network.isOnline) {
-            return ExecutabilityState.OS_BLOCKED
+            return ExecutabilityState.NETWORK_UNAVAILABLE
         }
 
         return ExecutabilityState.EXECUTABLE
@@ -73,9 +73,13 @@ class ExecutabilityEvaluator(
     fun retryDelayMillis(state: ExecutabilityState): Long = when (state) {
         ExecutabilityState.EXECUTABLE -> 0
         ExecutabilityState.DEVICE_LOCKED -> SHORT_RETRY_MS
+        ExecutabilityState.NETWORK_UNAVAILABLE -> SHORT_RETRY_MS
         ExecutabilityState.USER_UNLOCK_REQUIRED -> LONG_RETRY_MS
         ExecutabilityState.USER_INTERACTION_REQUIRED -> LONG_RETRY_MS
+        ExecutabilityState.SCREEN_CONTROL_UNAVAILABLE -> LONG_RETRY_MS
         ExecutabilityState.OS_BLOCKED -> MEDIUM_RETRY_MS
+        // Nothing about waiting changes either of these; the user has to act.
+        ExecutabilityState.STOPPED_BY_USER -> 0
         ExecutabilityState.APP_BLOCKED -> 0
     }
 
