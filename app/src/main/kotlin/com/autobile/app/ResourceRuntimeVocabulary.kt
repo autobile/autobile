@@ -23,6 +23,12 @@ class ResourceRuntimeVocabulary(private val context: Context) : RuntimeVocabular
     override fun riskDecision(verdict: String, reason: String): String =
         context.getString(R.string.run_risk_decision, verdict, reason)
 
+    override fun ownScreenInFront(): String = context.getString(R.string.run_own_screen)
+    override fun couldNotComplete(step: String): String =
+        context.getString(R.string.run_could_not_complete, step)
+    override fun awaitingRuntime(step: String): String =
+        context.getString(R.string.run_awaiting_runtime, step)
+
     override fun stopped(): String = context.getString(R.string.run_stopped)
     override fun stepFailed(): String = context.getString(R.string.run_step_failed)
     override fun screenProtected(): String = context.getString(R.string.run_screen_protected)

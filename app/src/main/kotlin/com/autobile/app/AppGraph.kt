@@ -127,6 +127,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         skillStore = skillStore,
         minimizer = minimizer,
         words = runtimeWords,
+        ownPackage = appContext.packageName,
     )
     val capabilityDetector = CapabilityDetector(
         context = context,
