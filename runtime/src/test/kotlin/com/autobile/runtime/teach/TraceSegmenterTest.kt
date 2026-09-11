@@ -45,6 +45,61 @@ class TraceSegmenterTest {
         events = events.toList(),
     )
 
+    private fun transitEvent(index: Int, packageName: String) = TraceEvent(
+        id = "t$index",
+        timestamp = index.toLong(),
+        packageName = packageName,
+        windowContext = "Home",
+        before = ScreenSnapshot(packageName = packageName, windowTitle = "Home"),
+        after = ScreenSnapshot(packageName = packageName, windowTitle = "Home"),
+        action = ObservedAction.AppOpen(packageName),
+        targetNode = node("t$index", text = "Home"),
+    )
+
+    @Test
+    fun `passing through the home screen is not part of the task`() = runTest {
+        // Leaving Autobile to demonstrate means going through the launcher. Recorded as
+        // a step, an automation taught this way opens the home screen first — and one
+        // that got no further becomes an automation for opening the home screen.
+        val segmenter = TraceSegmenter(
+            routerWith(ScriptedProvider()),
+            transitPackages = setOf("com.example.launcher"),
+        )
+
+        val result = segmenter.segment(
+            trace(
+                transitEvent(0, "com.example.launcher"),
+                event(1, ObservedAction.AppOpen("com.example.business")),
+                event(2, ObservedAction.TextInput("42")),
+            ),
+        )
+
+        assertThat(result.events.first().classification).isEqualTo(EventClassification.NOISE)
+        assertThat(result.compilable().map { it.packageName }).containsNoneIn(listOf("com.example.launcher"))
+        assertThat(result.compilable()).hasSize(2)
+    }
+
+    @Test
+    fun `an app that merely answers the home intent is still a real task`() = runTest {
+        // Settings registers a fallback home activity for devices with no launcher
+        // installed. Treating every answer to the home intent as transit made tasks
+        // taught in Settings compile to nothing at all.
+        val segmenter = TraceSegmenter(
+            routerWith(ScriptedProvider()),
+            transitPackages = setOf("com.example.launcher"),
+        )
+
+        val result = segmenter.segment(
+            trace(
+                transitEvent(0, "com.example.launcher"),
+                transitEvent(1, "com.android.settings"),
+                event(2, ObservedAction.TextInput("42")),
+            ),
+        )
+
+        assertThat(result.compilable().map { it.packageName }).contains("com.android.settings")
+    }
+
     @Test
     fun `an empty trace segments to nothing`() = runTest {
         val segmenter = TraceSegmenter(routerWith(ScriptedProvider()))

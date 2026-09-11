@@ -1,7 +1,10 @@
 package com.autobile.app
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import com.autobile.ai.cloud.CloudAiProvider
 import com.autobile.ai.cloud.CloudConfig
 import com.autobile.ai.context.ContextMinimizer
@@ -146,7 +149,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         words = runtimeWords,
     )
     override val triggerScheduler = TriggerScheduler(context)
-    private val segmenter = TraceSegmenter(aiRouter)
+    private val segmenter = TraceSegmenter(aiRouter, transitPackages = transitPackages(context))
     val compiler = SkillCompiler(
         aiRouter,
         segmenter,
@@ -165,6 +168,38 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
             triggerScheduler.rescheduleAll(skillStore.listEnabledSkills())
             traceStore.prune(System.currentTimeMillis() - TRACE_RETENTION_MS)
             capabilityDetector.detect()
+        }
+    }
+
+    /**
+     * The packages a person passes through on the way to the app they mean to use.
+     *
+     * Only the home screen the device actually resolves to, plus the system UI that
+     * draws recents and the notification shade. Listing every activity that answers the
+     * home intent looks more thorough and is wrong: Settings registers a fallback home
+     * for use when no launcher is installed, so that reading silently makes every task
+     * taught in Settings uncompilable.
+     */
+    private fun transitPackages(context: Context): Set<String> {
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val packages = context.packageManager
+        val launcher = runCatching {
+            // The typed-flags overload only exists from API 33, and this app runs from
+            // 30. Lint catches the difference; a device on 11 or 12 would not.
+            val resolved = if (Build.VERSION.SDK_INT >= 33) {
+                packages.resolveActivity(
+                    home,
+                    PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packages.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)
+            }
+            resolved?.activityInfo?.packageName
+        }.getOrNull()
+        return buildSet {
+            launcher?.takeIf { it != context.packageName }?.let(::add)
+            add("com.android.systemui")
         }
     }
 
