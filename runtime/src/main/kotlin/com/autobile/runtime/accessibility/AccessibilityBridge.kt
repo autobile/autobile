@@ -35,6 +35,17 @@ object AccessibilityBridge {
     private val _events = MutableSharedFlow<ObservedEvent>(replay = 0, extraBufferCapacity = 256)
     val events: SharedFlow<ObservedEvent> = _events.asSharedFlow()
 
+    /**
+     * The package of the window most recently brought to the front.
+     *
+     * Tracked from the event stream because the alternative — asking the service for
+     * `rootInActiveWindow` — is a synchronous call into the window manager that can
+     * fetch a whole window's state. Callers need this on the main thread and often
+     * enough that paying that cost each time risks stalling the interface.
+     */
+    private val _foregroundPackage = MutableStateFlow("")
+    val foregroundPackage: StateFlow<String> = _foregroundPackage.asStateFlow()
+
     @Volatile
     private var service: AutobileAccessibilityService? = null
 
@@ -46,6 +57,7 @@ object AccessibilityBridge {
     internal fun detach() {
         service = null
         _connected.value = false
+        _foregroundPackage.value = ""
         Logx.i("Accessibility service disconnected")
     }
 
@@ -60,6 +72,10 @@ object AccessibilityBridge {
      */
     internal fun publish(event: AccessibilityEvent) {
         if (event.eventType !in MEANINGFUL_EVENT_TYPES) return
+        val from = event.packageName?.toString().orEmpty()
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && from.isNotBlank()) {
+            _foregroundPackage.value = from
+        }
         val observed = ObservedEvent(
             type = event.eventType,
             packageName = event.packageName?.toString().orEmpty(),

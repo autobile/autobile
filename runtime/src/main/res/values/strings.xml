@@ -31,5 +31,4 @@
     <string name="observed_app_open">Opened %1$s</string>
     <string name="observed_window_change">Moved to a new screen</string>
 
-    <string name="run_stopped">Stopped</string>
 </resources>

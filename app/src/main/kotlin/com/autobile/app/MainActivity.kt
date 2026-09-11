@@ -76,6 +76,7 @@ import com.autobile.app.ui.screens.SkillDetailScreen
 import com.autobile.app.ui.screens.TeachReviewScreen
 import com.autobile.app.ui.screens.TeachScreen
 import com.autobile.runtime.agent.AgentActivity
+import com.autobile.runtime.background.AppReturn
 import com.autobile.runtime.edit.SkillEditPreview
 
 class MainActivity : ComponentActivity() {
@@ -118,7 +119,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        AppReturn.onInterfaceVisible(true)
         viewModel.refreshCapabilities()
+    }
+
+    override fun onPause() {
+        AppReturn.onInterfaceVisible(false)
+        super.onPause()
     }
 
     private fun shouldShowNotificationRationale(): Boolean =

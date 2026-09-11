@@ -107,10 +107,11 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
 
     private val minimizer = ContextMinimizer()
     private val perception = PerceptionEngine(context)
+    private val runtimeWords = ResourceRuntimeVocabulary(appContext)
     private val controller = ScreenController(context)
     private val resolver = ExecutionResolver(aiRouter, minimizer)
-    private val riskEngine = RiskEngine(policyStore, settings)
-    private val validation = ValidationEngine(aiRouter, minimizer)
+    private val riskEngine = RiskEngine(policyStore, settings, runtimeWords)
+    private val validation = ValidationEngine(aiRouter, minimizer, runtimeWords)
     private val healing = SelfHealingEngine(aiRouter, riskEngine, minimizer)
     private val executor = SkillExecutor(
         perception = perception,
@@ -122,6 +123,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         router = aiRouter,
         skillStore = skillStore,
         minimizer = minimizer,
+        words = runtimeWords,
     )
     val capabilityDetector = CapabilityDetector(
         context = context,
@@ -141,6 +143,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         executability = executability,
         capabilityDetector = capabilityDetector,
         minimizer = minimizer,
+        words = runtimeWords,
     )
     override val triggerScheduler = TriggerScheduler(context)
     private val segmenter = TraceSegmenter(aiRouter)

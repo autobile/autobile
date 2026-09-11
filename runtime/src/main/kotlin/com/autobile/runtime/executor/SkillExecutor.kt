@@ -7,6 +7,8 @@ import com.autobile.core.common.Ids
 import com.autobile.core.common.Logx
 import com.autobile.core.common.TimeSource
 import com.autobile.core.data.SkillStore
+import com.autobile.runtime.EnglishRuntimeVocabulary
+import com.autobile.runtime.RuntimeVocabulary
 import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AgentTask
 import com.autobile.core.model.ExecutionEvent
@@ -61,6 +63,7 @@ class SkillExecutor(
     private val skillStore: SkillStore,
     private val minimizer: ContextMinimizer = ContextMinimizer(),
     private val time: TimeSource = TimeSource.System,
+    private val words: RuntimeVocabulary = EnglishRuntimeVocabulary,
 ) {
 
     suspend fun execute(
@@ -96,7 +99,7 @@ class SkillExecutor(
 
         for ((index, step) in skill.steps.withIndex()) {
             if (observer.isCancelled()) {
-                return partial(task, skill, results, cloudCalls, deviceAiCalls, "Stopped", OutcomeStatus.CANCELLED)
+                return partial(task, skill, results, cloudCalls, deviceAiCalls, words.stopped(), OutcomeStatus.CANCELLED)
             }
 
             val startedAt = time.nowMillis()
@@ -114,7 +117,7 @@ class SkillExecutor(
             val snapshot = when (val observed = perception.observe(step.validation.settleMs)) {
                 is PerceptionResult.Success -> observed.snapshot
                 is PerceptionResult.BlockedSecureWindow -> {
-                    val message = "This screen is protected and cannot be read"
+                    val message = words.screenProtected()
                     results += failedStep(step, index, startedAt, message, ValidationMode.NONE)
                     observer.onEvent(
                         event(task.id, ExecutionEventType.STEP_FAILED, step.id, index, message, success = false),
@@ -143,7 +146,7 @@ class SkillExecutor(
                     ExecutionEventType.RISK_DECISION,
                     step.id,
                     index,
-                    "${decision.verdict}: ${decision.reason}",
+                    words.riskDecision(decision.verdict.name, decision.reason),
                 ),
             )
             when (decision.verdict) {
@@ -196,7 +199,7 @@ class SkillExecutor(
             results += outcome.result
 
             if (!outcome.result.success && !step.optional) {
-                val message = outcome.result.message.ifBlank { "Step failed" }
+                val message = outcome.result.message.ifBlank { words.stepFailed() }
                 observer.onEvent(
                     event(task.id, ExecutionEventType.STEP_FAILED, step.id, index, message, success = false),
                 )
@@ -593,7 +596,7 @@ class SkillExecutor(
         is ActionSpec.InputText -> {
             val value = context.resolve(action.value)
             if (value == null) {
-                ActionResult.Failed("Could not determine what to type")
+                ActionResult.Failed(words.couldNotDetermineText())
             } else {
                 controller.inputText(resolution.node, value, action.clearExisting)
             }
@@ -601,7 +604,7 @@ class SkillExecutor(
 
         is ActionSpec.ReadValue, is ActionSpec.Wait, is ActionSpec.Back,
         is ActionSpec.Home, is ActionSpec.LaunchApp,
-        -> ActionResult.Failed("Action does not operate on an element")
+        -> ActionResult.Failed(words.actionNeedsAnElement())
     }
 
     private suspend fun performContextFree(action: ActionSpec, context: ExecutionContext): ActionResult =
@@ -617,7 +620,7 @@ class SkillExecutor(
                 ActionResult.Performed("waited ${action.millis} ms")
             }
 
-            else -> ActionResult.Failed("Unsupported action")
+            else -> ActionResult.Failed(words.unsupportedAction())
         }
 
     /** Checks the skill's preconditions, returning the reason it cannot start. */

@@ -16,9 +16,24 @@ import com.autobile.runtime.accessibility.AccessibilityBridge
  */
 object AppReturn {
 
-    /** Whether Autobile is the app currently on screen. */
-    fun isInForeground(context: Context): Boolean =
-        AccessibilityBridge.require()?.foregroundPackage() == context.packageName
+    @Volatile
+    private var interfaceVisible = false
+
+    /**
+     * Records whether Autobile's own interface is on screen.
+     *
+     * Reported by the activity rather than inferred from accessibility events, because
+     * the two decisions that depend on it fail in opposite directions. Suppressing the
+     * overlay wrongly hides the one surface that says the phone is being driven, and
+     * that must never happen on a stale signal; the activity's own lifecycle is the only
+     * account of its visibility that cannot lag behind the truth.
+     */
+    fun onInterfaceVisible(visible: Boolean) {
+        interfaceVisible = visible
+    }
+
+    /** Whether Autobile's own interface is the thing the user is looking at. */
+    fun isInForeground(context: Context): Boolean = interfaceVisible
 
     /**
      * Reopens Autobile on the screen the user left.

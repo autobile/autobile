@@ -1,10 +1,6 @@
 package com.autobile.runtime.overlay
 
 import android.content.Context
-import android.graphics.Color
-import android.graphics.Typeface
-import android.view.Gravity
-import android.widget.TextView
 import com.autobile.core.data.SettingsStore
 import com.autobile.runtime.agent.AgentActivity
 import com.autobile.runtime.agent.AgentOrchestrator
@@ -32,14 +28,6 @@ class AgentVisibilityCoordinator(
 ) {
     private var collection: Job? = null
 
-    /**
-     * The banner is created once per run and its text updated in place.
-     *
-     * Activity state changes on every step and again when each target is resolved.
-     * Rebuilding the overlay window that often would make the banner visibly flicker
-     * over the app being operated, on top of the churn of repeated window attachments.
-     */
-    private var banner: TextView? = null
     private var runActive = false
 
     /**
@@ -53,6 +41,9 @@ class AgentVisibilityCoordinator(
 
     fun start(scope: CoroutineScope) {
         if (collection != null) return
+        // On the main thread because this builds and updates a View that is attached to
+        // a window. A run is driven from background dispatchers, and touching an
+        // attached view from one throws rather than merely failing to draw.
         collection = scope.launch {
             orchestrator.activity.collectLatest { activity ->
                 when (activity) {
@@ -60,7 +51,6 @@ class AgentVisibilityCoordinator(
                         val ended = finishing
                         finishing = null
                         runActive = false
-                        banner = null
                         overlay.dismissAll()
                         AgentForegroundService.stop(context)
                         if (ended != null) concludeRun(ended)
@@ -71,17 +61,22 @@ class AgentVisibilityCoordinator(
                         if (!runActive) {
                             runActive = true
                             AgentForegroundService.start(context)
-                            banner = TextView(context).also { view ->
-                                view.styleAsBanner()
-                                overlay.showBanner(view)
-                            }
                         }
-                        banner?.applyText(activity)
-                        if (settings.showTouchIndicator) {
-                            activity.touchTarget?.let(overlay::showTouchIndicator)
-                                ?: overlay.hideTouchIndicator()
-                        } else {
+                        // The overlay exists to report the run over somebody else's app.
+                        // While Autobile is the app on screen its own live band already
+                        // says the same thing, and drawing both stacks two copies of one
+                        // sentence over each other.
+                        if (AppReturn.isInForeground(context)) {
+                            overlay.hideBanner()
                             overlay.hideTouchIndicator()
+                        } else {
+                            overlay.showBanner(bannerText(activity))
+                            if (settings.showTouchIndicator) {
+                                activity.touchTarget?.let(overlay::showTouchIndicator)
+                                    ?: overlay.hideTouchIndicator()
+                            } else {
+                                overlay.hideTouchIndicator()
+                            }
                         }
                     }
                 }
@@ -111,30 +106,17 @@ class AgentVisibilityCoordinator(
         collection = null
         finishing = null
         runActive = false
-        banner = null
         overlay.dismissAll()
         AgentForegroundService.stop(context)
     }
 
-    private fun TextView.applyText(activity: AgentActivity.Running) = with(activity) {
+    private fun bannerText(activity: AgentActivity.Running): String = with(activity) {
         val step = stepDescription.ifBlank { context.getString(R.string.agent_notification_starting) }
-        text = buildString {
+        buildString {
             append(context.getString(R.string.agent_overlay_working))
             append('\n')
             append(context.getString(R.string.agent_overlay_step, skillName, step, stepIndex + 1, totalSteps))
             repairNote?.let { append('\n').append(context.getString(R.string.agent_overlay_adapting, it)) }
         }
-        contentDescription = text
     }
-
-    private fun TextView.styleAsBanner() {
-        setTextColor(Color.WHITE)
-        setBackgroundColor(Color.argb(235, 28, 32, 38))
-        setPadding(dp(20), dp(12), dp(20), dp(12))
-        textSize = 14f
-        setTypeface(typeface, Typeface.BOLD)
-        gravity = Gravity.CENTER_VERTICAL
-    }
-
-    private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).toInt()
 }

@@ -367,4 +367,36 @@
     <string name="compiled_step_go_back">Go back</string>
     <string name="compiled_step_go_home">Go to the home screen</string>
     <string name="compiled_step_wait">Wait</string>
+    <!-- How a run explains itself in the execution timeline. -->
+    <string name="run_stopped">Stopped</string>
+    <string name="run_step_failed">Step failed</string>
+    <string name="run_screen_protected">This screen is protected and cannot be read</string>
+    <string name="run_no_text">Could not determine what to type</string>
+    <string name="run_action_needs_element">Action does not operate on an element</string>
+    <string name="run_unsupported_action">Unsupported action</string>
+    <string name="validate_none">no validation required</string>
+    <string name="validate_no_expectation">no expectation declared</string>
+    <string name="validate_wrong_app">expected %1$s but the foreground app is %2$s</string>
+    <string name="validate_screen_missing">screen does not show %1$s</string>
+    <string name="validate_screen_forbidden">screen shows %1$s</string>
+    <string name="validate_screen_confirmed">expected screen confirmed</string>
+    <string name="validate_no_constraints">value validation has no constraints</string>
+    <string name="validate_no_value">no value was read</string>
+    <string name="validate_empty_value">empty value accepted</string>
+    <string name="validate_format_mismatch">value does not match the expected format</string>
+    <string name="validate_not_numeric">value is not numeric</string>
+    <string name="validate_below_minimum">value %1$s is below the expected minimum</string>
+    <string name="validate_above_maximum">value %1$s is above the expected maximum</string>
+    <string name="validate_field_missing">the screen does not show a \"%1$s\" field</string>
+    <string name="validate_field_read">%1$s read successfully</string>
+    <string name="validate_unverified">the outcome could not be verified</string>
+    <string name="validate_no_post_conditions">no post-conditions declared</string>
+    <string name="validate_goal_confirmed">goal confirmed</string>
+    <string name="run_task_created">Task created</string>
+    <string name="run_automation_stopped">Automation is stopped</string>
+    <string name="run_category_blocked">%1$s apps are blocked</string>
+    <string name="run_app_observe_only">this app is set to observe only</string>
+    <string name="run_suspended_review">this automation is suspended until you review it</string>
+    <string name="run_low_risk">low risk action</string>
+    <string name="run_risk_decision">%1$s: %2$s</string>
 </resources>

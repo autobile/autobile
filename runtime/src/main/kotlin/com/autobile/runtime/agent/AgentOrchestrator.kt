@@ -29,6 +29,8 @@ import com.autobile.core.model.TaskOrigin
 import com.autobile.core.model.TaskOutcome
 import com.autobile.core.model.TaskState
 import com.autobile.core.model.UiNode
+import com.autobile.runtime.EnglishRuntimeVocabulary
+import com.autobile.runtime.RuntimeVocabulary
 import com.autobile.runtime.background.ExecutabilityEvaluator
 import com.autobile.runtime.capability.CapabilityDetector
 import com.autobile.runtime.executor.SkillExecutor
@@ -69,6 +71,7 @@ class AgentOrchestrator(
     private val capabilityDetector: CapabilityDetector,
     private val minimizer: ContextMinimizer = ContextMinimizer(),
     private val time: TimeSource = TimeSource.System,
+    private val words: RuntimeVocabulary = EnglishRuntimeVocabulary,
 ) {
 
     private val runLock = Mutex()
@@ -114,7 +117,7 @@ class AgentOrchestrator(
                     deferredUntil = time.nowMillis() + executability.retryDelayMillis(state),
                 )
                 historyStore.saveTask(task)
-                historyStore.appendEvent(task.lifecycleEvent(ExecutionEventType.TASK_CREATED, "Task created", time.nowMillis()))
+                historyStore.appendEvent(task.lifecycleEvent(ExecutionEventType.TASK_CREATED, words.taskCreated(), time.nowMillis()))
                 historyStore.appendEvent(
                     ExecutionEvent(
                         id = Ids.event(),
@@ -142,7 +145,7 @@ class AgentOrchestrator(
         val startedAt = time.nowMillis()
         var task = newTask(skill, origin, triggerPayload).copy(state = TaskState.RUNNING, startedAt = startedAt)
         historyStore.saveTask(task)
-        historyStore.appendEvent(task.lifecycleEvent(ExecutionEventType.TASK_CREATED, "Task created", time.nowMillis()))
+        historyStore.appendEvent(task.lifecycleEvent(ExecutionEventType.TASK_CREATED, words.taskCreated(), time.nowMillis()))
         metrics.increment(Metric.TASKS_STARTED)
         metrics.increment(Metric.SKILLS_REPEATED)
 

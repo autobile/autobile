@@ -28,5 +28,4 @@
     <string name="observed_app_open">%1$s 열기</string>
     <string name="observed_window_change">다른 화면으로 이동함</string>
 
-    <string name="run_stopped">중지됨</string>
 </resources>

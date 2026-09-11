@@ -68,6 +68,33 @@ class AccessibilityBridgeTest {
     }
 
     @Test
+    fun `the foreground app is tracked from window changes`() = runTest(UnconfinedTestDispatcher()) {
+        AccessibilityBridge.publish(
+            event(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, packageName = "com.example.bank"),
+        )
+
+        assertThat(AccessibilityBridge.foregroundPackage.value).isEqualTo("com.example.bank")
+
+        AccessibilityBridge.publish(
+            event(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, packageName = "com.autobile"),
+        )
+
+        assertThat(AccessibilityBridge.foregroundPackage.value).isEqualTo("com.autobile")
+    }
+
+    @Test
+    fun `a tap does not change which app is considered foreground`() = runTest(UnconfinedTestDispatcher()) {
+        AccessibilityBridge.publish(
+            event(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, packageName = "com.example.bank"),
+        )
+        AccessibilityBridge.publish(
+            event(AccessibilityEvent.TYPE_VIEW_CLICKED, packageName = "com.example.keyboard"),
+        )
+
+        assertThat(AccessibilityBridge.foregroundPackage.value).isEqualTo("com.example.bank")
+    }
+
+    @Test
     fun `a tap survives a flood of chatter around it`() = runTest(UnconfinedTestDispatcher()) {
         val seen = mutableListOf<ObservedEvent>()
         val job = launch { AccessibilityBridge.events.toList(seen) }
