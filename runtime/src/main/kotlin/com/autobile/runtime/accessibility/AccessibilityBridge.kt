@@ -26,12 +26,13 @@ object AccessibilityBridge {
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
     /**
-     * Raw accessibility events.
+     * Accessibility events that represent something a person did.
      *
-     * Replay is zero and the buffer is small on purpose: these arrive at high frequency
-     * during normal phone use and only matter to whoever is listening at the time.
+     * Replay is zero because these only matter to whoever is listening at the time. The
+     * buffer is generous because a listener may take a moment over each event, and a
+     * dropped event during a demonstration is a step the user has to notice is missing.
      */
-    private val _events = MutableSharedFlow<ObservedEvent>(replay = 0, extraBufferCapacity = 64)
+    private val _events = MutableSharedFlow<ObservedEvent>(replay = 0, extraBufferCapacity = 256)
     val events: SharedFlow<ObservedEvent> = _events.asSharedFlow()
 
     @Volatile
@@ -48,7 +49,17 @@ object AccessibilityBridge {
         Logx.i("Accessibility service disconnected")
     }
 
+    /**
+     * Publishes an event if it carries user intent.
+     *
+     * Content changes and focus moves are emitted constantly by ordinary apps — a
+     * scrolling list alone produces them faster than any listener can consume them. They
+     * are filtered here rather than downstream because the buffer is shared: letting
+     * them through would evict the taps and typing that a demonstration is actually made
+     * of, and the recorder would report a shorter session than the user performed.
+     */
     internal fun publish(event: AccessibilityEvent) {
+        if (event.eventType !in MEANINGFUL_EVENT_TYPES) return
         val observed = ObservedEvent(
             type = event.eventType,
             packageName = event.packageName?.toString().orEmpty(),
@@ -59,6 +70,15 @@ object AccessibilityBridge {
         )
         _events.tryEmit(observed)
     }
+
+    private val MEANINGFUL_EVENT_TYPES = setOf(
+        AccessibilityEvent.TYPE_VIEW_CLICKED,
+        AccessibilityEvent.TYPE_VIEW_LONG_CLICKED,
+        AccessibilityEvent.TYPE_VIEW_SELECTED,
+        AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
+        AccessibilityEvent.TYPE_VIEW_SCROLLED,
+        AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+    )
 
     /** The connected service, or null when the user has not granted access. */
     fun require(): AutobileAccessibilityService? = service

@@ -19,7 +19,7 @@
     <string name="onboarding_step">%2$d단계 중 %1$d</string>
     <string name="onboarding_capability_title">이 폰이 할 수 있는 것</string>
     <string name="onboarding_permissions_title">준비되면 권한을 주세요</string>
-    <string name="onboarding_permissions_body">작업을 배우고 다시 실행하려면 화면 제어 권한이 필요합니다. 알림과 오버레이 권한은 트리거와 진행 상황 표시를 더해 줍니다.</string>
+    <string name="onboarding_permissions_body">화면 제어는 Autobile이 작업을 배우고 반복하기 위한 권한입니다. 진행 알림은 자동화가 다른 앱을 연 뒤 이곳으로 돌아오는 수단입니다.</string>
     <string name="onboarding_permissions_note">화면 제어만 필수입니다. 나머지는 선택입니다.</string>
     <string name="onboarding_first_run_title">실행되는 모습 보기</string>
     <string name="onboarding_first_run_body">첫 자동화는 안드로이드 설정을 연 뒤, 설정 앱이 실제로 떴는지 확인합니다.</string>
@@ -44,9 +44,11 @@
 
     <!-- Permissions -->
     <string name="permission_screen_control">화면 제어</string>
+    <string name="permission_post_notifications">진행 알림</string>
     <string name="permission_notifications">알림 트리거</string>
     <string name="permission_overlay">다른 앱 위에 진행 상황 표시</string>
     <string name="permission_granted">허용됨</string>
+    <string name="permission_allow">허용</string>
 
     <!-- Home -->
     <string name="home_agent_ready">대기 중</string>
@@ -92,6 +94,7 @@
     <!-- Teaching -->
     <string name="teach_title">직접 보여주며 가르치기</string>
     <string name="teach_body">기록을 시작하고 평소 쓰는 앱으로 옮겨 작업을 한 번 해 보세요. 끝나면 알림을 눌러 돌아오면 됩니다.</string>
+    <string name="teach_body_no_notification">기록을 시작하고 평소 쓰는 앱으로 옮겨 작업을 한 번 해 보세요. 진행 알림이 꺼져 있으니 끝나면 최근 앱 목록에서 돌아오세요.</string>
     <string name="teach_name_label">자동화 이름</string>
     <string name="teach_start">기록 시작</string>
     <string name="teach_recording_title">%1$s 배우는 중</string>
@@ -313,4 +316,25 @@
     <string name="teach_notification_channel">가르치는 중</string>
     <string name="teach_notification_title">Autobile이 배우는 중입니다</string>
     <string name="teach_notification_body">작업을 해 보신 뒤 여기로 돌아와 마치세요.</string>
+    <string name="msg_accessibility_required">가르치기 전에 화면 제어를 켜세요</string>
+    <string name="msg_recording_started">기록 중입니다. 사용하는 앱으로 전환해 작업을 한 번 해보세요.</string>
+    <string name="msg_recording_no_notification">기록 중입니다. 알림이 꺼져 있으니 마치면 최근 앱 목록에서 돌아오세요.</string>
+    <string name="msg_teaching_interrupted">Autobile이 종료되면서 지난 가르치기가 중단되었습니다. 저장된 것은 없으니 준비되면 다시 시작하세요.</string>
+    <string name="msg_correction_applied">수정됨: %1$s</string>
+    <string name="msg_name_goal_required">이름과 목표를 먼저 입력하세요</string>
+    <string name="msg_schedule_range">00:00에서 23:59 사이의 시각을 선택하세요</string>
+    <string name="msg_automation_saved">자동화를 저장했습니다</string>
+    <string name="msg_automation_deleted">자동화를 삭제했습니다</string>
+    <string name="msg_automation_finished">자동화를 마쳤습니다</string>
+    <string name="msg_first_run_complete">첫 자동화를 마쳤습니다</string>
+    <string name="msg_version_unavailable">그 버전은 더 이상 남아 있지 않습니다</string>
+    <string name="msg_version_restored">버전 %1$d(으)로 되돌렸습니다</string>
+    <string name="msg_show_me_how">%1$s 방법을 보여주세요</string>
+    <string name="msg_change_applied">변경을 적용했습니다</string>
+    <string name="msg_repair_applied">버전 %1$d(으)로 복구를 적용했습니다</string>
+    <string name="msg_repair_dismissed">복구를 무시했습니다</string>
+    <string name="msg_repair_failed">복구를 적용하지 못했습니다</string>
+    <string name="msg_cloud_credential_updated">클라우드 자격 증명을 업데이트했습니다</string>
+    <string name="msg_generic_error">문제가 발생했습니다</string>
+    <string name="default_automation_name">내 자동화</string>
 </resources>

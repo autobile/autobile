@@ -30,14 +30,16 @@ class AutobileAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         serviceInfo = (serviceInfo ?: AccessibilityServiceInfo()).apply {
+            // Only the types the runtime consumes. Content changes and focus moves
+            // arrive faster than anything can use them — an animating screen alone
+            // produces a steady stream — and every one costs an interprocess call and
+            // battery on the user's phone for a message that gets discarded.
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
                 AccessibilityEvent.TYPE_VIEW_CLICKED or
                 AccessibilityEvent.TYPE_VIEW_LONG_CLICKED or
                 AccessibilityEvent.TYPE_VIEW_SCROLLED or
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
-                AccessibilityEvent.TYPE_VIEW_SELECTED or
-                AccessibilityEvent.TYPE_VIEW_FOCUSED
+                AccessibilityEvent.TYPE_VIEW_SELECTED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.DEFAULT or
                 AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or

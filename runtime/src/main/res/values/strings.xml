@@ -2,4 +2,34 @@
 <resources>
     <string name="accessibility_service_description">Autobile needs to see the screen to learn the tasks you show it, and to control the screen to repeat them for you. Screen content stays on your device unless you turn on cloud assistance.</string>
     <string name="accessibility_service_summary">Learn and repeat tasks you show it</string>
+
+    <string name="agent_app_name">Autobile</string>
+
+    <!-- The notification shown while an automation is driving the phone. -->
+    <string name="agent_channel_name">Running automations</string>
+    <string name="agent_channel_description">Shows what Autobile is doing while an automation runs</string>
+    <string name="agent_notification_starting">Starting</string>
+    <string name="agent_notification_step">%1$s · step %2$d of %3$d</string>
+    <string name="agent_notification_stop">Stop</string>
+    <string name="agent_finished_channel_name">Finished automations</string>
+    <string name="agent_finished_title">%1$s finished</string>
+    <string name="agent_finished_body">Tap to see what happened.</string>
+
+    <!-- The banner drawn over the app being operated. -->
+    <string name="agent_overlay_working">Autobile is working</string>
+    <string name="agent_overlay_step">%1$s · %2$s (%3$d/%4$d)</string>
+    <string name="agent_overlay_adapting">Adapting: %1$s</string>
+
+    <!-- Live description of what the user just did, shown while recording. -->
+    <string name="observed_click">Tapped</string>
+    <string name="observed_long_click">Held</string>
+    <string name="observed_select">Selected</string>
+    <string name="observed_text_input">Typed</string>
+    <string name="observed_scroll">Scrolled</string>
+    <string name="observed_back">Went back</string>
+    <string name="observed_home">Home</string>
+    <string name="observed_app_open">Opened %1$s</string>
+    <string name="observed_window_change">Moved to a new screen</string>
+
+    <string name="run_stopped">Stopped</string>
 </resources>

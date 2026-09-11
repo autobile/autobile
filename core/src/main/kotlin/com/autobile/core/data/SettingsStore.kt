@@ -92,6 +92,19 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_TOUCH_INDICATOR, true)
         set(value) = prefs.edit { putBoolean(KEY_TOUCH_INDICATOR, value) }
 
+    /**
+     * Whether a teaching session was left open.
+     *
+     * A demonstration happens with Autobile in the background, which is exactly when
+     * Android is most willing to reclaim the process. The recording lives in memory and
+     * does not survive that. Recording the intent on disk is what lets the next launch
+     * tell the user their session was lost, instead of silently showing an empty home
+     * screen and leaving them to conclude the app simply ignored what they did.
+     */
+    var teachingSessionOpen: Boolean
+        get() = prefs.getBoolean(KEY_TEACHING_OPEN, false)
+        set(value) = prefs.edit { putBoolean(KEY_TEACHING_OPEN, value) }
+
     companion object {
         const val DEFAULT_CLOUD_MODEL = "gemini-2.5-flash"
 
@@ -109,5 +122,6 @@ class SettingsStore(context: Context) {
         private const val KEY_LOCAL_MODEL = "local_model_enabled"
         private const val KEY_NANO_DOWNLOAD_CONSENT = "nano_download_consent"
         private const val KEY_TOUCH_INDICATOR = "touch_indicator"
+        private const val KEY_TEACHING_OPEN = "teaching_session_open"
     }
 }

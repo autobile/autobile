@@ -1,7 +1,9 @@
 package com.autobile.runtime.capability
 
+import android.Manifest
 import android.app.ActivityManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -66,6 +68,7 @@ class CapabilityDetector(
             gestureDispatchSupported = granted?.canPerformGestures == true,
             screenshotSupported = granted?.canTakeScreenshot == true,
             notificationAccessGranted = isNotificationAccessGranted(),
+            canPostNotifications = canPostNotifications(),
             overlayGranted = Settings.canDrawOverlays(context),
             deviceAi = deviceAiCapability,
             localModel = localModel.describeInstallation(),
@@ -138,6 +141,19 @@ class CapabilityDetector(
             "enabled_notification_listeners",
         ).orEmpty()
         return enabled.contains(context.packageName)
+    }
+
+    /**
+     * Whether the platform will actually show a notification Autobile posts.
+     *
+     * Below Android 13 the permission does not exist and posting always works. From 13
+     * it is a runtime grant, and a denied one makes foreground-service notifications
+     * invisible without any error — the service runs, the user simply never sees it.
+     */
+    private fun canPostNotifications(): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return true
+        return context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
     }
 
     private fun buildRestrictions(

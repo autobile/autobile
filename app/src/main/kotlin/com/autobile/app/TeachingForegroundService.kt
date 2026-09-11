@@ -36,6 +36,18 @@ class TeachingForegroundService : Service() {
         )
     }
 
+    /**
+     * Never restarted by the system.
+     *
+     * The recording this notification stands for lives in the process that died. Letting
+     * Android bring the service back would put "Autobile is learning" in the shade with
+     * no recorder behind it, and the user would keep demonstrating into nothing.
+     */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        return START_NOT_STICKY
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {

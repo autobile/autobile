@@ -11,15 +11,19 @@ import com.autobile.core.model.ScreenSnapshot
 import com.autobile.core.model.StateTransition
 import com.autobile.core.model.TraceEvent
 import com.autobile.core.model.UiNode
+import androidx.annotation.StringRes
+import com.autobile.runtime.R
 import com.autobile.runtime.accessibility.AccessibilityBridge
 import com.autobile.runtime.accessibility.ObservedEvent
 import com.autobile.runtime.perception.ScreenObserver
 import android.view.accessibility.AccessibilityEvent
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -41,6 +45,14 @@ class DemonstrationRecorder(
     private val time: TimeSource = TimeSource.System,
 ) {
 
+    /**
+     * Autobile's own package, so its interface is excluded from the recording.
+     *
+     * Compared exactly rather than by prefix: an unrelated app whose name merely starts
+     * the same way is a task the user is entitled to automate.
+     */
+    private val ownPackage: String = OWN_PACKAGE
+
     private val _state = MutableStateFlow(RecordingState())
     val state: StateFlow<RecordingState> = _state.asStateFlow()
 
@@ -60,9 +72,20 @@ class DemonstrationRecorder(
         _state.value = RecordingState(recording = true, label = label, eventCount = 0)
 
         collector = scope.launch {
+            // Subscribing comes first. Capturing the starting screen takes long enough
+            // for a quick user to have already tapped something, and an event that
+            // arrives before anyone is listening is gone: the demonstration would be
+            // missing its opening step with nothing to indicate it.
+            val subscribed = CompletableDeferred<Unit>()
+            launch {
+                AccessibilityBridge.events
+                    .onSubscription { subscribed.complete(Unit) }
+                    .collect { event -> record(event) }
+            }
+            subscribed.await()
             // Capture the starting screen so the first interaction has a "before".
-            lastSnapshot = (perception.observe() as? PerceptionResult.Success)?.snapshot
-            AccessibilityBridge.events.collect { event -> record(event) }
+            val opening = (perception.observe() as? PerceptionResult.Success)?.snapshot
+            mutex.withLock { if (lastSnapshot == null) lastSnapshot = opening }
         }
     }
 
@@ -91,7 +114,7 @@ class DemonstrationRecorder(
     private suspend fun record(event: ObservedEvent): Unit = mutex.withLock {
         if (!_state.value.recording) return@withLock
         // Events from Autobile's own interface are not part of what is being taught.
-        if (event.packageName.startsWith(OWN_PACKAGE_PREFIX)) return@withLock
+        if (event.packageName == ownPackage) return@withLock
 
         val action = event.toObservedAction() ?: return@withLock
         val before = lastSnapshot
@@ -163,7 +186,7 @@ class DemonstrationRecorder(
 
     private companion object {
         const val SETTLE_MS = 200L
-        const val OWN_PACKAGE_PREFIX = "com.autobile"
+        const val OWN_PACKAGE = "com.autobile"
     }
 }
 
@@ -171,18 +194,48 @@ data class RecordingState(
     val recording: Boolean = false,
     val label: String = "",
     val eventCount: Int = 0,
-    val lastAction: String = "",
+    val lastAction: ActionLabel? = null,
     val currentApp: String = "",
 )
 
-fun ObservedAction.describe(): String = when (this) {
-    is ObservedAction.Click -> "Tapped"
-    is ObservedAction.LongClick -> "Held"
-    is ObservedAction.Select -> "Selected"
-    is ObservedAction.TextInput -> "Typed"
-    is ObservedAction.Scroll -> "Scrolled"
-    is ObservedAction.Back -> "Went back"
-    is ObservedAction.Home -> "Home"
-    is ObservedAction.AppOpen -> "Opened ${packageName.substringAfterLast('.')}"
-    is ObservedAction.WindowChange -> "Moved to a new screen"
+/**
+ * What the user just did, named but not yet worded.
+ *
+ * The recorder runs far from any Context and reports live into the interface, so it
+ * carries the resource and its argument instead of a finished sentence. Formatting the
+ * text here would pin the recording panel to whichever language the process started in.
+ */
+data class ActionLabel(@StringRes val res: Int, val argument: String? = null)
+
+/**
+ * A stable English name for an action, for prompts and logs.
+ *
+ * Deliberately not translated. This text goes into model input and diagnostic output,
+ * where the wording is part of the interface to something else: a prompt that changed
+ * language with the user's phone would make the same demonstration compile differently
+ * in Seoul and London, and a log would stop being greppable.
+ */
+val ObservedAction.diagnosticName: String
+    get() = when (this) {
+        is ObservedAction.Click -> "tapped"
+        is ObservedAction.LongClick -> "long-pressed"
+        is ObservedAction.Select -> "selected"
+        is ObservedAction.TextInput -> "typed"
+        is ObservedAction.Scroll -> "scrolled"
+        is ObservedAction.Back -> "went back"
+        is ObservedAction.Home -> "home"
+        is ObservedAction.AppOpen -> "opened $packageName"
+        is ObservedAction.WindowChange -> "changed screen"
+    }
+
+fun ObservedAction.describe(): ActionLabel = when (this) {
+    is ObservedAction.Click -> ActionLabel(R.string.observed_click)
+    is ObservedAction.LongClick -> ActionLabel(R.string.observed_long_click)
+    is ObservedAction.Select -> ActionLabel(R.string.observed_select)
+    is ObservedAction.TextInput -> ActionLabel(R.string.observed_text_input)
+    is ObservedAction.Scroll -> ActionLabel(R.string.observed_scroll)
+    is ObservedAction.Back -> ActionLabel(R.string.observed_back)
+    is ObservedAction.Home -> ActionLabel(R.string.observed_home)
+    is ObservedAction.AppOpen -> ActionLabel(R.string.observed_app_open, packageName.substringAfterLast('.'))
+    is ObservedAction.WindowChange -> ActionLabel(R.string.observed_window_change)
 }

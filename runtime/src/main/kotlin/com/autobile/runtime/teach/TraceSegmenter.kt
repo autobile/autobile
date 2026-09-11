@@ -131,9 +131,9 @@ class TraceSegmenter(private val router: AiRuntimeRouter) {
 
     private fun renderForInference(events: List<TraceEvent>): String =
         events.mapIndexed { index, event ->
-            val label = event.targetNode?.label().orEmpty().ifBlank { event.action.describe() }
+            val label = event.targetNode?.label().orEmpty().ifBlank { event.action.diagnosticName }
             val app = event.packageName.substringAfterLast('.')
-            "$index. [$app] ${event.action.describe()} \"${com.autobile.core.common.Logx.redact(label)}\""
+            "$index. [$app] ${event.action.diagnosticName} \"${com.autobile.core.common.Logx.redact(label)}\""
         }.joinToString("\n")
 
     private fun StepRole.toClassification(): EventClassification = when (this) {
