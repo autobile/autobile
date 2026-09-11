@@ -73,6 +73,8 @@ Autobile은 실행 시점에 지원 여부를 확인하며, 사용할 수 있는
 Android에 의존하는 단위 테스트에는 Robolectric을 사용합니다. JDK 21을 사용하세요.
 고정된 Robolectric 버전이 그보다 최신 JDK를 지원하지 않을 수 있습니다.
 
+CI는 모든 풀 리퀘스트에서 `./gradlew lintDebug test assembleDebug`를 실행합니다.
+
 계측 테스트는 연결된 기기나 에뮬레이터가 필요합니다.
 
 ```bash

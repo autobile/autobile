@@ -72,6 +72,8 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 The test suite uses Robolectric for Android-facing unit tests. Use JDK 21; newer JDKs
 may not be supported by the pinned Robolectric release.
 
+CI runs `./gradlew lintDebug test assembleDebug` on every pull request.
+
 Instrumentation tests need a connected device or emulator:
 
 ```bash
