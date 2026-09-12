@@ -38,6 +38,7 @@ import com.autobile.app.ui.design.barClearancePadding
 import com.autobile.app.ui.design.theme
 import com.autobile.app.ui.formatTimestamp
 import com.autobile.app.ui.labelRes
+import com.autobile.app.ui.resultLabelRes
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.TaskState
 
@@ -104,7 +105,7 @@ fun HistoryDetailScreen(state: AppUiState, viewModel: AppViewModel) {
         Hairline(Modifier.padding(horizontal = Space.gutter))
         FieldRow(
             label = stringResource(R.string.history_result),
-            value = stringResource(state.selectedTaskOutcome?.status?.labelRes() ?: task.state.labelRes()),
+            value = stringResource(state.selectedTaskOutcome?.resultLabelRes() ?: task.state.labelRes()),
             valueColor = task.state.statusColor(),
         )
         Hairline(Modifier.padding(horizontal = Space.gutter))

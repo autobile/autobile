@@ -13,6 +13,7 @@ import com.autobile.core.model.OutcomeStatus
 import com.autobile.core.model.RiskCategory
 import com.autobile.core.model.RuntimeTier
 import com.autobile.core.model.TaskOrigin
+import com.autobile.core.model.TaskOutcome
 import com.autobile.core.model.TaskState
 import com.autobile.core.model.TriggerSpec
 
@@ -151,6 +152,20 @@ fun ExecutionEventType.labelRes(): Int = when (this) {
 
 /** A finished run's verdict reuses the task-state wording so the two never disagree. */
 @StringRes
+/**
+ * How a finished run is described, including whether its goal was confirmed.
+ *
+ * A run can complete every step and still leave the goal unchecked, because nothing on
+ * the phone could judge it. Calling that plain "completed" claims more than was
+ * established; calling it failed claims the opposite. It gets its own wording.
+ */
+fun TaskOutcome.resultLabelRes(): Int =
+    if (status == OutcomeStatus.SUCCESS && !goalValidated) {
+        R.string.task_state_completed_unverified
+    } else {
+        status.labelRes()
+    }
+
 fun OutcomeStatus.labelRes(): Int = when (this) {
     OutcomeStatus.SUCCESS -> R.string.task_state_completed
     OutcomeStatus.PARTIAL -> R.string.task_state_failed

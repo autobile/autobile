@@ -416,4 +416,5 @@
     <string name="risk_why_confirmation_required">confirmation required</string>
     <string name="review_understood_by">Understood by %1$s.</string>
     <string name="review_understood_by_rules">Understood from the recording alone, with no AI.</string>
+    <string name="task_state_completed_unverified">Done, goal unconfirmed</string>
 </resources>

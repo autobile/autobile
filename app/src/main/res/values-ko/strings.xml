@@ -413,4 +413,5 @@
     <string name="risk_why_confirmation_required">확인이 필요합니다</string>
     <string name="review_understood_by">%1$s이(가) 이해했습니다.</string>
     <string name="review_understood_by_rules">AI 없이 기록만으로 이해했습니다.</string>
+    <string name="task_state_completed_unverified">완료, 목표는 확인 못 함</string>
 </resources>

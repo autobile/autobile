@@ -39,7 +39,7 @@ class UnnameableScreenTest {
     fun `a screen with no elements is located by looking`() = runTest {
         val resolver = resolverSeeing(PointMatch(true, 0.5f, 0.82f, 0.8f, "claim button near the bottom"))
 
-        val resolution = resolver.resolve(target, ScreenSnapshot(), screenshot = bitmap())
+        val resolution = resolver.resolve(target, ScreenSnapshot(), screenshot = { bitmap() })
 
         assertThat(resolution).isInstanceOf(Resolution.FoundPoint::class.java)
         val point = resolution as Resolution.FoundPoint
@@ -51,7 +51,7 @@ class UnnameableScreenTest {
     fun `looking is refused when the screen genuinely offers nothing`() = runTest {
         val resolver = resolverSeeing(PointMatch(false, -1f, -1f, 0f, "no such control"))
 
-        val resolution = resolver.resolve(target, ScreenSnapshot(), screenshot = bitmap())
+        val resolution = resolver.resolve(target, ScreenSnapshot(), screenshot = { bitmap() })
 
         assertThat(resolution).isInstanceOf(Resolution.NotFound::class.java)
     }
@@ -60,7 +60,7 @@ class UnnameableScreenTest {
     fun `without a screenshot an empty screen is still simply not found`() = runTest {
         val resolver = resolverSeeing(PointMatch(true, 0.5f, 0.5f, 0.9f, "there"))
 
-        val resolution = resolver.resolve(target, ScreenSnapshot(), screenshot = null)
+        val resolution = resolver.resolve(target, ScreenSnapshot(), screenshot = { null })
 
         assertThat(resolution).isInstanceOf(Resolution.NotFound::class.java)
     }
@@ -76,7 +76,7 @@ class UnnameableScreenTest {
             com.autobile.runtime.node("claim", text = "daily reward", clickable = true),
         )
 
-        val resolution = resolver.resolve(target, snapshot, screenshot = bitmap())
+        val resolution = resolver.resolve(target, snapshot, screenshot = { bitmap() })
 
         assertThat(resolution).isInstanceOf(Resolution.Found::class.java)
         assertThat((resolution as Resolution.Found).tier).isEqualTo(RuntimeTier.DETERMINISTIC)

@@ -1,5 +1,6 @@
 package com.autobile.runtime.executor
 
+import android.graphics.Bitmap
 import com.autobile.ai.context.ContextMinimizer
 import com.autobile.ai.router.AiRuntimeRouter
 import com.autobile.ai.task.AiTasks
@@ -346,16 +347,13 @@ class SkillExecutor(
                 }
             }
 
-            // Also captured when the tree is empty or holds nothing usable: that is the
-            // case where looking is the only way to act at all, and waiting for a failed
-            // attempt first would cost a retry to learn what is already known.
-            val nothingNameable = snapshot.nodes.none { !requiresEditable(step) || it.editable }
-            val screenshot = if (
-                step.preferredResolver == ResolverKind.VISION || attempt > 0 || nothingNameable
-            ) {
-                (perception.captureScreenshot() as? ScreenshotCapture.Success)?.bitmap
-            } else {
-                null
+            // Captured only if the resolver gets far enough to need it. A screenshot is
+            // slow and rate-limited by the platform, and a step that matches by recorded
+            // id — the ordinary case — never looks at one.
+            var screenshotTaken: ScreenshotCapture? = null
+            val screenshot: suspend () -> Bitmap? = {
+                val capture = screenshotTaken ?: perception.captureScreenshot().also { screenshotTaken = it }
+                (capture as? ScreenshotCapture.Success)?.bitmap
             }
 
             val resolution = resolver.resolve(
@@ -446,7 +444,7 @@ class SkillExecutor(
                 val extracted: String?
                 val actionResult: ActionResult
                 if (readAction != null) {
-                    val reading = readValue(step, snapshot, screenshot, localOnly)
+                    val reading = readValue(step, snapshot, screenshot(), localOnly)
                     extracted = reading.value
                     if (reading.usedCloud) cloudCalls++
                     if (reading.tier == RuntimeTier.DEVICE_AI) deviceAiCalls++
