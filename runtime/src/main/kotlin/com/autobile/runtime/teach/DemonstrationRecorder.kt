@@ -155,6 +155,10 @@ class DemonstrationRecorder(
      * are what the framework itself considers current.
      */
     private fun findLikelyTarget(snapshot: ScreenSnapshot, event: ObservedEvent): UiNode? {
+        // The framework already said which element this was. Everything below is
+        // guesswork for the events that name no source.
+        event.sourceNode?.takeIf { it.className != null || it.resourceId != null }?.let { return it }
+
         val text = event.text.trim()
         val description = event.contentDescription?.trim()
 

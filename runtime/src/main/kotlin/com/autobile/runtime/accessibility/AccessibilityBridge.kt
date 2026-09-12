@@ -7,6 +7,8 @@ import android.text.TextUtils
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import com.autobile.core.common.Logx
+import com.autobile.core.model.UiNode
+import com.autobile.runtime.perception.UiTreeReader
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -48,6 +50,8 @@ object AccessibilityBridge {
     private val _foregroundPackage = MutableStateFlow("")
     val foregroundPackage: StateFlow<String> = _foregroundPackage.asStateFlow()
 
+    private val reader = UiTreeReader()
+
     @Volatile
     private var service: AutobileAccessibilityService? = null
 
@@ -86,6 +90,11 @@ object AccessibilityBridge {
             contentDescription = event.contentDescription?.toString(),
             timestamp = System.currentTimeMillis(),
             fromDestinationWindow = isDestinationWindow(event),
+            // The framework naming the element it was, rather than this app matching by
+            // text and hoping. A note body and the layout scrolling it report the same
+            // text; predictive typing reports a half-finished word. Neither is ambiguous
+            // to the source.
+            sourceNode = runCatching { event.source?.let(reader::describe) }.getOrNull(),
         )
         _events.tryEmit(observed)
     }
@@ -164,6 +173,8 @@ data class ObservedEvent(
      * a keyboard, a shade, a picture-in-picture corner or an overlay drawn on top.
      */
     val fromDestinationWindow: Boolean = true,
+    /** The element the framework says produced this event, when it named one. */
+    val sourceNode: UiNode? = null,
 ) {
     val isWindowChange: Boolean
         get() = type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED

@@ -45,6 +45,38 @@ class UiTreeReader(
         )
     }
 
+    /**
+     * Describes a single element, without its surroundings.
+     *
+     * Used for the element an accessibility event names as its source. That is the
+     * framework stating which view it was, so it settles questions that matching by text
+     * only guesses at — a note body and the layout scrolling it report the same text,
+     * and predictive typing reports a half-finished word.
+     */
+    fun describe(node: AccessibilityNodeInfo, nodeId: String = "source"): UiNode {
+        val rect = Rect().also { runCatching { node.getBoundsInScreen(it) } }
+        return UiNode(
+            nodeId = nodeId,
+            resourceId = node.viewIdResourceName?.takeIf { it.isNotBlank() },
+            text = node.text?.toString()?.takeIf { it.isNotBlank() },
+            contentDescription = node.contentDescription?.toString()?.takeIf { it.isNotBlank() },
+            hint = runCatching { node.hintText?.toString() }.getOrNull()?.takeIf { it.isNotBlank() },
+            className = node.className?.toString(),
+            packageName = node.packageName?.toString(),
+            bounds = Bounds(rect.left, rect.top, rect.right, rect.bottom),
+            clickable = node.isClickable,
+            longClickable = node.isLongClickable,
+            editable = node.isEditable,
+            scrollable = node.isScrollable,
+            checkable = node.isCheckable,
+            checked = node.isNodeChecked(),
+            selected = node.isSelected,
+            enabled = node.isEnabled,
+            focused = node.isFocused,
+            visible = node.isVisibleToUser && rect.width() > 0 && rect.height() > 0,
+        )
+    }
+
     private fun traverse(
         node: AccessibilityNodeInfo,
         parentId: String?,

@@ -132,6 +132,14 @@ class TraceSegmenter(
                             event.targetNode?.hasIdentity() != true
                         ) -> EventClassification.NOISE
 
+                // Typing is reported as it happens: a keyboard with predictive text
+                // fires an event per keystroke and per correction, each carrying the
+                // field's contents so far. Only the last of a run into the same field
+                // says what was actually entered — the rest are half-finished words,
+                // and kept as steps the automation types a syllable at a time.
+                event.action is ObservedAction.TextInput && next?.action is ObservedAction.TextInput &&
+                    sameField(event, next) -> EventClassification.NOISE
+
                 // An action undone by an immediate back was a mistake.
                 next?.action is ObservedAction.Back && event.action is ObservedAction.Click &&
                     returnedToSameScreen(event, next) -> EventClassification.NOISE
@@ -150,6 +158,19 @@ class TraceSegmenter(
             )
         }
         return out
+    }
+
+    /**
+     * Whether two events typed into the same place.
+     *
+     * Compared by what identifies the field rather than by the text it held, which is
+     * the value and differs at every keystroke.
+     */
+    private fun sameField(event: TraceEvent, next: TraceEvent): Boolean {
+        val a = event.targetNode ?: return false
+        val b = next.targetNode ?: return false
+        a.resourceId?.let { return it == b.resourceId }
+        return a.nodeId == b.nodeId && a.className == b.className
     }
 
     /** True when the step after an action returned to the screen it started on. */
