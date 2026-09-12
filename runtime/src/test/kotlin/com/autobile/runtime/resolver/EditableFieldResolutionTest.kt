@@ -26,6 +26,37 @@ class EditableFieldResolutionTest {
     private val nameless = TargetSemantics(intentLabel = "ScrollView", description = "")
 
     @Test
+    fun `a label match that cannot accept text is refused`() = runTest {
+        // The recorded target was the layout scrolling a note, so its label is
+        // "ScrollView" and a text match finds it exactly. Acting on it dispatches text
+        // at a layout, which is refused — with a field on the same screen all along.
+        val snapshot = screen(
+            "com.example.notes",
+            "Note",
+            node("wrap", text = "ScrollView", clickable = false, className = "android.widget.ScrollView"),
+            node("body", text = "", editable = true, focused = true, clickable = false),
+        )
+
+        val resolution = resolver.resolve(nameless, snapshot, requireEditable = true)
+
+        assertThat((resolution as Resolution.Found).node.nodeId).isEqualTo("body")
+    }
+
+    @Test
+    fun `a tap step still matches the label it was taught`() = runTest {
+        val snapshot = screen(
+            "com.example.notes",
+            "Note",
+            node("wrap", text = "ScrollView", clickable = true),
+            node("body", text = "", editable = true, clickable = false),
+        )
+
+        val resolution = resolver.resolve(nameless, snapshot, requireEditable = false)
+
+        assertThat((resolution as Resolution.Found).node.nodeId).isEqualTo("wrap")
+    }
+
+    @Test
     fun `the only field on screen is the answer, without inference`() = runTest {
         val snapshot = screen(
             "com.example.notes",
@@ -34,7 +65,7 @@ class EditableFieldResolutionTest {
             node("save", text = "Save"),
         )
 
-        val resolution = resolver.resolve(nameless, snapshot, preferEditable = true)
+        val resolution = resolver.resolve(nameless, snapshot, requireEditable = true)
 
         assertThat(resolution).isInstanceOf(Resolution.Found::class.java)
         val found = resolution as Resolution.Found
@@ -51,7 +82,7 @@ class EditableFieldResolutionTest {
             node("body", text = "", editable = true, focused = true, clickable = false),
         )
 
-        val resolution = resolver.resolve(nameless, snapshot, preferEditable = true)
+        val resolution = resolver.resolve(nameless, snapshot, requireEditable = true)
 
         assertThat((resolution as Resolution.Found).node.nodeId).isEqualTo("body")
     }
@@ -60,7 +91,7 @@ class EditableFieldResolutionTest {
     fun `a step that does not type is not handed a field`() = runTest {
         val snapshot = screen("com.example.notes", "Note", node("body", text = "anything", editable = true, clickable = false))
 
-        val resolution = resolver.resolve(nameless, snapshot, preferEditable = false)
+        val resolution = resolver.resolve(nameless, snapshot, requireEditable = false)
 
         assertThat(resolution).isNotInstanceOf(Resolution.Found::class.java)
     }
@@ -74,7 +105,7 @@ class EditableFieldResolutionTest {
             node("body", text = "", editable = true, clickable = false),
         )
 
-        val resolution = resolver.resolve(nameless, snapshot, preferEditable = true, allowInference = false)
+        val resolution = resolver.resolve(nameless, snapshot, requireEditable = true, allowInference = false)
 
         assertThat(resolution).isNotInstanceOf(Resolution.Found::class.java)
     }

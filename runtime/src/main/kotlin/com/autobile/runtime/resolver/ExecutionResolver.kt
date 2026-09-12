@@ -43,20 +43,30 @@ class ExecutionResolver(
         allowInference: Boolean = true,
         allowVision: Boolean = true,
         localOnly: Boolean = false,
-        /** True when the step types, so the field on screen is a deterministic answer. */
-        preferEditable: Boolean = false,
+        /**
+         * True when the step types. A typing step can only act on something that accepts
+         * text, so this is a constraint on what may be matched at all, not a preference
+         * applied after the other strategies have had their say.
+         */
+        requireEditable: Boolean = false,
     ): Resolution {
         if (snapshot.nodes.isEmpty()) return Resolution.NotFound("The screen has no readable elements")
 
-        matchByLocator(target, snapshot)?.let { return it }
-        matchByText(target, snapshot)?.let { return it }
-        if (preferEditable) matchEditableField(snapshot)?.let { return it }
+        // What the step means constrains what can answer it. Taking a match that cannot
+        // do the job, because its label happened to fit, is what a recorded macro does:
+        // the run then dispatches text at a layout and is told the target does not accept
+        // text input, having had a field on the same screen all along.
+        val usable: (UiNode) -> Boolean = { !requireEditable || it.editable }
+
+        matchByLocator(target, snapshot, usable)?.let { return it }
+        matchByText(target, snapshot, usable)?.let { return it }
+        if (requireEditable) matchEditableField(snapshot)?.let { return it }
 
         if (!allowInference) {
             return Resolution.NeedsReasoning("No deterministic match for \"${target.intentLabel}\"")
         }
 
-        val candidates = minimizer.relevantNodes(snapshot, target.matchTerms())
+        val candidates = minimizer.relevantNodes(snapshot, target.matchTerms()).filter(usable)
         if (candidates.isEmpty()) return Resolution.NotFound("No candidate elements on this screen")
 
         val prompt = AiTasks.elementMatchPrompt(
@@ -197,17 +207,21 @@ class ExecutionResolver(
      * changes; a hierarchy path survives renaming. Text is handled at the next stage,
      * where a weaker match can be scored instead of accepted outright.
      */
-    private fun matchByLocator(target: TargetSemantics, snapshot: ScreenSnapshot): Resolution.Found? {
+    private fun matchByLocator(
+        target: TargetSemantics,
+        snapshot: ScreenSnapshot,
+        usable: (UiNode) -> Boolean,
+    ): Resolution.Found? {
         val byStrength = target.locators.sortedByDescending { it.strength }
 
         for (locator in byStrength.filter { it.kind == LocatorKind.RESOURCE_ID }) {
-            snapshot.nodes.firstOrNull { it.visible && it.resourceId == locator.value }?.let { node ->
+            snapshot.nodes.firstOrNull { it.visible && usable(it) && it.resourceId == locator.value }?.let { node ->
                 return found(node, "resource id")
             }
         }
 
         for (locator in byStrength.filter { it.kind == LocatorKind.HIERARCHY_PATH }) {
-            snapshot.nodes.firstOrNull { it.visible && it.hierarchyPath() == locator.value }?.let { node ->
+            snapshot.nodes.firstOrNull { it.visible && usable(it) && it.hierarchyPath() == locator.value }?.let { node ->
                 // A path only identifies the right element if what sits there still
                 // looks like the recorded target, otherwise a reordered list silently
                 // resolves to the wrong row.
@@ -224,11 +238,15 @@ class ExecutionResolver(
      * accepted when it is unambiguous: if two elements score equally well, the choice is
      * a judgement call and is handed to a reasoning tier rather than guessed.
      */
-    private fun matchByText(target: TargetSemantics, snapshot: ScreenSnapshot): Resolution.Found? {
+    private fun matchByText(
+        target: TargetSemantics,
+        snapshot: ScreenSnapshot,
+        usable: (UiNode) -> Boolean,
+    ): Resolution.Found? {
         val terms = target.matchTerms().map { it.lowercase() }.filter { it.isNotBlank() }
         if (terms.isEmpty()) return null
 
-        val actionable = snapshot.nodes.filter { it.visible && it.enabled }
+        val actionable = snapshot.nodes.filter { it.visible && it.enabled && usable(it) }
         if (actionable.isEmpty()) return null
 
         val scored = actionable
