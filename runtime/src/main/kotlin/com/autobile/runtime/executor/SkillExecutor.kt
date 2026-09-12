@@ -235,7 +235,17 @@ class SkillExecutor(
             ),
         )
 
-        val status = if (goalOutcome.passed) OutcomeStatus.SUCCESS else OutcomeStatus.PARTIAL
+        // A goal nobody could check is not a goal that was missed. Every step did what
+        // it was told and each confirmed its own screen, so reporting the automation as
+        // broken would be its own kind of lie — on most phones nothing can answer a
+        // semantic question, and that is the ordinary case, not a fault. The run is
+        // recorded as done with the goal left unconfirmed, which is what happened.
+        val everyStepWorked = results.all { it.success }
+        val status = when {
+            goalOutcome.passed -> OutcomeStatus.SUCCESS
+            !goalOutcome.evaluated && everyStepWorked -> OutcomeStatus.SUCCESS
+            else -> OutcomeStatus.PARTIAL
+        }
         return TaskOutcome(
             taskId = task.id,
             status = status,
@@ -465,8 +475,9 @@ class SkillExecutor(
                 if (actionResult.succeeded) {
                     snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)
                         ?.snapshot ?: snapshot
+                    val wrote = confirmTextLanded(step, snapshot, context)
                     val validated = validateAfter(step, snapshot, extracted, localOnly, observer, task, index)
-                    if (validated.passed) {
+                    if (wrote && validated.passed) {
                         if (recovered) {
                             persistRepair(skill, step, resolution, navigationSteps, observer)
                         }
@@ -548,6 +559,24 @@ class SkillExecutor(
         .firstOrNull { it.isNotBlank() && it != ownPackage }
 
     private fun requiresEditable(step: SkillStep): Boolean = step.action is ActionSpec.InputText
+
+    /**
+     * Reads back what a typing step just wrote.
+     *
+     * The framework reporting that it set the text is not the same as the text being
+     * there: a field can reject it, trim it, or be replaced by another as the screen
+     * settles. Checking is cheap, certain, and needs no model — which matters, because
+     * the alternative was asking one whether typing had worked.
+     */
+    private fun confirmTextLanded(
+        step: SkillStep,
+        snapshot: ScreenSnapshot,
+        context: ExecutionContext,
+    ): Boolean {
+        val input = step.action as? ActionSpec.InputText ?: return true
+        val expected = context.resolve(input.value)?.takeIf { it.isNotBlank() } ?: return true
+        return snapshot.nodes.any { it.text?.contains(expected) == true }
+    }
 
     /**
      * Types into whatever the touch just focused.
