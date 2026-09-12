@@ -165,8 +165,13 @@ class DemonstrationRecorder(
         // container records the step as "type into the ScrollView", which nothing can
         // resolve later because a layout has no identity to find it by.
         if (event.type == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
-            snapshot.nodes.firstOrNull { it.editable && it.focused }?.let { return it }
-            snapshot.nodes.singleOrNull { it.editable }?.let { return it }
+            val fields = snapshot.nodes.filter { it.editable }
+            fields.firstOrNull { it.focused }?.let { return it }
+            // Focus is not always reported. The field that now holds what was just typed
+            // is the one it was typed into, and among fields that is unambiguous in a
+            // way it is not among containers, which report their children's text too.
+            fields.firstOrNull { text.isNotEmpty() && it.text?.contains(text) == true }?.let { return it }
+            fields.singleOrNull()?.let { return it }
         }
 
         if (text.isNotEmpty() || !description.isNullOrEmpty()) {

@@ -7,6 +7,7 @@ import com.autobile.core.model.DemonstrationTrace
 import com.autobile.core.model.EventClassification
 import com.autobile.core.model.ObservedAction
 import com.autobile.core.model.ScreenSnapshot
+import com.autobile.core.model.StateTransition
 import com.autobile.core.model.TraceEvent
 import com.autobile.runtime.ScriptedProvider
 import com.autobile.runtime.node
@@ -36,6 +37,14 @@ class TraceSegmenterTest {
         after = ScreenSnapshot(packageName = "com.example.business", windowTitle = afterWindow),
         action = action,
         targetNode = node("n$index", text = label),
+        // Derived from the windows either side, the way the recorder fills it in. Left
+        // null, every rule that asks whether the screen changed silently reads "no".
+        stateTransition = StateTransition(
+            fromPackage = "com.example.business",
+            toPackage = "com.example.business",
+            fromWindow = beforeWindow,
+            toWindow = afterWindow,
+        ),
     )
 
     private fun trace(vararg events: TraceEvent) = DemonstrationTrace(
@@ -98,6 +107,40 @@ class TraceSegmenterTest {
         )
 
         assertThat(result.compilable().map { it.packageName }).contains("com.android.settings")
+    }
+
+    @Test
+    fun `a tap that only put the cursor in a field is not a step`() = runTest {
+        // Tapping a note body before typing records a tap on the unnamed layout that
+        // wraps the field. Kept as a step it becomes "select ScrollView", which nothing
+        // can resolve on a later run, and the automation fails before it types anything.
+        val segmenter = TraceSegmenter(routerWith(ScriptedProvider()))
+
+        val result = segmenter.segment(
+            trace(
+                event(0, ObservedAction.Click, label = "ScrollView"),
+                event(1, ObservedAction.TextInput("12 September")),
+            ),
+        )
+
+        assertThat(result.events.first().classification).isEqualTo(EventClassification.NOISE)
+        assertThat(result.compilable()).hasSize(1)
+    }
+
+    @Test
+    fun `a tap that opened a new screen before typing is kept`() = runTest {
+        // Not cursor placement: this one navigated somewhere, and the typing happened
+        // there. Dropping it would lose the step that got the user to the field.
+        val segmenter = TraceSegmenter(routerWith(ScriptedProvider()))
+
+        val result = segmenter.segment(
+            trace(
+                event(0, ObservedAction.Click, label = "New note", beforeWindow = "List", afterWindow = "Editor"),
+                event(1, ObservedAction.TextInput("12 September"), beforeWindow = "Editor", afterWindow = "Editor"),
+            ),
+        )
+
+        assertThat(result.events.first().classification).isNotEqualTo(EventClassification.NOISE)
     }
 
     @Test
