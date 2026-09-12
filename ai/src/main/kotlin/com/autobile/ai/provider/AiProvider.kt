@@ -33,7 +33,6 @@ interface AiProvider {
 data class ProviderCapabilities(
     val available: Boolean = false,
     val supportsVision: Boolean = false,
-    val supportsStructuredOutput: Boolean = false,
     val supportsSystemPrompt: Boolean = false,
     val maxInputTokens: Int = 0,
     val modelName: String? = null,

@@ -38,7 +38,6 @@ class AiRuntimeRouterTest {
         private val capabilities: ProviderCapabilities = ProviderCapabilities(
             available = true,
             supportsVision = true,
-            supportsStructuredOutput = true,
             maxInputTokens = 4_000,
         ),
         private val response: (StructuredRequest<*>) -> InferenceResult<*>,

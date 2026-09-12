@@ -63,7 +63,6 @@ class MLKitGeminiNanoProvider : ReasoningProvider, VisionProvider, StructuredInf
         return ProviderCapabilities(
             available = capability.isUsable,
             supportsVision = capability.multimodalSupported,
-            supportsStructuredOutput = capability.structuredOutputSupported,
             supportsSystemPrompt = capability.systemPromptSupported,
             maxInputTokens = capability.tokenLimit,
             modelName = capability.baseModelName,

@@ -47,7 +47,6 @@ class LocalModelProvider(
         return ProviderCapabilities(
             available = engine.isReady(),
             supportsVision = false,
-            supportsStructuredOutput = true,
             supportsSystemPrompt = true,
             maxInputTokens = engine.contextWindow(),
             modelName = capability.modelName,
