@@ -82,6 +82,29 @@ class EditableTargetTest {
     )
 
     @Test
+    fun `a step whose target has nothing to find it by is optional`() = runTest {
+        // A bare layout carries no id, label or description. The step is kept, because
+        // it happened, but it no longer takes the automation down with it — the rest
+        // runs, and the goal check reports honestly if skipping it mattered.
+        val bareLayout = node("wrap", text = null, clickable = false, className = "android.widget.ScrollView")
+
+        val result = compile(traceTypingInto(bareLayout)).compile(traceTypingInto(bareLayout), localOnly = true)
+
+        val step = (result as CompilationResult.Success).skill.steps.last()
+        assertThat(step.optional).isTrue()
+    }
+
+    @Test
+    fun `a step on a named control stays required`() = runTest {
+        val named = node("save", text = "Save", clickable = true)
+
+        val result = compile(traceTypingInto(named)).compile(traceTypingInto(named), localOnly = true)
+
+        val step = (result as CompilationResult.Success).skill.steps.last()
+        assertThat(step.optional).isFalse()
+    }
+
+    @Test
     fun `a field is named by its placeholder, not by what was typed into it`() = runTest {
         val field = node(
             "body",
