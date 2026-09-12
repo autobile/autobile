@@ -80,6 +80,24 @@ data class UiNode(
     fun hierarchyPath(): String = indexPath.joinToString("/")
 
     fun isActionable(): Boolean = enabled && visible && (clickable || longClickable || editable || scrollable)
+
+    /**
+     * Whether anything about this element could find it again on a later run.
+     *
+     * A bare layout has nothing: no id, no label, no description. Its class name reads
+     * like an answer — "ScrollView", "LinearLayout" — but names a kind of box, not a
+     * thing on screen, so a step recorded against one cannot be replayed by any means
+     * short of pressing the same coordinates, which is what this app exists not to do.
+     *
+     * A field's text is excluded on purpose: it is the value someone typed, so it will
+     * not be there next time. The placeholder is what identifies the field.
+     */
+    fun hasIdentity(): Boolean = when {
+        !resourceId.isNullOrBlank() -> true
+        !contentDescription.isNullOrBlank() -> true
+        editable -> !hint.isNullOrBlank()
+        else -> !text.isNullOrBlank()
+    }
 }
 
 @Serializable

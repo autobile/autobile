@@ -190,6 +190,11 @@ class SkillCompiler(
         }
 
         val target = node?.let { toTargetSemantics(it, event) } ?: return null
+        // A target with nothing to find it by cannot be resolved on a later run. The
+        // step is kept, because it did happen and the record should say so, but it no
+        // longer takes the whole automation down with it: the rest still runs, and the
+        // goal check reports honestly if skipping it mattered.
+        val identifiable = node.hasIdentity()
         val intent = inferIntent(event, all, index)
 
         val actionSpec = when (action) {
@@ -221,6 +226,7 @@ class SkillCompiler(
             expectedState = expectedStateAfter(event, all, index),
             validation = validationFor(intent, target, readsValue, event, all, index),
             fallback = FallbackPolicy(),
+            optional = !identifiable,
             description = describeStep(intent, target.description.ifBlank { target.intentLabel }),
         )
     }

@@ -164,8 +164,10 @@ class SkillExecutorTest {
         validation: ValidationSpec = ValidationSpec(mode = ValidationMode.NONE),
         expected: ExpectedState = ExpectedState(),
         retries: Int = 0,
+        optional: Boolean = false,
     ) = SkillStep(
         id = id,
+        optional = optional,
         intent = StepIntent.SELECT_ITEM,
         target = TargetSemantics(
             intentLabel = label,
@@ -482,6 +484,53 @@ class SkillExecutorTest {
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.PARTIAL)
         assertThat(recorder.typesOf(ExecutionEventType.VALIDATION_RESULT).any { it.success == false }).isTrue()
+    }
+
+    @Test
+    fun `a step nothing can identify is skipped rather than ending the run`() = runTest {
+        // A tap on a bare layout records a target with no id, label or description. It
+        // cannot be found again by any means this app is willing to use, and taking the
+        // whole automation down over it leaves every later step unrun.
+        val screen = FakeScreen(
+            screen(
+                "com.example.business",
+                "Reports",
+                node("n2", text = "Daily totals", clickable = true),
+            ),
+        )
+        val skill = skill(
+            listOf(
+                clickStep(id = "s1", label = "ScrollView", resourceId = null, optional = true),
+                clickStep(id = "s2", label = "Daily totals", resourceId = null),
+            ),
+        )
+
+        val outcome = executor(screen, ScriptedProvider()).execute(skill, task(skill), Recorder())
+
+        assertThat(screen.clicked).contains("n2")
+        assertThat(outcome.completedSteps).isEqualTo(1)
+    }
+
+    @Test
+    fun `a required step nothing can identify still stops the run`() = runTest {
+        val screen = FakeScreen(
+            screen(
+                "com.example.business",
+                "Reports",
+                node("n2", text = "Daily totals", clickable = true),
+            ),
+        )
+        val skill = skill(
+            listOf(
+                clickStep(id = "s1", label = "ScrollView", resourceId = null, optional = false),
+                clickStep(id = "s2", label = "Daily totals", resourceId = null),
+            ),
+        )
+
+        val outcome = executor(screen, ScriptedProvider()).execute(skill, task(skill), Recorder())
+
+        assertThat(screen.clicked).doesNotContain("n2")
+        assertThat(outcome.status).isNotEqualTo(OutcomeStatus.SUCCESS)
     }
 
     @Test

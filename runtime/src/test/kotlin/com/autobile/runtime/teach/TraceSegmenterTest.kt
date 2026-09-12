@@ -54,6 +54,15 @@ class TraceSegmenterTest {
         events = events.toList(),
     )
 
+    /** A tap on a bare layout: no id, no text, no description. */
+    private fun unnamedEvent(
+        index: Int,
+        action: ObservedAction,
+        beforeWindow: String = "Home",
+        afterWindow: String = "Home",
+    ) = event(index, action, beforeWindow = beforeWindow, afterWindow = afterWindow)
+        .copy(targetNode = node("n$index", text = null, clickable = false))
+
     private fun transitEvent(index: Int, packageName: String) = TraceEvent(
         id = "t$index",
         timestamp = index.toLong(),
@@ -125,6 +134,23 @@ class TraceSegmenterTest {
 
         assertThat(result.events.first().classification).isEqualTo(EventClassification.NOISE)
         assertThat(result.compilable()).hasSize(1)
+    }
+
+    @Test
+    fun `an unnamed tap before typing is dropped even when the screen changed`() = runTest {
+        // Focusing a note body changes the window — the keyboard comes up and the editor
+        // takes over — so "the screen changed" does not mean the tap navigated anywhere.
+        // What settles it is that the thing tapped has nothing to find it by.
+        val segmenter = TraceSegmenter(routerWith(ScriptedProvider()))
+
+        val result = segmenter.segment(
+            trace(
+                unnamedEvent(0, ObservedAction.Click, beforeWindow = "List", afterWindow = "Editor"),
+                event(1, ObservedAction.TextInput("12 September"), beforeWindow = "Editor", afterWindow = "Editor"),
+            ),
+        )
+
+        assertThat(result.events.first().classification).isEqualTo(EventClassification.NOISE)
     }
 
     @Test

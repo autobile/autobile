@@ -127,7 +127,10 @@ class TraceSegmenter(
                 // wrapping the field, which cannot be found again on a later run at all.
                 // A tap that changed the screen is excluded: that one went somewhere.
                 event.action is ObservedAction.Click && next?.action is ObservedAction.TextInput &&
-                    event.stateTransition?.changedScreen != true -> EventClassification.NOISE
+                    (
+                        event.stateTransition?.changedScreen != true ||
+                            event.targetNode?.hasIdentity() != true
+                        ) -> EventClassification.NOISE
 
                 // An action undone by an immediate back was a mistake.
                 next?.action is ObservedAction.Back && event.action is ObservedAction.Click &&
