@@ -307,11 +307,20 @@ class SkillCompiler(
     private fun expectedStateAfter(event: TraceEvent, all: List<TraceEvent>, index: Int): ExpectedState {
         val after = event.after ?: return ExpectedState()
         val next = all.getOrNull(index + 1)
-        // Only text a person could actually see. The label falls back to an id or a
-        // class name when an element has neither text nor description, and requiring
-        // "ScrollView" to appear on screen is a check that can never pass — the step
-        // reaches exactly the screen it was taught on and is failed for it.
-        val anchorTexts = listOfNotNull(next?.targetNode?.visibleText())
+        // An anchor proves this step reached the screen the next one needs, so it can
+        // only be something already there. Two kinds of text are not:
+        //
+        // A label that falls back to an id or a class name — requiring "ScrollView" to
+        // be written on screen fails a step for arriving exactly where it was taught.
+        //
+        // And anything the next step is about to type. That text is the value the
+        // automation will produce; demanding it beforehand can only pass if the run has
+        // already happened. Decided from the action rather than from whether the element
+        // admits to being editable, which some apps do not.
+        val anchorTexts = when (next?.action) {
+            is ObservedAction.TextInput -> emptyList()
+            else -> listOfNotNull(next?.targetNode?.visibleText())
+        }
         return ExpectedState(
             screen = ScreenSemantics(
                 label = after.windowTitle.ifBlank { after.packageName },

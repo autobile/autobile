@@ -51,6 +51,38 @@ class ValidationAnchorTest {
         riskEngine = riskEngine,
     )
 
+    private fun traceTyping(second: UiNode) = DemonstrationTrace(
+        id = "t",
+        label = "Note",
+        startedAt = 0,
+        endedAt = 10,
+        events = listOf(
+            TraceEvent(
+                id = "e0",
+                timestamp = 0,
+                packageName = "com.example.notes",
+                windowContext = "List",
+                before = ScreenSnapshot(packageName = "com.example.notes", windowTitle = "List"),
+                after = ScreenSnapshot(packageName = "com.example.notes", windowTitle = "Editor"),
+                action = ObservedAction.Click,
+                targetNode = node("new", text = "New note", resourceId = "com.example.notes:id/new"),
+                stateTransition = StateTransition("com.example.notes", "com.example.notes", "List", "Editor"),
+            ),
+            TraceEvent(
+                id = "e1",
+                timestamp = 1,
+                packageName = "com.example.notes",
+                windowContext = "Editor",
+                before = ScreenSnapshot(packageName = "com.example.notes", windowTitle = "Editor"),
+                after = ScreenSnapshot(packageName = "com.example.notes", windowTitle = "Editor"),
+                action = ObservedAction.TextInput("오늘 날짜 및 지금 시간 2"),
+                targetNode = second,
+                inputValue = "오늘 날짜 및 지금 시간 2",
+                stateTransition = StateTransition("com.example.notes", "com.example.notes", "Editor", "Editor"),
+            ),
+        ),
+    )
+
     private fun trace(second: UiNode) = DemonstrationTrace(
         id = "t",
         label = "Note",
@@ -101,6 +133,23 @@ class ValidationAnchorTest {
 
         val first = (result as CompilationResult.Success).skill.steps.first()
         assertThat(first.expectedState.requiredTexts).doesNotContain("12 September 09:12")
+    }
+
+    @Test
+    fun `what the next step will type is never required beforehand`() = runTest {
+        // Some apps report the text from a view that does not admit to being editable,
+        // so the question is what the next step does, not what the element claims to be.
+        val notMarkedEditable = node(
+            "body",
+            text = "오늘 날짜 및 지금 시간 2",
+            editable = false,
+            clickable = false,
+        )
+
+        val result = compiler().compile(traceTyping(notMarkedEditable), localOnly = true)
+
+        val first = (result as CompilationResult.Success).skill.steps.first()
+        assertThat(first.expectedState.requiredTexts).isEmpty()
     }
 
     @Test
