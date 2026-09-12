@@ -417,4 +417,9 @@
     <string name="review_understood_by">Understood by %1$s.</string>
     <string name="review_understood_by_rules">Understood from the recording alone, with no AI.</string>
     <string name="task_state_completed_unverified">Done, goal unconfirmed</string>
+    <string name="settings_cloud_service">Which service</string>
+    <string name="settings_cloud_get_key">Get a %1$s key</string>
+    <string name="settings_cloud_text_only">%1$s reads text only. Screens it cannot read will not be sent as pictures.</string>
+    <string name="settings_cloud_show_advanced">Use a different endpoint</string>
+    <string name="settings_cloud_hide_advanced">Hide endpoint settings</string>
 </resources>

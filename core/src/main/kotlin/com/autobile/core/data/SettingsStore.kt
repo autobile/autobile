@@ -41,6 +41,7 @@ class SettingsStore(context: Context) {
         cloudEnabled = prefs.getBoolean(KEY_CLOUD_ENABLED, false),
         allowScreenshotToCloud = prefs.getBoolean(KEY_CLOUD_SCREENSHOT, false),
         maskSensitiveFields = prefs.getBoolean(KEY_MASK_SENSITIVE, true),
+        cloudServiceName = prefs.getString(KEY_CLOUD_SERVICE, DEFAULT_CLOUD_SERVICE).orEmpty(),
         cloudEndpoint = prefs.getString(KEY_CLOUD_ENDPOINT, "").orEmpty(),
         cloudApiKeyPresent = !prefs.getString(KEY_CLOUD_API_KEY, "").isNullOrBlank(),
         cloudModel = prefs.getString(KEY_CLOUD_MODEL, DEFAULT_CLOUD_MODEL).orEmpty(),
@@ -51,6 +52,7 @@ class SettingsStore(context: Context) {
         putBoolean(KEY_CLOUD_ENABLED, settings.cloudEnabled)
         putBoolean(KEY_CLOUD_SCREENSHOT, settings.allowScreenshotToCloud)
         putBoolean(KEY_MASK_SENSITIVE, settings.maskSensitiveFields)
+        putString(KEY_CLOUD_SERVICE, settings.cloudServiceName)
         putString(KEY_CLOUD_ENDPOINT, settings.cloudEndpoint)
         putString(KEY_CLOUD_MODEL, settings.cloudModel)
         putString(KEY_CLOUD_VISION_MODEL, settings.cloudVisionModel)
@@ -107,7 +109,9 @@ class SettingsStore(context: Context) {
 
     companion object {
         const val DEFAULT_CLOUD_MODEL = "gemini-2.5-flash"
+        const val DEFAULT_CLOUD_SERVICE = "GEMINI"
 
+        private const val KEY_CLOUD_SERVICE = "cloud_service"
         private const val KEY_CLOUD_ENABLED = "cloud_enabled"
         private const val KEY_CLOUD_SCREENSHOT = "cloud_screenshot"
         private const val KEY_MASK_SENSITIVE = "mask_sensitive"

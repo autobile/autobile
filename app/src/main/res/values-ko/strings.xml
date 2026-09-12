@@ -414,4 +414,9 @@
     <string name="review_understood_by">%1$s이(가) 이해했습니다.</string>
     <string name="review_understood_by_rules">AI 없이 기록만으로 이해했습니다.</string>
     <string name="task_state_completed_unverified">완료, 목표는 확인 못 함</string>
+    <string name="settings_cloud_service">어떤 서비스</string>
+    <string name="settings_cloud_get_key">%1$s 키 발급받기</string>
+    <string name="settings_cloud_text_only">%1$s은(는) 텍스트만 읽습니다. 읽을 수 없는 화면을 그림으로 보내지는 않습니다.</string>
+    <string name="settings_cloud_show_advanced">다른 엔드포인트 쓰기</string>
+    <string name="settings_cloud_hide_advanced">엔드포인트 설정 숨기기</string>
 </resources>

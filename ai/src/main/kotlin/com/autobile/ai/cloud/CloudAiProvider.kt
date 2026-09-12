@@ -55,7 +55,7 @@ class CloudAiProvider(
         if (!cfg.isUsable) return ProviderCapabilities.unavailable("Cloud access is off or unconfigured")
         return ProviderCapabilities(
             available = true,
-            supportsVision = cfg.allowImages,
+            supportsVision = cfg.allowImages && cfg.service.supportsImages,
             supportsSystemPrompt = true,
             maxInputTokens = cfg.maxInputTokens,
             modelName = cfg.modelFor(tier),
@@ -132,9 +132,17 @@ class CloudAiProvider(
                 readTimeout = cfg.readTimeoutMs
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                if (cfg.apiKey.isNotBlank()) setRequestProperty("x-goog-api-key", cfg.apiKey)
+                cfg.service.dialect.authHeaders(cfg.apiKey).forEach(::setRequestProperty)
             }
-            val body = buildRequestBody(systemInstruction, prompt, image, temperature, maxOutputTokens, forceJson)
+            val body = cfg.service.dialect.requestBody(
+                model = cfg.modelFor(tier),
+                systemInstruction = systemInstruction,
+                prompt = prompt,
+                imageBase64 = image?.let(::encodeImage),
+                temperature = temperature,
+                maxOutputTokens = maxOutputTokens,
+                forceJson = forceJson,
+            )
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
             val status = connection.responseCode
@@ -146,7 +154,7 @@ class CloudAiProvider(
             }
 
             val responseText = connection.inputStream.bufferedReader().use { it.readText() }
-            val text = extractText(responseText)
+            val text = cfg.service.dialect.extractText(responseText)
             consecutiveFailures.set(0)
             InferenceResult(
                 value = text,
@@ -171,68 +179,10 @@ class CloudAiProvider(
         }
     }
 
-    private fun buildRequestBody(
-        systemInstruction: String?,
-        prompt: String,
-        image: Bitmap?,
-        temperature: Float,
-        maxOutputTokens: Int,
-        forceJson: Boolean,
-    ): String {
-        val payload = buildJsonObject {
-            if (!systemInstruction.isNullOrBlank()) {
-                putJsonObject("systemInstruction") {
-                    putJsonArray("parts") {
-                        add(buildJsonObject { put("text", systemInstruction) })
-                    }
-                }
-            }
-            putJsonArray("contents") {
-                add(
-                    buildJsonObject {
-                        put("role", "user")
-                        putJsonArray("parts") {
-                            if (image != null) {
-                                add(
-                                    buildJsonObject {
-                                        putJsonObject("inline_data") {
-                                            put("mime_type", "image/jpeg")
-                                            put("data", encodeImage(image))
-                                        }
-                                    },
-                                )
-                            }
-                            add(buildJsonObject { put("text", prompt) })
-                        }
-                    },
-                )
-            }
-            putJsonObject("generationConfig") {
-                put("temperature", temperature)
-                put("maxOutputTokens", maxOutputTokens)
-                put("candidateCount", 1)
-                if (forceJson) put("responseMimeType", "application/json")
-            }
-        }
-        return payload.toString()
-    }
-
     private fun encodeImage(bitmap: Bitmap): String {
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
         return Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
-    }
-
-    private fun extractText(response: String): String? {
-        val root = runCatching { AutobileJson.parseToJsonElement(response) as? JsonObject }.getOrNull() ?: return null
-        val candidates = root["candidates"] as? JsonArray ?: return null
-        val first = candidates.firstOrNull() as? JsonObject ?: return null
-        val content = first["content"] as? JsonObject ?: return null
-        val parts = content["parts"] as? JsonArray ?: return null
-        val text = parts.mapNotNull { part ->
-            ((part as? JsonObject)?.get("text") as? JsonPrimitive)?.content
-        }.joinToString("")
-        return text.takeIf { it.isNotBlank() }
     }
 
     private fun mapHttpStatus(status: Int): InferenceErrorKind = when (status) {
@@ -267,6 +217,8 @@ class CloudAiProvider(
  */
 data class CloudConfig(
     val enabled: Boolean = false,
+    /** Which service this points at, which decides the wire format and the defaults. */
+    val service: CloudService = CloudService.GEMINI,
     val endpoint: String = DEFAULT_ENDPOINT,
     val apiKey: String = "",
     val lightModel: String = DEFAULT_LIGHT_MODEL,
@@ -284,8 +236,10 @@ data class CloudConfig(
     fun modelFor(tier: RuntimeTier): String =
         if (tier == RuntimeTier.CLOUD_ADVANCED) advancedModel else lightModel
 
-    fun requestUrl(tier: RuntimeTier): String =
-        "${endpoint.trimEnd('/')}/models/${modelFor(tier)}:generateContent"
+    fun requestUrl(tier: RuntimeTier): String = service.dialect.requestUrl(endpoint, modelFor(tier))
+
+    /** True when this service can be sent a picture at all, before the user's choice. */
+    val serviceSupportsImages: Boolean get() = service.supportsImages
 
     companion object {
         const val DEFAULT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta"

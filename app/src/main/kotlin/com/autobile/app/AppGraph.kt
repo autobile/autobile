@@ -8,6 +8,7 @@ import android.os.Build
 import android.view.inputmethod.InputMethodManager
 import com.autobile.ai.cloud.CloudAiProvider
 import com.autobile.ai.cloud.CloudConfig
+import com.autobile.ai.cloud.CloudService
 import com.autobile.ai.context.ContextMinimizer
 import com.autobile.ai.local.LocalModelProvider
 import com.autobile.ai.mlkit.MLKitGeminiNanoProvider
@@ -89,12 +90,17 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
 
     private fun cloudConfig(advanced: Boolean = false): CloudConfig {
         val privacy = settings.privacy()
+        // The chosen service supplies the endpoint and the model names; anything the
+        // user typed themselves wins over it, so a compatible deployment of their own
+        // still works without needing a preset of its own.
+        val service = CloudService.from(privacy.cloudServiceName)
         return CloudConfig(
             enabled = privacy.cloudEnabled,
-            endpoint = privacy.cloudEndpoint.ifBlank { CloudConfig.DEFAULT_ENDPOINT },
+            service = service,
+            endpoint = privacy.cloudEndpoint.ifBlank { service.endpoint },
             apiKey = settings.cloudApiKey(),
-            lightModel = privacy.cloudModel.ifBlank { CloudConfig.DEFAULT_LIGHT_MODEL },
-            advancedModel = privacy.cloudVisionModel.ifBlank { CloudConfig.DEFAULT_ADVANCED_MODEL },
+            lightModel = privacy.cloudModel.ifBlank { service.lightModel },
+            advancedModel = privacy.cloudVisionModel.ifBlank { service.advancedModel },
             allowImages = privacy.allowScreenshotToCloud,
             maxInputTokens = if (advanced) 32_000 else 8_000,
         )

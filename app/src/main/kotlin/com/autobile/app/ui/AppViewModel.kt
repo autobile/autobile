@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.autobile.ai.cloud.CloudService
 import com.autobile.ai.mlkit.DownloadState
 import com.autobile.ai.mlkit.ModelDownloadProgress
 import com.autobile.core.data.Metric
@@ -478,6 +479,26 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
     fun updateCloudScreenshots(enabled: Boolean) = updatePrivacy { it.copy(allowScreenshotToCloud = enabled) }
     fun updateMasking(enabled: Boolean) = updatePrivacy { it.copy(maskSensitiveFields = enabled) }
     fun updateCloudEndpoint(value: String) = updatePrivacy { it.copy(cloudEndpoint = value.trim()) }
+
+    /**
+     * Switches to a different cloud service.
+     *
+     * Any endpoint and model the user typed for the previous one are cleared, because
+     * they name resources on a service that is no longer selected: keeping them would
+     * point a Claude key at an OpenAI URL and fail with something unhelpful. A screenshot
+     * consent given for a service that cannot accept pictures is dropped for the same
+     * reason — it would promise something the service will refuse.
+     */
+    fun updateCloudService(name: String) = updatePrivacy { current ->
+        val service = CloudService.from(name)
+        current.copy(
+            cloudServiceName = service.name,
+            cloudEndpoint = "",
+            cloudModel = "",
+            cloudVisionModel = "",
+            allowScreenshotToCloud = current.allowScreenshotToCloud && service.supportsImages,
+        )
+    }
 
     fun setCloudApiKey(value: String) {
         graph.settings.setCloudApiKey(value.trim())

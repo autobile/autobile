@@ -1,0 +1,213 @@
+package com.autobile.ai.cloud
+
+import com.autobile.core.common.AutobileJson
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
+
+/**
+ * How one vendor's API differs from another's.
+ *
+ * The differences are entirely mechanical — a header name, where the system prompt goes,
+ * what the reply is nested inside — and confining them here keeps the rest of the cloud
+ * client, its error handling, its privacy gates and its retry behaviour identical
+ * whichever service a user chooses. A provider added later touches this file and nothing
+ * else.
+ */
+enum class CloudDialect {
+    /** Google's `generateContent`. */
+    GEMINI,
+
+    /** OpenAI's chat completions, which several other services also implement. */
+    OPENAI,
+
+    /** Anthropic's messages API. */
+    ANTHROPIC;
+
+    fun requestUrl(endpoint: String, model: String): String {
+        val base = endpoint.trimEnd('/')
+        return when (this) {
+            GEMINI -> "$base/models/$model:generateContent"
+            OPENAI -> "$base/chat/completions"
+            ANTHROPIC -> "$base/messages"
+        }
+    }
+
+    /** Headers carrying the credential, and any version the service insists on. */
+    fun authHeaders(apiKey: String): Map<String, String> = when {
+        apiKey.isBlank() -> emptyMap()
+        this == GEMINI -> mapOf("x-goog-api-key" to apiKey)
+        this == OPENAI -> mapOf("Authorization" to "Bearer $apiKey")
+        else -> mapOf("x-api-key" to apiKey, "anthropic-version" to ANTHROPIC_VERSION)
+    }
+
+    fun requestBody(
+        model: String,
+        systemInstruction: String?,
+        prompt: String,
+        imageBase64: String?,
+        temperature: Float,
+        maxOutputTokens: Int,
+        forceJson: Boolean,
+    ): String = when (this) {
+        GEMINI -> gemini(systemInstruction, prompt, imageBase64, temperature, maxOutputTokens, forceJson)
+        OPENAI -> openAi(model, systemInstruction, prompt, imageBase64, temperature, maxOutputTokens, forceJson)
+        ANTHROPIC -> anthropic(model, systemInstruction, prompt, imageBase64, temperature, maxOutputTokens)
+    }
+
+    /** Pulls the assistant's words out of whatever the service wrapped them in. */
+    fun extractText(response: String): String? {
+        val root = runCatching { AutobileJson.parseToJsonElement(response) as? JsonObject }.getOrNull() ?: return null
+        val text = when (this) {
+            GEMINI -> {
+                val parts = ((root["candidates"] as? JsonArray)?.firstOrNull() as? JsonObject)
+                    ?.let { it["content"] as? JsonObject }
+                    ?.let { it["parts"] as? JsonArray }
+                parts?.mapNotNull { ((it as? JsonObject)?.get("text") as? JsonPrimitive)?.content }?.joinToString("")
+            }
+
+            OPENAI -> ((root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject)
+                ?.let { it["message"] as? JsonObject }
+                ?.let { (it["content"] as? JsonPrimitive)?.content }
+
+            ANTHROPIC -> (root["content"] as? JsonArray)
+                ?.mapNotNull { ((it as? JsonObject)?.get("text") as? JsonPrimitive)?.content }
+                ?.joinToString("")
+        }
+        return text?.takeIf { it.isNotBlank() }
+    }
+
+    private fun gemini(
+        systemInstruction: String?,
+        prompt: String,
+        imageBase64: String?,
+        temperature: Float,
+        maxOutputTokens: Int,
+        forceJson: Boolean,
+    ) = buildJsonObject {
+        if (!systemInstruction.isNullOrBlank()) {
+            putJsonObject("systemInstruction") {
+                putJsonArray("parts") { add(buildJsonObject { put("text", systemInstruction) }) }
+            }
+        }
+        putJsonArray("contents") {
+            add(
+                buildJsonObject {
+                    put("role", "user")
+                    putJsonArray("parts") {
+                        imageBase64?.let {
+                            add(
+                                buildJsonObject {
+                                    putJsonObject("inline_data") {
+                                        put("mime_type", IMAGE_MIME)
+                                        put("data", it)
+                                    }
+                                },
+                            )
+                        }
+                        add(buildJsonObject { put("text", prompt) })
+                    }
+                },
+            )
+        }
+        putJsonObject("generationConfig") {
+            put("temperature", temperature)
+            put("maxOutputTokens", maxOutputTokens)
+            put("candidateCount", 1)
+            if (forceJson) put("responseMimeType", "application/json")
+        }
+    }.toString()
+
+    private fun openAi(
+        model: String,
+        systemInstruction: String?,
+        prompt: String,
+        imageBase64: String?,
+        temperature: Float,
+        maxOutputTokens: Int,
+        forceJson: Boolean,
+    ) = buildJsonObject {
+        put("model", model)
+        put("temperature", temperature)
+        put("max_completion_tokens", maxOutputTokens)
+        if (forceJson) putJsonObject("response_format") { put("type", "json_object") }
+        putJsonArray("messages") {
+            if (!systemInstruction.isNullOrBlank()) {
+                add(
+                    buildJsonObject {
+                        put("role", "system")
+                        put("content", systemInstruction)
+                    },
+                )
+            }
+            add(
+                buildJsonObject {
+                    put("role", "user")
+                    if (imageBase64 == null) {
+                        // Plain text where no picture is involved: some services that
+                        // implement this API accept only the string form.
+                        put("content", prompt)
+                    } else {
+                        putJsonArray("content") {
+                            add(buildJsonObject { put("type", "text"); put("text", prompt) })
+                            add(
+                                buildJsonObject {
+                                    put("type", "image_url")
+                                    putJsonObject("image_url") {
+                                        put("url", "data:$IMAGE_MIME;base64,$imageBase64")
+                                    }
+                                },
+                            )
+                        }
+                    }
+                },
+            )
+        }
+    }.toString()
+
+    private fun anthropic(
+        model: String,
+        systemInstruction: String?,
+        prompt: String,
+        imageBase64: String?,
+        temperature: Float,
+        maxOutputTokens: Int,
+    ) = buildJsonObject {
+        put("model", model)
+        put("temperature", temperature)
+        put("max_tokens", maxOutputTokens)
+        if (!systemInstruction.isNullOrBlank()) put("system", systemInstruction)
+        putJsonArray("messages") {
+            add(
+                buildJsonObject {
+                    put("role", "user")
+                    putJsonArray("content") {
+                        imageBase64?.let {
+                            add(
+                                buildJsonObject {
+                                    put("type", "image")
+                                    putJsonObject("source") {
+                                        put("type", "base64")
+                                        put("media_type", IMAGE_MIME)
+                                        put("data", it)
+                                    }
+                                },
+                            )
+                        }
+                        add(buildJsonObject { put("type", "text"); put("text", prompt) })
+                    }
+                },
+            )
+        }
+    }.toString()
+
+    private companion object {
+        const val IMAGE_MIME = "image/jpeg"
+        const val ANTHROPIC_VERSION = "2023-06-01"
+    }
+}
