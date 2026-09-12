@@ -39,7 +39,15 @@ class ExecutionResolver(
     suspend fun resolve(
         target: TargetSemantics,
         snapshot: ScreenSnapshot,
-        screenshot: Bitmap? = null,
+        /**
+         * Supplies a screenshot, only if the ladder gets far enough to need one.
+         *
+         * Lazy on purpose. Capturing is slow and rate-limited by the platform, and the
+         * common case never reaches it: a step that matches by recorded id has no use
+         * for a picture of the screen, and paying for one on every step would tax the
+         * fast path to serve the rare one.
+         */
+        screenshot: suspend () -> Bitmap? = { null },
         allowInference: Boolean = true,
         allowVision: Boolean = true,
         localOnly: Boolean = false,
@@ -66,13 +74,7 @@ class ExecutionResolver(
 
         val candidates = minimizer.relevantNodes(snapshot, target.matchTerms()).filter(usable)
         if (candidates.isEmpty()) {
-            // Nothing nameable on screen. A game, a canvas, a video player: the tree is
-            // empty or holds nothing that can do the job, and an agent that can only
-            // choose from a list stops here. Looking is the remaining way to act.
-            if (allowVision && screenshot != null) {
-                return resolveByLooking(target, screenshot, localOnly)
-            }
-            return Resolution.NotFound("No candidate elements on this screen")
+            return lookOrGiveUp(target, screenshot, allowVision, localOnly, "No candidate elements on this screen")
         }
 
         val prompt = AiTasks.elementMatchPrompt(
@@ -105,10 +107,48 @@ class ExecutionResolver(
             )
         }
 
-        if (!allowVision || screenshot == null) {
+        val picture = if (allowVision) screenshot() else null
+        if (picture == null) {
             return unresolved(routed.result.error, target)
         }
-        return resolveVisually(target, snapshot, screenshot, candidates, localOnly)
+
+        // Still within the tree: the same elements, looked at rather than read. Cheap,
+        // because the answer stays an element with everything known about it.
+        val visually = resolveVisually(target, snapshot, picture, candidates, localOnly)
+        if (visually is Resolution.Found) return visually
+
+        // Nothing the accessibility tree offers can answer this. The tree being
+        // non-empty was never the point — it is full of scrolling layouts and wrappers
+        // that name nothing a person would recognise, and choosing the best of them is
+        // how a step ends up typing into a ScrollView. Looking at the screen is what
+        // remains, and it is what the specification asks for at this rung.
+        return lookOrGiveUp(target, { picture }, allowVision, localOnly, visuallyUnresolved(visually, target))
+    }
+
+    private fun visuallyUnresolved(resolution: Resolution, target: TargetSemantics): String = when (resolution) {
+        is Resolution.NotFound -> resolution.reason
+        is Resolution.NeedsReasoning -> resolution.reason
+        else -> "Nothing on this screen offers \"${target.intentLabel}\""
+    }
+
+    /**
+     * The last rung: ask about the screen itself, or say plainly that nothing could.
+     *
+     * Reached whenever the accessibility tree has failed, not only when it is empty.
+     * Identifying a target from what an app exposes is the fast and precise path, and it
+     * is tried to exhaustion first — but when it has nothing to offer, refusing to look
+     * is refusing to operate the app at all.
+     */
+    private suspend fun lookOrGiveUp(
+        target: TargetSemantics,
+        screenshot: suspend () -> Bitmap?,
+        allowVision: Boolean,
+        localOnly: Boolean,
+        reasonIfBlind: String,
+    ): Resolution {
+        if (!allowVision) return Resolution.NotFound(reasonIfBlind)
+        val picture = screenshot() ?: return Resolution.NotFound(reasonIfBlind)
+        return resolveByLooking(target, picture, localOnly)
     }
 
     /**
