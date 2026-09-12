@@ -73,6 +73,32 @@ class RecordedTypingTargetTest {
         }
 
     @Test
+    fun `an unfocused field is found by the text it now holds`() = runTest(UnconfinedTestDispatcher()) {
+        // Not every app reports focus. Among fields the one holding what was just typed
+        // is unambiguous, which is not true among containers: a note body reports its
+        // children's text as its own.
+        val perception = FakeScreen(
+            screen(
+                "com.example.notes",
+                "Note",
+                node("body_scroll", text = typed, clickable = false, className = "android.widget.ScrollView"),
+                node("title", text = "", editable = true, clickable = false),
+                node("body_field", text = typed, editable = true, clickable = false),
+            ),
+        )
+        val recorder = DemonstrationRecorder(perception, TestScope(testScheduler))
+
+        recorder.start("Note")
+        testScheduler.advanceUntilIdle()
+        AccessibilityBridge.publish(textChanged())
+        testScheduler.advanceUntilIdle()
+        val trace = recorder.stop()
+
+        val event = trace?.events?.firstOrNull { it.action is ObservedAction.TextInput }
+        assertThat(event?.targetNode?.nodeId).isEqualTo("body_field")
+    }
+
+    @Test
     fun `a tap is still matched by its label`() = runTest(UnconfinedTestDispatcher()) {
         val perception = FakeScreen(
             screen(

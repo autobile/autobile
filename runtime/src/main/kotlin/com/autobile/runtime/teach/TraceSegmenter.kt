@@ -121,6 +121,14 @@ class TraceSegmenter(
                 // tap before it, already recorded.
                 event.action is ObservedAction.WindowChange -> EventClassification.NOISE
 
+                // Putting the cursor in a field is not a step of its own. The typing
+                // that follows sets the field's contents directly, so replaying the tap
+                // adds nothing — and what gets tapped is usually the unnamed layout
+                // wrapping the field, which cannot be found again on a later run at all.
+                // A tap that changed the screen is excluded: that one went somewhere.
+                event.action is ObservedAction.Click && next?.action is ObservedAction.TextInput &&
+                    event.stateTransition?.changedScreen != true -> EventClassification.NOISE
+
                 // An action undone by an immediate back was a mistake.
                 next?.action is ObservedAction.Back && event.action is ObservedAction.Click &&
                     returnedToSameScreen(event, next) -> EventClassification.NOISE
