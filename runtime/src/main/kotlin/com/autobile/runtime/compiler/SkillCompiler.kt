@@ -22,6 +22,7 @@ import com.autobile.core.model.ObservedAction
 import com.autobile.core.model.PatchAuthor
 import com.autobile.core.model.ResolverKind
 import com.autobile.core.model.RiskPolicy
+import com.autobile.core.model.RuntimeTier
 import com.autobile.core.model.RuntimeRequirements
 import com.autobile.core.model.ScreenSemantics
 import com.autobile.core.model.SemanticSkill
@@ -101,7 +102,8 @@ class SkillCompiler(
         }
 
         val rendered = renderSteps(compilable)
-        val goal = inferGoal(rendered, localOnly)
+        val routedGoal = inferGoalRouted(rendered, localOnly)
+        val goal = routedGoal.value
         val analysis = analyseValues(rendered, localOnly)
 
         val analysed = buildVariables(analysis?.variables.orEmpty())
@@ -171,6 +173,7 @@ class SkillCompiler(
             summary = goal?.summary?.ifBlank { null } ?: skill.goal,
             usedCloud = segmented.usedCloud,
             discardedSteps = segmented.discardedCount,
+            understoodBy = routedGoal.tier.takeIf { goal != null },
         )
     }
 
@@ -379,7 +382,7 @@ class SkillCompiler(
         }
     }
 
-    private suspend fun inferGoal(rendered: String, localOnly: Boolean) = router.infer(
+    private suspend fun inferGoalRouted(rendered: String, localOnly: Boolean) = router.infer(
         label = "goal-inference",
         schema = AiTasks.goalInference,
         prompt = AiTasks.goalInferencePrompt(rendered),
@@ -389,7 +392,7 @@ class SkillCompiler(
             minConfidence = GOAL_CONFIDENCE_THRESHOLD,
             localOnly = localOnly,
         ),
-    ).value
+    )
 
     private suspend fun analyseValues(rendered: String, localOnly: Boolean) = router.infer(
         label = "variable-analysis",
@@ -563,6 +566,15 @@ sealed interface CompilationResult {
         val summary: String,
         val usedCloud: Boolean,
         val discardedSteps: Int,
+        /**
+         * Which runtime worked out what the demonstration meant, if any did.
+         *
+         * Null when the wording came from the rules. Worth saying plainly: a run's
+         * counters only report the resolutions a *run* needed, so someone whose phone
+         * understood a demonstration perfectly well could still see zeroes everywhere
+         * afterwards and conclude the on-device model does nothing.
+         */
+        val understoodBy: RuntimeTier? = null,
     ) : CompilationResult
 
     data class Failed(val reason: String) : CompilationResult

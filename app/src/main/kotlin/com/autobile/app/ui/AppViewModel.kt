@@ -17,6 +17,7 @@ import com.autobile.core.model.DeviceCapabilityProfile
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.MetricsSnapshot
 import com.autobile.core.model.PrivacySettings
+import com.autobile.core.model.RuntimeTier
 import com.autobile.core.model.SemanticSkill
 import com.autobile.core.model.SkillVersionRecord
 import com.autobile.core.model.TaskOrigin
@@ -217,6 +218,7 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
                         summary = result.summary,
                         discardedSteps = result.discardedSteps,
                         usedCloud = result.usedCloud,
+                        understoodBy = result.understoodBy,
                     ),
                     screen = AppScreen.TEACH_REVIEW,
                     message = null,
@@ -552,6 +554,8 @@ data class TeachDraft(
     val summary: String,
     val discardedSteps: Int,
     val usedCloud: Boolean,
+    /** Which runtime worked out what this meant, or null when the rules did. */
+    val understoodBy: RuntimeTier? = null,
 )
 
 data class AppUiState(

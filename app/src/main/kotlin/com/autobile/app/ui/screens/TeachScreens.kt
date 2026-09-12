@@ -320,8 +320,18 @@ fun TeachReviewScreen(state: AppUiState, viewModel: AppViewModel) {
             }
         }
 
+        // Which runtime read the demonstration. Said plainly because a run's counters
+        // only report what a *run* needed, so a phone that understood this perfectly can
+        // still show zeroes afterwards and look as though its model does nothing.
+        Spacer(Modifier.height(20.dp))
+        Statement(
+            draft.understoodBy?.let { stringResource(R.string.review_understood_by, stringResource(it.labelRes())) }
+                ?: stringResource(R.string.review_understood_by_rules),
+            color = theme.muted,
+        )
+
         if (draft.usedCloud) {
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(12.dp))
             Statement(stringResource(R.string.review_used_cloud), color = theme.caution)
         }
 
