@@ -191,7 +191,26 @@ class AgentOrchestrator(
                 if (label in EXECUTION_ROUTING_LABELS && tier.isCloud) resolvedCloudCalls.incrementAndGet()
             }
 
-            override fun onExhausted(label: String, attempts: List<RoutingAttempt>) = Unit
+            /**
+             * Records why no runtime could answer.
+             *
+             * Every attempt already carries the tier it tried, whether it was skipped
+             * and why, the confidence it came back with and what went wrong. Discarding
+             * that left a timeline showing which runtime was chosen and then nothing at
+             * all — enough to see that reasoning was attempted, never enough to see why
+             * it did not work, which is exactly what someone reading a failed run needs.
+             */
+            override fun onExhausted(label: String, attempts: List<RoutingAttempt>) {
+                if (label !in EXECUTION_ROUTING_LABELS) return
+                routingEvents += ExecutionEvent(
+                    id = Ids.event(),
+                    taskId = task.id,
+                    timestamp = time.nowMillis(),
+                    type = ExecutionEventType.AI_RUNTIME_SELECTED,
+                    message = Logx.redact(describeExhaustion(label, attempts)),
+                    success = false,
+                )
+            }
         })
         val outcome = try {
             executor.execute(
@@ -380,6 +399,16 @@ class AgentOrchestrator(
             if (outcome.status == OutcomeStatus.SUCCESS) metrics.increment(Metric.RECOVERIES_SUCCEEDED)
         }
     }
+
+    /**
+     * One line saying what each runtime did with the question.
+     *
+     * Kept short because it sits in a list a person scrolls, and ordered as the router
+     * tried them, so the escalation path reads left to right.
+     */
+    private fun describeExhaustion(label: String, attempts: List<RoutingAttempt>): String =
+        describeRoutingExhaustion(label, attempts)
+
 
     private fun newTask(skill: SemanticSkill, origin: TaskOrigin, payload: Map<String, String>) = AgentTask(
         id = Ids.task(),
@@ -584,4 +613,29 @@ private fun String.similarityTo(other: String): Float {
     val b = other.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length > 2 }.toSet()
     if (a.isEmpty() || b.isEmpty()) return 0f
     return a.intersect(b).size.toFloat() / maxOf(a.size, b.size)
+}
+
+/**
+ * One line saying what each runtime did with the question.
+ *
+ * Kept short because it sits in a list a person scrolls, and ordered as the router tried
+ * them, so the escalation path reads left to right.
+ */
+internal fun describeRoutingExhaustion(label: String, attempts: List<RoutingAttempt>): String = buildString {
+        append(label.replace('-', ' ')).append(": ")
+        if (attempts.isEmpty()) {
+            append("no runtime was available to try")
+            return@buildString
+        }
+        append(
+            attempts.joinToString("; ") { attempt ->
+                val tier = attempt.tier.diagnosticName
+                val failure = attempt.errorKind
+                when {
+                    attempt.skipped -> "$tier skipped, ${attempt.reason?.diagnosticName ?: "not eligible"}"
+                    failure != null -> "$tier ${failure.name.lowercase().replace('_', ' ')}"
+                    else -> "$tier answered with confidence ${"%.2f".format(attempt.confidence)}"
+                }
+            },
+        )
 }

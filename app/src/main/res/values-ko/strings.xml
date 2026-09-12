@@ -411,4 +411,6 @@
     <string name="risk_why_booking">이 단계는 예약을 진행합니다</string>
     <string name="risk_why_app_set_to_ask">이 앱에서는 확인 후 진행하도록 설정하셨습니다</string>
     <string name="risk_why_confirmation_required">확인이 필요합니다</string>
+    <string name="review_understood_by">%1$s이(가) 이해했습니다.</string>
+    <string name="review_understood_by_rules">AI 없이 기록만으로 이해했습니다.</string>
 </resources>

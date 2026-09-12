@@ -414,4 +414,6 @@
     <string name="risk_why_booking">this step makes a booking</string>
     <string name="risk_why_app_set_to_ask">you asked to confirm actions in this app</string>
     <string name="risk_why_confirmation_required">confirmation required</string>
+    <string name="review_understood_by">Understood by %1$s.</string>
+    <string name="review_understood_by_rules">Understood from the recording alone, with no AI.</string>
 </resources>
