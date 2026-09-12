@@ -158,6 +158,17 @@ class DemonstrationRecorder(
         val text = event.text.trim()
         val description = event.contentDescription?.trim()
 
+        // Typing is matched to the field being typed into, before any label is
+        // considered. A text-changed event carries the new contents, and a container
+        // that reports the same contents — a note's scrolling body, a list that includes
+        // the field — matches that text just as well as the field does. Picking the
+        // container records the step as "type into the ScrollView", which nothing can
+        // resolve later because a layout has no identity to find it by.
+        if (event.type == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+            snapshot.nodes.firstOrNull { it.editable && it.focused }?.let { return it }
+            snapshot.nodes.singleOrNull { it.editable }?.let { return it }
+        }
+
         if (text.isNotEmpty() || !description.isNullOrEmpty()) {
             snapshot.nodes.firstOrNull { node ->
                 val label = node.label()
