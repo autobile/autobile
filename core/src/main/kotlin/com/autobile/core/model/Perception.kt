@@ -77,6 +77,22 @@ data class UiNode(
             ?: className?.substringAfterLast('.')
             ?: ""
 
+    /**
+     * Text that is actually on screen for this element, if any.
+     *
+     * Unlike [label] this never falls back to an id or a class name. Those name the
+     * element for a developer and appear nowhere a person or a text search could find
+     * them: requiring "ScrollView" to be visible is a check that can never pass.
+     *
+     * A field's own text is excluded for the same reason it is excluded from identity —
+     * it is the value someone typed, and requiring it would demand that the next run
+     * find the last run's answer already in place.
+     */
+    fun visibleText(): String? = when {
+        editable -> contentDescription?.takeIf { it.isNotBlank() }
+        else -> text?.takeIf { it.isNotBlank() } ?: contentDescription?.takeIf { it.isNotBlank() }
+    }
+
     fun hierarchyPath(): String = indexPath.joinToString("/")
 
     fun isActionable(): Boolean = enabled && visible && (clickable || longClickable || editable || scrollable)
