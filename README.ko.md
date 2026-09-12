@@ -30,7 +30,7 @@ Autobile은 안드로이드 폰에서 하는 반복 작업을 한 번 지켜본 
 
 ### 1. 설치
 
-[최신 릴리스](https://github.com/autobile/autobile/releases/latest)에서 `autobile-0.1.9.apk`를
+[최신 릴리스](https://github.com/autobile/autobile/releases/latest)에서 `autobile-0.1.10.apk`를
 내려받아 설치하세요. Google Play에는 없습니다 — [배포](#배포) 항목을 참고하세요.
 
 Android 11 이상이 필요합니다.

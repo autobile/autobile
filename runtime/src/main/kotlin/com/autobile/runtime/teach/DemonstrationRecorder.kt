@@ -155,9 +155,18 @@ class DemonstrationRecorder(
      * are what the framework itself considers current.
      */
     private fun findLikelyTarget(snapshot: ScreenSnapshot, event: ObservedEvent): UiNode? {
-        // The framework already said which element this was. Everything below is
-        // guesswork for the events that name no source.
-        event.sourceNode?.takeIf { it.className != null || it.resourceId != null }?.let { return it }
+        val source = event.sourceNode?.takeIf { it.className != null || it.resourceId != null }
+
+        // Typing has to land on something that accepts typing. Some editors report the
+        // change from the view that scrolls the text rather than the one holding it, and
+        // a step recorded against that is a step the run cannot carry out: it dispatches
+        // text at a layout and is told the target does not accept text input.
+        if (event.type == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+            source?.takeIf { it.editable }?.let { return it }
+        } else {
+            // The framework naming the element settles every other kind of event.
+            source?.let { return it }
+        }
 
         val text = event.text.trim()
         val description = event.contentDescription?.trim()
@@ -176,6 +185,9 @@ class DemonstrationRecorder(
             // way it is not among containers, which report their children's text too.
             fields.firstOrNull { text.isNotEmpty() && it.text?.contains(text) == true }?.let { return it }
             fields.singleOrNull()?.let { return it }
+            // Nothing on screen claims to accept text. The source is still the closest
+            // account of what happened, and a later run can look for a field near it.
+            source?.let { return it }
         }
 
         if (text.isNotEmpty() || !description.isNullOrEmpty()) {
