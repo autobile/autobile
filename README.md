@@ -35,7 +35,7 @@ You teach it once. After that it runs without you, and shows you what it did.
 
 ### 1. Install
 
-Download `autobile-0.1.10.apk` from the
+Download `autobile-0.2.0.apk` from the
 [latest release](https://github.com/autobile/autobile/releases/latest) and install it.
 Autobile is not on Google Play — see [Distribution](#distribution).
 
@@ -101,6 +101,19 @@ Autobile tries the cheapest thing that can answer, and only escalates when it ha
 
 **Most runs never get past step 1.** A stable automation doing a familiar task completes
 with no inference and no network at all. Steps 2 to 4 exist for the day the app updates.
+
+### Apps that name nothing
+
+Steps 1 to 3 all work by finding a *named* control — an id, a label, a description. Some
+apps have none. A game draws its own interface onto a canvas, and so do video players and
+anything built in Unity or Unreal: to Android's accessibility layer the whole screen is
+one blank rectangle.
+
+For those, Autobile looks at a screenshot and works out *where* to touch, then touches
+that place. It is the last thing tried, never the first, because aiming at a position is
+exactly the brittleness this app exists to avoid — but refusing to operate those apps at
+all is the worse answer. Sending a screenshot is the separate switch described below, so
+this path only exists if you turned it on.
 
 Open **Settings → This device** to see which of these your phone can actually do. Autobile
 detects it at startup and tells you, rather than pretending.

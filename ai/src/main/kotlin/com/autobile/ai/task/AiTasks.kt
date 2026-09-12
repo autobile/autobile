@@ -75,6 +75,58 @@ object AiTasks {
             append("\n\nIf no element performs this action, answer with index -1.")
         }
 
+    /**
+     * Locates a target by looking at the screen, when there is no element to pick from.
+     *
+     * A game, a canvas-drawn interface, a video player: plenty of apps expose nothing an
+     * accessibility tree can name, and an agent that can only choose from a list of
+     * elements is simply unable to operate them. Coordinates are a fraction of the
+     * screen rather than pixels, so an answer survives a different device.
+     *
+     * This is the expensive, last-resort path. Everything deterministic is tried first,
+     * because a run that reasons about every step is slow, costly and less predictable
+     * than one that follows what it was shown.
+     */
+    val pointMatch = ResponseSchema(
+        name = "PointMatch",
+        fieldGuide = """
+            found: true or false
+            x: number between 0 and 1, the horizontal position as a fraction of screen width
+            y: number between 0 and 1, the vertical position as a fraction of screen height
+            confidence: number between 0 and 1
+            reason: short explanation, at most 15 words
+        """.trimIndent(),
+        example = """{"found": true, "x": 0.5, "y": 0.82, "confidence": 0.8, "reason": "claim button near the bottom"}""",
+        parser = { json ->
+            PointMatch(
+                found = json.boolOr("found", false),
+                xRatio = json.floatOr("x", -1f),
+                yRatio = json.floatOr("y", -1f),
+                confidence = json.floatOr("confidence", 0f),
+                reason = json.stringOr("reason"),
+            )
+        },
+        validator = { match ->
+            when {
+                !match.found -> null
+                match.xRatio !in 0f..1f || match.yRatio !in 0f..1f -> "coordinates out of range"
+                match.confidence !in 0f..1f -> "confidence out of range"
+                else -> null
+            }
+        },
+    )
+
+    fun pointMatchPrompt(targetDescription: String, synonyms: List<String>): String = buildString {
+        append("Look at this screen and find where to act.\n")
+        append("Action: ").append(targetDescription).append('\n')
+        if (synonyms.isNotEmpty()) {
+            append("Also known as: ").append(synonyms.joinToString(", ")).append('\n')
+        }
+        append("\nAnswer with the point to touch, as fractions of the screen width and height ")
+        append("measured from the top-left corner. Aim for the centre of the control.\n")
+        append("If the screen does not offer this action, answer with found false.")
+    }
+
     // -- Screen classification ------------------------------------------------
 
     /** Decides whether the current screen is the one a step expected to reach. */
@@ -448,6 +500,15 @@ object AiTasks {
 }
 
 // -- Result types -------------------------------------------------------------
+
+/** A place on screen to act, as fractions of its width and height. */
+data class PointMatch(
+    val found: Boolean,
+    val xRatio: Float,
+    val yRatio: Float,
+    val confidence: Float,
+    val reason: String,
+)
 
 data class ElementMatch(val index: Int, val confidence: Float, val reason: String) {
     val found: Boolean get() = index >= 0
