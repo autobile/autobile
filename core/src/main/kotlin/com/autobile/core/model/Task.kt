@@ -168,6 +168,15 @@ data class ValidationOutcome(
     val reason: String = "",
     val observed: String = "",
     val confidence: Float = 0f,
+    /**
+     * Whether the check was actually carried out.
+     *
+     * A check that could not run is not a check that failed. Both leave [passed] false,
+     * because nothing was confirmed and claiming otherwise is the worst thing this
+     * system can do — but only one of them means something went wrong, and treating an
+     * unavailable check as a failure reports a completed automation as broken.
+     */
+    val evaluated: Boolean = true,
 )
 
 /**

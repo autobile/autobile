@@ -227,9 +227,11 @@ class ValidationEngine(
                 spec.mode,
                 passed = false,
                 // No runtime could judge the outcome. Reporting this as a pass would be
-                // the single most damaging failure the system can produce.
+                // the single most damaging failure the system can produce — but it did
+                // not fail either, and the caller is told the difference.
                 reason = words.outcomeNotVerified(),
                 confidence = 0f,
+                evaluated = false,
             )
 
         return ValidationOutcome(

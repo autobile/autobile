@@ -4,6 +4,7 @@ import com.autobile.ai.router.AiRuntimeRouter
 import com.autobile.ai.task.AiTasks
 import com.autobile.ai.task.AnalysedVariable
 import com.autobile.core.common.Ids
+import com.autobile.core.common.TemporalText
 import com.autobile.core.common.TimeSource
 import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AutonomyLevel
@@ -45,7 +46,9 @@ import com.autobile.core.model.VariableBinding
 import com.autobile.runtime.risk.RiskEngine
 import com.autobile.runtime.teach.SegmentedTrace
 import com.autobile.runtime.teach.TraceSegmenter
+import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -101,7 +104,12 @@ class SkillCompiler(
         val goal = inferGoal(rendered, localOnly)
         val analysis = analyseValues(rendered, localOnly)
 
-        val variables = buildVariables(analysis?.variables.orEmpty())
+        val analysed = buildVariables(analysis?.variables.orEmpty())
+        val variables = analysed + temporalVariables(
+            compilable,
+            LocalDateTime.ofInstant(Instant.ofEpochMilli(trace.startedAt), ZoneId.systemDefault()),
+            analysed,
+        )
         val constants = analysis?.constants.orEmpty().map {
             SkillConstant(name = it.name, value = it.value, description = it.why)
         }
@@ -352,6 +360,15 @@ class SkillCompiler(
                 goalCritical = true,
             )
 
+            // Typing is checkable by reading the field back, so it never needs a model
+            // to say whether it worked. Asking for one made every text step fail on the
+            // phones that have none, which is most of them — including the last step of
+            // an automation whose whole purpose was to write something down.
+            intent == StepIntent.ENTER_TEXT -> ValidationSpec(
+                mode = ValidationMode.STRUCTURAL,
+                goalCritical = isFinal,
+            )
+
             intent == StepIntent.SEND || intent == StepIntent.SHARE || isFinal -> ValidationSpec(
                 mode = ValidationMode.SEMANTIC,
                 expectation = "the ${intent.name.lowercase().replace('_', ' ')} completed successfully",
@@ -419,6 +436,40 @@ class SkillCompiler(
     private fun valueRefFor(typed: String, variables: List<SkillVariable>): ValueRef {
         variables.firstOrNull { it.exampleValue == typed }?.let { return ValueRef.Variable(it.name) }
         return ValueRef.Literal(typed)
+    }
+
+    /**
+     * Variables the shape of the typed text gives away, with no model involved.
+     *
+     * Someone teaching "write the date into a note" types today's date, and replaying
+     * that literally writes the day they taught it, for ever. What they meant is legible
+     * from the format, so it is read here rather than left to a model that may not be
+     * present: on most phones nothing above the deterministic tier is available, and
+     * this is the one interpretation that separates an automation from a recording.
+     */
+    private fun temporalVariables(
+        events: List<TraceEvent>,
+        writtenOn: LocalDateTime,
+        existing: List<SkillVariable>,
+    ): List<SkillVariable> {
+        val known = existing.map { it.exampleValue }.toSet()
+        return events.mapNotNull { it.inputValue }
+            .filter { it.isNotBlank() && it !in known }
+            .distinct()
+            .mapNotNull { typed ->
+                TemporalText.recognise(typed, writtenOn)?.let { moment ->
+                    SkillVariable(
+                        name = if (moment.offsetDays == 0) "now" else "date",
+                        type = ValueType.DATE,
+                        binding = VariableBinding.RelativeDate(
+                            offsetDays = moment.offsetDays,
+                            pattern = moment.pattern,
+                        ),
+                        description = "the moment the automation runs",
+                        exampleValue = typed,
+                    )
+                }
+            }
     }
 
     private fun detectDatePattern(value: String): String = when {

@@ -34,7 +34,7 @@ class ExecutionContextTest {
         ),
         triggerPayload = triggerPayload,
         userInputs = userInputs,
-        today = { today },
+        now = { today.atTime(9, 0) },
     )
 
     @Test

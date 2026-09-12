@@ -5,7 +5,7 @@ import com.autobile.core.model.SkillConstant
 import com.autobile.core.model.SkillVariable
 import com.autobile.core.model.ValueRef
 import com.autobile.core.model.VariableBinding
-import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -21,7 +21,15 @@ class ExecutionContext(
     private val skill: SemanticSkill,
     private val triggerPayload: Map<String, String> = emptyMap(),
     private val userInputs: Map<String, String> = emptyMap(),
-    private val today: () -> LocalDate = { LocalDate.now(ZoneId.systemDefault()) },
+    /**
+     * The moment a run happens.
+     *
+     * One clock, carrying the time of day as well as the date. A date alone cannot
+     * render a pattern that mentions hours, and "the current date and time" is one of
+     * the most ordinary things to write down; formatting such a pattern against a date
+     * throws, which surfaced as a step unable to say what it meant to type.
+     */
+    private val now: () -> LocalDateTime = { LocalDateTime.now(ZoneId.systemDefault()) },
 ) {
     private val extracted = mutableMapOf<String, String>()
     private val constants: Map<String, SkillConstant> = skill.constants.associateBy { it.name }
@@ -48,13 +56,19 @@ class ExecutionContext(
         extracted[name]?.let { return it }
         val variable = variables[name] ?: return null
         return when (val binding = variable.binding) {
-            is VariableBinding.RelativeDate ->
-                today().plusDays(binding.offsetDays.toLong())
+            is VariableBinding.RelativeDate -> runCatching {
+                now().plusDays(binding.offsetDays.toLong())
                     .format(DateTimeFormatter.ofPattern(binding.pattern))
+            }.getOrNull() ?: variable.exampleValue?.takeIf { it.isNotBlank() }
 
             is VariableBinding.UserInput -> userInputs[name] ?: variable.exampleValue
-            is VariableBinding.TriggerPayload -> triggerPayload[binding.field]
-            is VariableBinding.Extracted -> null
+            is VariableBinding.TriggerPayload ->
+                triggerPayload[binding.field] ?: variable.exampleValue?.takeIf { it.isNotBlank() }
+
+            // Nothing read it this run, so what the demonstration showed is the best
+            // account of it. Typing what the user typed is a worse answer than typing
+            // the right thing and a far better one than refusing to type at all.
+            is VariableBinding.Extracted -> variable.exampleValue?.takeIf { it.isNotBlank() }
         }
     }
 
