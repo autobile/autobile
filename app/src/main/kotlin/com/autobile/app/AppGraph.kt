@@ -157,6 +157,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         segmenter,
         riskEngine,
         vocabulary = ResourceCompilerVocabulary(appContext),
+        canOpen = ::hasSomethingToOpen,
     )
     val recorder = DemonstrationRecorder(perception, scope)
     val skillEditor = SkillEditor(aiRouter, skillStore, triggerScheduler)
@@ -187,6 +188,11 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
      * Settings registers a fallback home for devices with no launcher, and that reading
      * silently makes every task taught in Settings uncompilable.
      */
+    /** Whether the phone can be asked to open this package at all. */
+    private fun hasSomethingToOpen(packageName: String): Boolean = runCatching {
+        context.packageManager.getLaunchIntentForPackage(packageName) != null
+    }.getOrDefault(true)
+
     private fun transitPackages(context: Context): Set<String> {
         val keyboards = runCatching {
             context.getSystemService(InputMethodManager::class.java)

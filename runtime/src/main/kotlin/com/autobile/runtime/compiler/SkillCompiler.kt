@@ -72,6 +72,15 @@ class SkillCompiler(
     private val time: TimeSource = TimeSource.System,
     private val today: () -> LocalDate = { LocalDate.now(ZoneId.systemDefault()) },
     private val vocabulary: CompilerVocabulary = EnglishCompilerVocabulary,
+    /**
+     * Whether a package is something the phone can be asked to open.
+     *
+     * A keyboard, a wallpaper, an autofill provider and an accessibility service are all
+     * installed and running and have no screen to open. Compiling "open it" as a step
+     * produces one that can never succeed, so the question is asked while the automation
+     * is being built rather than discovered on the user's phone at run time.
+     */
+    private val canOpen: (String) -> Boolean = { true },
 ) {
 
     suspend fun compile(
@@ -173,6 +182,7 @@ class SkillCompiler(
         val node = event.targetNode
         val action = event.action
 
+        if (action is ObservedAction.AppOpen && !canOpen(action.packageName)) return null
         if (action is ObservedAction.AppOpen) {
             return SkillStep(
                 id = Ids.step(),
