@@ -71,6 +71,11 @@ fun node(
     clickable: Boolean = true,
     indexPath: List<Int> = emptyList(),
     bounds: Bounds = Bounds(0, 0, 400, 120),
+    editable: Boolean = false,
+    focused: Boolean = false,
+    hint: String? = null,
+    contentDescription: String? = null,
+    className: String? = null,
 ) = UiNode(
     nodeId = id,
     text = text,
@@ -78,6 +83,11 @@ fun node(
     clickable = clickable,
     indexPath = indexPath,
     bounds = bounds,
+    editable = editable,
+    focused = focused,
+    hint = hint,
+    contentDescription = contentDescription,
+    className = className,
 )
 
 fun screen(

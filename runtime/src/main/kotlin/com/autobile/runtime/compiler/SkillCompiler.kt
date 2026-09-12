@@ -230,10 +230,15 @@ class SkillCompiler(
      * survive an app update.
      */
     private fun toTargetSemantics(node: UiNode, event: TraceEvent): TargetSemantics {
-        val label = node.label()
+        // A field's contents are the value, not the field. Naming a step after what was
+        // typed, or looking the field up by it, means hunting for last run's text on the
+        // next run; the identity is the placeholder, the description or the id.
+        val label = if (node.editable) node.fieldIdentity() else node.label()
         val locators = buildList {
             node.resourceId?.let { add(Locator(LocatorKind.RESOURCE_ID, it, node.packageName, strength = 1f)) }
-            label.takeIf { it.isNotBlank() }?.let { add(Locator(LocatorKind.TEXT, it, strength = 0.7f)) }
+            if (!node.editable) {
+                label.takeIf { it.isNotBlank() }?.let { add(Locator(LocatorKind.TEXT, it, strength = 0.7f)) }
+            }
             node.contentDescription?.takeIf { it.isNotBlank() && it != label }?.let {
                 add(Locator(LocatorKind.CONTENT_DESCRIPTION, it, strength = 0.6f))
             }
@@ -434,6 +439,13 @@ class SkillCompiler(
             val screen = event.after?.windowTitle?.takeIf { it.isNotBlank() }?.let { " → $it" }.orEmpty()
             "$index. [$app] ${event.action.actionVerb()} \"$label\"$typed$screen"
         }.joinToString("\n")
+
+    /** How an editable field is named when its contents cannot serve as identity. */
+    private fun UiNode.fieldIdentity(): String = listOfNotNull(
+        hint,
+        contentDescription,
+        resourceId?.substringAfterLast('/')?.replace('_', ' '),
+    ).map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
 
     private fun defaultName(trace: DemonstrationTrace): String =
         trace.label.ifBlank {

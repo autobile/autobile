@@ -43,11 +43,14 @@ class ExecutionResolver(
         allowInference: Boolean = true,
         allowVision: Boolean = true,
         localOnly: Boolean = false,
+        /** True when the step types, so the field on screen is a deterministic answer. */
+        preferEditable: Boolean = false,
     ): Resolution {
         if (snapshot.nodes.isEmpty()) return Resolution.NotFound("The screen has no readable elements")
 
         matchByLocator(target, snapshot)?.let { return it }
         matchByText(target, snapshot)?.let { return it }
+        if (preferEditable) matchEditableField(snapshot)?.let { return it }
 
         if (!allowInference) {
             return Resolution.NeedsReasoning("No deterministic match for \"${target.intentLabel}\"")
@@ -100,6 +103,28 @@ class ExecutionResolver(
      * available. The shortlist is still supplied so the answer maps back to a real,
      * actionable node rather than to raw coordinates.
      */
+    /**
+     * The field a typing step means, when nothing named it.
+     *
+     * A text field often has no label of its own — its contents are the value and its
+     * placeholder disappears once something is typed — so a screen with exactly one
+     * place to type leaves no ambiguity to reason about. The focused field wins where
+     * there are several, because that is the one the keyboard is attached to.
+     */
+    private fun matchEditableField(snapshot: ScreenSnapshot): Resolution? {
+        val editable = snapshot.nodes.filter { it.editable && it.enabled && it.visible }
+        val node = editable.firstOrNull { it.focused } ?: editable.singleOrNull() ?: return null
+        return Resolution.Found(
+            node = node,
+            resolver = ResolverKind.ACCESSIBILITY_NODE,
+            tier = RuntimeTier.DETERMINISTIC,
+            confidence = if (node.focused) 0.9f else 0.75f,
+            explanation = "the field on this screen",
+            usedCloud = false,
+            cloudWasDecisive = false,
+        )
+    }
+
     private suspend fun resolveVisually(
         target: TargetSemantics,
         snapshot: ScreenSnapshot,

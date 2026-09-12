@@ -349,6 +349,7 @@ class SkillExecutor(
                 allowInference = step.fallback.allowDeviceAi || step.fallback.allowCloudAi,
                 allowVision = step.fallback.allowVision,
                 localOnly = localOnly || !step.fallback.allowCloudAi,
+                preferEditable = step.intent == StepIntent.ENTER_TEXT,
             )
 
             awaitingReasoning = resolution is Resolution.NeedsReasoning
