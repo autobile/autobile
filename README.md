@@ -35,7 +35,7 @@ You teach it once. After that it runs without you, and shows you what it did.
 
 ### 1. Install
 
-Download `autobile-0.1.7.apk` from the
+Download `autobile-0.1.8.apk` from the
 [latest release](https://github.com/autobile/autobile/releases/latest) and install it.
 Autobile is not on Google Play — see [Distribution](#distribution).
 

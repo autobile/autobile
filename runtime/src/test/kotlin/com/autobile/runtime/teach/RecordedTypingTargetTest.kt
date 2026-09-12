@@ -155,6 +155,48 @@ class RecordedTypingTargetTest {
     }
 
     @Test
+    fun `the element the framework named wins over anything matching by text`() =
+        runTest(UnconfinedTestDispatcher()) {
+            // Matching by text cannot separate a note body from the layout scrolling it,
+            // and predictive typing reports a half-finished word — which became a step
+            // named after a single character. The event says which element it was.
+            val perception = FakeScreen(
+                screen(
+                    "com.example.notes",
+                    "Note",
+                    node("body_scroll", text = "오", clickable = false, className = "android.widget.ScrollView"),
+                ),
+            )
+            val recorder = DemonstrationRecorder(perception, TestScope(testScheduler))
+
+            recorder.start("Note")
+            testScheduler.advanceUntilIdle()
+            AccessibilityBridge.publishForTest(
+                ObservedEvent(
+                    type = AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
+                    packageName = "com.example.notes",
+                    className = "android.widget.EditText",
+                    text = "오",
+                    contentDescription = null,
+                    timestamp = 1,
+                    sourceNode = node(
+                        "the_field",
+                        text = "오",
+                        resourceId = "com.example.notes:id/body",
+                        editable = true,
+                        clickable = false,
+                        className = "android.widget.EditText",
+                    ),
+                ),
+            )
+            testScheduler.advanceUntilIdle()
+            val trace = recorder.stop()
+
+            val event = trace?.events?.firstOrNull { it.action is ObservedAction.TextInput }
+            assertThat(event?.targetNode?.resourceId).isEqualTo("com.example.notes:id/body")
+        }
+
+    @Test
     fun `a tap is still matched by its label`() = runTest(UnconfinedTestDispatcher()) {
         val perception = FakeScreen(
             screen(

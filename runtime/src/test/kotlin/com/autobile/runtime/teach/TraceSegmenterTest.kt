@@ -194,6 +194,44 @@ class TraceSegmenterTest {
     }
 
     @Test
+    fun `only the last of a run of typing into one field is kept`() = runTest {
+        // Predictive keyboards report every keystroke and every correction, each event
+        // carrying the contents so far. Kept as steps, the automation retypes the word
+        // one syllable at a time, and each half-finished fragment becomes its own step
+        // named after a single character.
+        val segmenter = TraceSegmenter(routerWith(ScriptedProvider()))
+        val field = node("field", text = null, resourceId = "com.example:id/body", clickable = false)
+
+        val result = segmenter.segment(
+            trace(
+                event(0, ObservedAction.TextInput("1")).copy(targetNode = field),
+                event(1, ObservedAction.TextInput("12")).copy(targetNode = field),
+                event(2, ObservedAction.TextInput("12 September")).copy(targetNode = field),
+            ),
+        )
+
+        assertThat(result.compilable()).hasSize(1)
+        assertThat((result.compilable().single().action as ObservedAction.TextInput).value)
+            .isEqualTo("12 September")
+    }
+
+    @Test
+    fun `typing into two different fields stays two steps`() = runTest {
+        val segmenter = TraceSegmenter(routerWith(ScriptedProvider()))
+        val title = node("t", text = null, resourceId = "com.example:id/title", clickable = false)
+        val body = node("b", text = null, resourceId = "com.example:id/body", clickable = false)
+
+        val result = segmenter.segment(
+            trace(
+                event(0, ObservedAction.TextInput("Report")).copy(targetNode = title),
+                event(1, ObservedAction.TextInput("12 September")).copy(targetNode = body),
+            ),
+        )
+
+        assertThat(result.compilable()).hasSize(2)
+    }
+
+    @Test
     fun `an empty trace segments to nothing`() = runTest {
         val segmenter = TraceSegmenter(routerWith(ScriptedProvider()))
         val result = segmenter.segment(trace())
