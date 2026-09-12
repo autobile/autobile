@@ -98,6 +98,30 @@ class TraceSegmenterTest {
     }
 
     @Test
+    fun `the keyboard is not an app the demonstration visited`() = runTest {
+        // A keyboard opens a window of its own the moment a field is focused, so any
+        // demonstration that types records it as a visited app. Compiled as a step, the
+        // automation tries to launch it — and a keyboard has no launcher activity, so it
+        // reports the keyboard as not installed while the user is looking at it.
+        val segmenter = TraceSegmenter(
+            routerWith(ScriptedProvider()),
+            transitPackages = setOf("com.example.launcher", "com.samsung.android.honeyboard"),
+        )
+
+        val result = segmenter.segment(
+            trace(
+                event(0, ObservedAction.AppOpen("com.example.notes")),
+                transitEvent(1, "com.samsung.android.honeyboard"),
+                event(2, ObservedAction.TextInput("12 September")),
+            ),
+        )
+
+        assertThat(result.compilable().map { it.packageName })
+            .doesNotContain("com.samsung.android.honeyboard")
+        assertThat(result.compilable()).hasSize(2)
+    }
+
+    @Test
     fun `an app that merely answers the home intent is still a real task`() = runTest {
         // Settings registers a fallback home activity for devices with no launcher
         // installed. Treating every answer to the home intent as transit made tasks
