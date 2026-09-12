@@ -1,9 +1,11 @@
 package com.autobile.runtime.accessibility
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import com.autobile.core.common.Logx
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,13 +80,44 @@ object AccessibilityBridge {
         }
         val observed = ObservedEvent(
             type = event.eventType,
-            packageName = event.packageName?.toString().orEmpty(),
+            packageName = from,
             className = event.className?.toString().orEmpty(),
             text = event.text.joinToString(" ") { it.toString() },
             contentDescription = event.contentDescription?.toString(),
             timestamp = System.currentTimeMillis(),
+            fromDestinationWindow = isDestinationWindow(event),
         )
         _events.tryEmit(observed)
+    }
+
+    /**
+     * Whether this event came from a window a person navigated to.
+     *
+     * Plenty of windows appear without anyone going anywhere: the keyboard rises when a
+     * field takes focus, the shade comes down, a video shrinks into a corner, another
+     * accessibility service draws over everything. Each is a window-state change from
+     * some package, and taken at face value each reads as "the user opened that app".
+     *
+     * Judged by what kind of window it is rather than by which package it belongs to.
+     * Naming the packages means learning them one incident at a time — a keyboard, then
+     * picture-in-picture, then whatever is next — while the platform already says which
+     * windows are application windows the user is actually looking at.
+     */
+    private fun isDestinationWindow(event: AccessibilityEvent): Boolean {
+        val live = service ?: return true
+        val windows = runCatching { live.windows }.getOrNull() ?: return true
+        // No window information is not evidence against: better to record an event and
+        // let later stages judge it than to silently drop a real step.
+        val window = windows.firstOrNull { it.id == event.windowId } ?: return true
+        if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION) return false
+        if (runCatching { window.isInPictureInPictureMode }.getOrDefault(false)) return false
+        return window.isActive
+    }
+
+    /** Publishes an already-reduced event, for tests that have no framework event. */
+    @VisibleForTesting
+    fun publishForTest(event: ObservedEvent) {
+        _events.tryEmit(event)
     }
 
     private val MEANINGFUL_EVENT_TYPES = setOf(
@@ -126,6 +159,11 @@ data class ObservedEvent(
     val text: String,
     val contentDescription: String?,
     val timestamp: Long,
+    /**
+     * Whether this came from an application window the user navigated to, as opposed to
+     * a keyboard, a shade, a picture-in-picture corner or an overlay drawn on top.
+     */
+    val fromDestinationWindow: Boolean = true,
 ) {
     val isWindowChange: Boolean
         get() = type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED

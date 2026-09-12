@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.view.inputmethod.InputMethodManager
 import com.autobile.ai.cloud.CloudAiProvider
 import com.autobile.ai.cloud.CloudConfig
 import com.autobile.ai.context.ContextMinimizer
@@ -156,6 +157,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         segmenter,
         riskEngine,
         vocabulary = ResourceCompilerVocabulary(appContext),
+        canOpen = ::hasSomethingToOpen,
     )
     val recorder = DemonstrationRecorder(perception, scope)
     val skillEditor = SkillEditor(aiRouter, skillStore, triggerScheduler)
@@ -173,15 +175,31 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
     }
 
     /**
-     * The packages a person passes through on the way to the app they mean to use.
+     * The packages that carry a person between apps, rather than apps they use.
      *
-     * Only the home screen the device actually resolves to, plus the system UI that
-     * draws recents and the notification shade. Listing every activity that answers the
-     * home intent looks more thorough and is wrong: Settings registers a fallback home
-     * for use when no launcher is installed, so that reading silently makes every task
-     * taught in Settings uncompilable.
+     * The home screen the device resolves to, the system UI that draws recents and the
+     * shade, and every enabled keyboard. A keyboard is the one people forget: it opens a
+     * window of its own the moment a field is focused, so a demonstration that types
+     * anything records it as an app that was visited. Compiled as a step, the automation
+     * then tries to launch a keyboard — which has no launcher activity, so it reports
+     * the keyboard as not installed while the user is looking at it.
+     *
+     * Only the resolved home is listed, not every activity answering the home intent:
+     * Settings registers a fallback home for devices with no launcher, and that reading
+     * silently makes every task taught in Settings uncompilable.
      */
+    /** Whether the phone can be asked to open this package at all. */
+    private fun hasSomethingToOpen(packageName: String): Boolean = runCatching {
+        context.packageManager.getLaunchIntentForPackage(packageName) != null
+    }.getOrDefault(true)
+
     private fun transitPackages(context: Context): Set<String> {
+        val keyboards = runCatching {
+            context.getSystemService(InputMethodManager::class.java)
+                ?.enabledInputMethodList
+                ?.map { it.packageName }
+                .orEmpty()
+        }.getOrDefault(emptyList())
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val packages = context.packageManager
         val launcher = runCatching {
@@ -200,6 +218,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         }.getOrNull()
         return buildSet {
             launcher?.takeIf { it != context.packageName }?.let(::add)
+            addAll(keyboards.filter { it.isNotBlank() && it != context.packageName })
             add("com.android.systemui")
         }
     }

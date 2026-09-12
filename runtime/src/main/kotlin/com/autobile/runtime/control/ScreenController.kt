@@ -169,6 +169,11 @@ class ScreenController(private val context: Context) : ScreenActuator {
         return if (service.pressHome()) ActionResult.Performed("home") else ActionResult.Failed("Home was rejected")
     }
 
+    private fun isInstalled(packageName: String): Boolean = runCatching {
+        context.packageManager.getApplicationInfo(packageName, 0)
+        true
+    }.getOrDefault(false)
+
     /** Launches an app by package name, optionally at a specific activity. */
     override fun launchApp(packageName: String, activity: String?): ActionResult {
         val intent = if (activity != null) {
@@ -180,7 +185,17 @@ class ScreenController(private val context: Context) : ScreenActuator {
             context.packageManager.getLaunchIntentForPackage(packageName)?.apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             }
-        } ?: return ActionResult.Failed("$packageName is not installed")
+        } ?: return ActionResult.Failed(
+            // Distinguished because the difference matters to whoever reads it: a
+            // keyboard or a wallpaper service is installed and running, it simply has no
+            // screen to open. Saying "not installed" about an app in front of the user
+            // sends them looking for the wrong problem.
+            if (isInstalled(packageName)) {
+                "$packageName cannot be opened directly"
+            } else {
+                "$packageName is not installed"
+            },
+        )
 
         return try {
             context.startActivity(intent)

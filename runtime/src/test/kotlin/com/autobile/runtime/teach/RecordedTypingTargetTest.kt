@@ -4,6 +4,7 @@ import android.view.accessibility.AccessibilityEvent
 import com.autobile.core.model.ObservedAction
 import com.autobile.runtime.FakeScreen
 import com.autobile.runtime.accessibility.AccessibilityBridge
+import com.autobile.runtime.accessibility.ObservedEvent
 import com.autobile.runtime.node
 import com.autobile.runtime.screen
 import com.google.common.truth.Truth.assertThat
@@ -96,6 +97,61 @@ class RecordedTypingTargetTest {
 
         val event = trace?.events?.firstOrNull { it.action is ObservedAction.TextInput }
         assertThat(event?.targetNode?.nodeId).isEqualTo("body_field")
+    }
+
+    @Test
+    fun `a window that nobody navigated to is not recorded as opening an app`() =
+        runTest(UnconfinedTestDispatcher()) {
+            // The keyboard, the shade, a video in a corner, another service's overlay:
+            // all of them raise a window-state change from some package. Taken at face
+            // value each reads as the user opening that app, and the automation ends up
+            // with a step that opens a keyboard.
+            val perception = FakeScreen(screen("com.example.notes", "Note", node("n", text = "Note")))
+            val recorder = DemonstrationRecorder(perception, TestScope(testScheduler))
+
+            recorder.start("Note")
+            testScheduler.advanceUntilIdle()
+            AccessibilityBridge.publishForTest(
+                ObservedEvent(
+                    type = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+                    packageName = "com.samsung.android.honeyboard",
+                    className = "android.inputmethodservice.SoftInputWindow",
+                    text = "",
+                    contentDescription = null,
+                    timestamp = 1,
+                    fromDestinationWindow = false,
+                ),
+            )
+            testScheduler.advanceUntilIdle()
+            val trace = recorder.stop()
+
+            assertThat(trace?.events.orEmpty()).isEmpty()
+        }
+
+    @Test
+    fun `a real app window is still recorded as opening an app`() = runTest(UnconfinedTestDispatcher()) {
+        // Starting somewhere else, so arriving at the notes app is a change of app.
+        val perception = FakeScreen(screen("com.example.elsewhere", "Elsewhere", node("n", text = "Note")))
+        val recorder = DemonstrationRecorder(perception, TestScope(testScheduler))
+
+        recorder.start("Note")
+        testScheduler.advanceUntilIdle()
+        AccessibilityBridge.publishForTest(
+            ObservedEvent(
+                type = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+                packageName = "com.example.notes",
+                className = "com.example.notes.EditorActivity",
+                text = "",
+                contentDescription = null,
+                timestamp = 1,
+                fromDestinationWindow = true,
+            ),
+        )
+        testScheduler.advanceUntilIdle()
+        val trace = recorder.stop()
+
+        assertThat(trace?.events?.map { it.action })
+            .contains(ObservedAction.AppOpen("com.example.notes"))
     }
 
     @Test

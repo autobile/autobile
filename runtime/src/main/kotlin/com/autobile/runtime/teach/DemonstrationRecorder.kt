@@ -190,12 +190,14 @@ class DemonstrationRecorder(
         AccessibilityEvent.TYPE_VIEW_SELECTED -> ObservedAction.Select
         AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> ObservedAction.TextInput(text)
         AccessibilityEvent.TYPE_VIEW_SCROLLED -> ObservedAction.Scroll(Direction.DOWN)
-        AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ->
-            if (packageName != lastSnapshot?.packageName) {
-                ObservedAction.AppOpen(packageName)
-            } else {
-                ObservedAction.WindowChange(className)
-            }
+        AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> when {
+            // A keyboard rising, a shade coming down, a video shrinking into a corner:
+            // windows that appear without anyone navigating anywhere. Recorded as app
+            // visits they become steps that open a keyboard, which cannot be opened.
+            !fromDestinationWindow -> null
+            packageName != lastSnapshot?.packageName -> ObservedAction.AppOpen(packageName)
+            else -> ObservedAction.WindowChange(className)
+        }
         // Content changes and focus moves are ambient noise, not user intent.
         else -> null
     }
