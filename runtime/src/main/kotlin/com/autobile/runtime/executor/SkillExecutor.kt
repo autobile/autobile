@@ -336,7 +336,13 @@ class SkillExecutor(
                 }
             }
 
-            val screenshot = if (step.preferredResolver == ResolverKind.VISION || attempt > 0) {
+            // Also captured when the tree is empty or holds nothing usable: that is the
+            // case where looking is the only way to act at all, and waiting for a failed
+            // attempt first would cost a retry to learn what is already known.
+            val nothingNameable = snapshot.nodes.none { !requiresEditable(step) || it.editable }
+            val screenshot = if (
+                step.preferredResolver == ResolverKind.VISION || attempt > 0 || nothingNameable
+            ) {
                 (perception.captureScreenshot() as? ScreenshotCapture.Success)?.bitmap
             } else {
                 null
@@ -353,6 +359,61 @@ class SkillExecutor(
             )
 
             awaitingReasoning = resolution is Resolution.NeedsReasoning
+
+            if (resolution is Resolution.FoundPoint) {
+                if (resolution.usedCloud) cloudCalls++
+                if (resolution.tier == RuntimeTier.DEVICE_AI) deviceAiCalls++
+                observer.onEvent(
+                    event(
+                        task.id,
+                        ExecutionEventType.RESOLVER_SELECTED,
+                        step.id,
+                        index,
+                        "${ResolverKind.VISION} via ${resolution.tier.diagnosticName} (${resolution.explanation})",
+                        tier = resolution.tier,
+                        resolver = ResolverKind.VISION,
+                    ),
+                )
+                val actionResult = controller.tapRatio(resolution.xRatio, resolution.yRatio)
+                observer.onEvent(
+                    event(
+                        task.id,
+                        ExecutionEventType.ACTION_EXECUTED,
+                        step.id,
+                        index,
+                        actionResult.describe,
+                        success = actionResult.succeeded,
+                    ),
+                )
+                if (actionResult.succeeded) {
+                    snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)
+                        ?.snapshot ?: snapshot
+                    // Touching the place is often only half of it: a field reached this
+                    // way still has to be typed into, and by now it has focus.
+                    val typed = typeAfterTouch(step, snapshot, context)
+                    val validated = validateAfter(step, snapshot, null, localOnly, observer, task, index)
+                    if (typed && validated.passed) {
+                        return StepOutcome(
+                            result = StepResult(
+                                stepId = step.id,
+                                stepIndex = index,
+                                intent = step.intent,
+                                targetLabel = step.target.intentLabel,
+                                resolver = ResolverKind.VISION,
+                                tier = resolution.tier,
+                                success = true,
+                                validation = validated,
+                                startedAt = startedAt,
+                                finishedAt = time.nowMillis(),
+                                recovered = recovered,
+                                message = resolution.explanation,
+                            ),
+                            cloudCalls = cloudCalls,
+                            deviceAiCalls = deviceAiCalls,
+                        )
+                    }
+                }
+            }
 
             if (resolution is Resolution.Found) {
                 if (resolution.tier == RuntimeTier.DEVICE_AI) deviceAiCalls++
@@ -485,6 +546,27 @@ class SkillExecutor(
     ).plus(skill.runtimeRequirements.requiredPackages.asSequence())
         .filterNotNull()
         .firstOrNull { it.isNotBlank() && it != ownPackage }
+
+    private fun requiresEditable(step: SkillStep): Boolean = step.action is ActionSpec.InputText
+
+    /**
+     * Types into whatever the touch just focused.
+     *
+     * A point says where something is, not what it is, so a typing step reached this way
+     * has to find the field afterwards. Returns true when there was nothing to type.
+     */
+    private suspend fun typeAfterTouch(
+        step: SkillStep,
+        snapshot: ScreenSnapshot,
+        context: ExecutionContext,
+    ): Boolean {
+        val input = step.action as? ActionSpec.InputText ?: return true
+        val field = snapshot.nodes.firstOrNull { it.editable && it.focused }
+            ?: snapshot.nodes.firstOrNull { it.editable }
+            ?: return false
+        val value = context.resolve(input.value) ?: return false
+        return controller.inputText(field, value, input.clearExisting).succeeded
+    }
 
     /** A step that cannot proceed, with the reason kept rather than retried into noise. */
     private fun failedOutcome(

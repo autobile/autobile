@@ -50,8 +50,6 @@ class ExecutionResolver(
          */
         requireEditable: Boolean = false,
     ): Resolution {
-        if (snapshot.nodes.isEmpty()) return Resolution.NotFound("The screen has no readable elements")
-
         // What the step means constrains what can answer it. Taking a match that cannot
         // do the job, because its label happened to fit, is what a recorded macro does:
         // the run then dispatches text at a layout and is told the target does not accept
@@ -67,7 +65,15 @@ class ExecutionResolver(
         }
 
         val candidates = minimizer.relevantNodes(snapshot, target.matchTerms()).filter(usable)
-        if (candidates.isEmpty()) return Resolution.NotFound("No candidate elements on this screen")
+        if (candidates.isEmpty()) {
+            // Nothing nameable on screen. A game, a canvas, a video player: the tree is
+            // empty or holds nothing that can do the job, and an agent that can only
+            // choose from a list stops here. Looking is the remaining way to act.
+            if (allowVision && screenshot != null) {
+                return resolveByLooking(target, screenshot, localOnly)
+            }
+            return Resolution.NotFound("No candidate elements on this screen")
+        }
 
         val prompt = AiTasks.elementMatchPrompt(
             targetDescription = target.description.ifBlank { target.intentLabel },
@@ -133,6 +139,49 @@ class ExecutionResolver(
             usedCloud = false,
             cloudWasDecisive = false,
         )
+    }
+
+    /**
+     * Finds where to act by looking, with no element to choose from.
+     *
+     * The answer is a place on screen rather than a node, so the step acts on
+     * coordinates. That is what a macro does, and here it is the right thing: when an
+     * app draws its own interface there is nothing else to aim at, and refusing to
+     * operate those apps at all is a worse answer than aiming carefully.
+     */
+    private suspend fun resolveByLooking(
+        target: TargetSemantics,
+        screenshot: Bitmap,
+        localOnly: Boolean,
+    ): Resolution {
+        val routed = router.infer(
+            label = "point-match",
+            schema = AiTasks.pointMatch,
+            prompt = AiTasks.pointMatchPrompt(
+                targetDescription = target.description.ifBlank { target.intentLabel },
+                synonyms = target.synonyms,
+            ),
+            systemInstruction = AiTasks.SYSTEM_INSTRUCTION,
+            image = screenshot,
+            requirements = InferenceRequirements(
+                needsVision = true,
+                minConfidence = INFERENCE_CONFIDENCE_THRESHOLD,
+                localOnly = localOnly,
+            ),
+        )
+        val match = routed.value
+        return if (match != null && match.found) {
+            Resolution.FoundPoint(
+                xRatio = match.xRatio,
+                yRatio = match.yRatio,
+                tier = routed.tier,
+                confidence = minOf(match.confidence, routed.confidence),
+                explanation = match.reason.ifBlank { "located by looking at the screen" },
+                usedCloud = routed.usedCloud,
+            )
+        } else {
+            Resolution.NotFound("Nothing on this screen offers \"${target.intentLabel}\"")
+        }
     }
 
     private suspend fun resolveVisually(
@@ -323,6 +372,22 @@ sealed interface Resolution {
         /** True when no inference was needed, which is the intended common case. */
         val wasDeterministic: Boolean get() = tier == RuntimeTier.DETERMINISTIC
     }
+
+    /**
+     * A place on screen to act, with no element behind it.
+     *
+     * Produced only when nothing nameable is on screen. The step acts on coordinates,
+     * which is fragile by nature, so it carries its own confidence and is never the
+     * first thing tried.
+     */
+    data class FoundPoint(
+        val xRatio: Float,
+        val yRatio: Float,
+        val tier: RuntimeTier,
+        val confidence: Float,
+        val explanation: String,
+        val usedCloud: Boolean,
+    ) : Resolution
 
     /** The element is absent, and no tier believes otherwise. */
     data class NotFound(val reason: String) : Resolution
