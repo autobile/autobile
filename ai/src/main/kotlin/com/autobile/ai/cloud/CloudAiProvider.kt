@@ -56,7 +56,6 @@ class CloudAiProvider(
         return ProviderCapabilities(
             available = true,
             supportsVision = cfg.allowImages,
-            supportsStructuredOutput = true,
             supportsSystemPrompt = true,
             maxInputTokens = cfg.maxInputTokens,
             modelName = cfg.modelFor(tier),

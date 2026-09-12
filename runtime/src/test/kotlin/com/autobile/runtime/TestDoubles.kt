@@ -30,19 +30,34 @@ class ScriptedProvider(
     override val id: String = "scripted",
     private val available: Boolean = true,
     private val answers: MutableMap<String, Any> = mutableMapOf(),
+    private val supportsVision: Boolean = true,
 ) : StructuredInferenceProvider {
 
     val requestedLabels = mutableListOf<String>()
+
+    private val failures = mutableMapOf<String, InferenceErrorKind>()
+    private val transientFailures = mutableMapOf<String, InferenceErrorKind>()
 
     fun answerWith(label: String, value: Any): ScriptedProvider {
         answers[label] = value
         return this
     }
 
+    /** Fails this label every time, the way an unreachable or refusing runtime does. */
+    fun failWith(label: String, kind: InferenceErrorKind): ScriptedProvider {
+        failures[label] = kind
+        return this
+    }
+
+    /** Fails once and then behaves, the way a model busy for a moment does. */
+    fun failOnceWith(label: String, kind: InferenceErrorKind): ScriptedProvider {
+        transientFailures[label] = kind
+        return this
+    }
+
     override suspend fun capabilities(): ProviderCapabilities = ProviderCapabilities(
         available = available,
-        supportsVision = true,
-        supportsStructuredOutput = true,
+        supportsVision = supportsVision,
         supportsSystemPrompt = true,
         maxInputTokens = 8_000,
     )
@@ -50,6 +65,24 @@ class ScriptedProvider(
     @Suppress("UNCHECKED_CAST")
     override suspend fun <T : Any> structured(request: StructuredRequest<T>): InferenceResult<T> {
         requestedLabels += request.label
+        transientFailures.remove(request.label)?.let { kind ->
+            return InferenceResult(
+                value = null,
+                confidence = 0f,
+                tier = tier,
+                providerId = id,
+                error = InferenceError(kind, "scripted transient ${kind.name.lowercase()}"),
+            )
+        }
+        failures[request.label]?.let { kind ->
+            return InferenceResult(
+                value = null,
+                confidence = 0f,
+                tier = tier,
+                providerId = id,
+                error = InferenceError(kind, "scripted ${kind.name.lowercase()}"),
+            )
+        }
         val answer = answers[request.label]
             ?: return InferenceResult(
                 value = null,
