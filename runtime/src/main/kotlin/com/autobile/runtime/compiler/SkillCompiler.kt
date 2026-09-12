@@ -307,7 +307,11 @@ class SkillCompiler(
     private fun expectedStateAfter(event: TraceEvent, all: List<TraceEvent>, index: Int): ExpectedState {
         val after = event.after ?: return ExpectedState()
         val next = all.getOrNull(index + 1)
-        val anchorTexts = next?.targetNode?.label()?.takeIf { it.isNotBlank() }?.let { listOf(it) }.orEmpty()
+        // Only text a person could actually see. The label falls back to an id or a
+        // class name when an element has neither text nor description, and requiring
+        // "ScrollView" to appear on screen is a check that can never pass — the step
+        // reaches exactly the screen it was taught on and is failed for it.
+        val anchorTexts = listOfNotNull(next?.targetNode?.visibleText())
         return ExpectedState(
             screen = ScreenSemantics(
                 label = after.windowTitle.ifBlank { after.packageName },
