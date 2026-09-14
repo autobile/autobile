@@ -44,7 +44,10 @@ jobs:
           AUTOBILE_KEY_PASSWORD: ${{ secrets.AUTOBILE_KEY_PASSWORD }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          ./gradlew lintDebug test assembleRelease
+          # The protected merge SHA already passed lint, unit tests, debug/release
+          # assembly, and the minified-device startup gate. Rebuild only the signed
+          # release artifact here so tagging does not repeat the entire test suite.
+          ./gradlew assembleRelease --configuration-cache
           version="${RELEASE_TAG#v}"
           apk="autobile-${version}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"

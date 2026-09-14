@@ -7,13 +7,14 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  verify:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -25,4 +26,49 @@ jobs:
           java-version: "21"
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       - name: Verify and build
-        run: ./gradlew lintDebug test assembleDebug assembleRelease
+        run: ./gradlew lintDebug testDebugUnitTest assembleDebug assembleRelease --configuration-cache
+      - name: Export minified APK for startup check
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: minified-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Enable KVM
+        run: sudo chmod 666 /dev/kvm
+      - name: Install and launch minified app
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none
+          # The emulator boots in parallel with the build. The script waits for the
+          # minified artifact, so device setup is not added after the 4-minute R8 gate.
+          script: .github/scripts/startup-smoke.sh
+
+  verify:
+    if: always()
+    needs: [build, startup]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every gate
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          STARTUP_RESULT: ${{ needs.startup.result }}
+        run: |
+          test "$BUILD_RESULT" = success
+          test "$STARTUP_RESULT" = success
