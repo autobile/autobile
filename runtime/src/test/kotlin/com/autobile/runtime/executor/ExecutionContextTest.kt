@@ -9,6 +9,8 @@ import com.autobile.core.model.VariableBinding
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 /**
  * Relative bindings are what keep a compiled skill from reporting the same day forever,
@@ -23,6 +25,7 @@ class ExecutionContextTest {
         constants: List<SkillConstant> = emptyList(),
         triggerPayload: Map<String, String> = emptyMap(),
         userInputs: Map<String, String> = emptyMap(),
+        createdAt: Long = 0L,
     ) = ExecutionContext(
         skill = SemanticSkill(
             id = "s",
@@ -31,6 +34,7 @@ class ExecutionContextTest {
             goal = "g",
             variables = variables,
             constants = constants,
+            createdAt = createdAt,
         ),
         triggerPayload = triggerPayload,
         userInputs = userInputs,
@@ -126,5 +130,19 @@ class ExecutionContextTest {
             userInputs = mapOf("query" to "quarterly report"),
         )
         assertThat(context.resolveVariable("query")).isEqualTo("quarterly report")
+    }
+
+    @Test
+    fun `a timestamp literal from an existing skill follows the moment it runs`() {
+        val taughtAt = LocalDateTime.of(2026, 9, 11, 8, 30)
+        val context = context(
+            createdAt = taughtAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+        )
+
+        val rendered = context.resolve(
+            ValueRef.Literal("현재 날짜 및 시간\n\n26.09.11 08:30"),
+        )
+
+        assertThat(rendered).isEqualTo("현재 날짜 및 시간\n\n26.09.11 09:00")
     }
 }
