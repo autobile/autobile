@@ -323,7 +323,11 @@ class MLKitGeminiNanoProvider : ReasoningProvider, VisionProvider, StructuredInf
         -> InferenceErrorKind.UNAVAILABLE
 
         GenAiException.ErrorCode.PER_APP_BATTERY_USE_QUOTA_EXCEEDED -> InferenceErrorKind.QUOTA_EXCEEDED
-        GenAiException.ErrorCode.BACKGROUND_USE_BLOCKED -> InferenceErrorKind.POLICY_BLOCKED
+        // The controlled app is necessarily in front while an automation runs. AICore
+        // can reject Nano in that state even though the user allowed this task and the
+        // same request is permitted at another configured tier. Keep this distinct from
+        // an actual user/provider policy refusal so the router may escalate safely.
+        GenAiException.ErrorCode.BACKGROUND_USE_BLOCKED -> InferenceErrorKind.DEVICE_BACKGROUND_RESTRICTED
         GenAiException.ErrorCode.REQUEST_TOO_LARGE -> InferenceErrorKind.REQUEST_TOO_LARGE
         GenAiException.ErrorCode.NOT_SUPPORTED,
         GenAiException.ErrorCode.INVALID_INPUT_IMAGE,

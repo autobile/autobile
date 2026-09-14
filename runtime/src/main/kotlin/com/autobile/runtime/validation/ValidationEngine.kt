@@ -1,9 +1,8 @@
 package com.autobile.runtime.validation
 
+import android.graphics.Bitmap
 import com.autobile.ai.context.ContextMinimizer
 import com.autobile.ai.router.AiRuntimeRouter
-import com.autobile.runtime.EnglishRuntimeVocabulary
-import com.autobile.runtime.RuntimeVocabulary
 import com.autobile.ai.task.AiTasks
 import com.autobile.core.model.Condition
 import com.autobile.core.model.ExpectedState
@@ -15,6 +14,9 @@ import com.autobile.core.model.ValidationSpec
 import com.autobile.core.model.ValueConstraints
 import com.autobile.core.model.ValueType
 import com.autobile.core.model.VariableBinding
+import com.autobile.runtime.EnglishRuntimeVocabulary
+import com.autobile.runtime.RuntimeVocabulary
+import com.autobile.runtime.perception.ScreenshotMasking
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -33,6 +35,7 @@ class ValidationEngine(
     private val router: AiRuntimeRouter,
     private val minimizer: ContextMinimizer = ContextMinimizer(),
     private val words: RuntimeVocabulary = EnglishRuntimeVocabulary,
+    private val maskScreenshots: () -> Boolean = { true },
 ) {
 
     suspend fun validate(
@@ -47,6 +50,55 @@ class ValidationEngine(
         ValidationMode.STRUCTURAL -> validateStructure(spec, expected, snapshot)
         ValidationMode.VALUE -> validateValue(spec, extractedValue, snapshot, today)
         ValidationMode.SEMANTIC -> validateSemantically(spec, expected, snapshot, localOnly)
+    }
+
+    /** Validates a declared outcome directly against fresh pixels when no tree exists. */
+    suspend fun validateVisual(
+        spec: ValidationSpec,
+        expected: ExpectedState,
+        snapshot: ScreenSnapshot,
+        screenshot: Bitmap,
+        localOnly: Boolean,
+    ): ValidationOutcome {
+        val expectation = spec.expectation.ifBlank { expected.description }
+        if (expectation.isBlank()) {
+            return ValidationOutcome(
+                spec.mode,
+                passed = false,
+                reason = words.outcomeNotVerified(),
+                confidence = 0f,
+                evaluated = false,
+            )
+        }
+        val description = minimizer.describeScreen(snapshot)
+        val image = if (maskScreenshots()) ScreenshotMasking.mask(screenshot, snapshot) else screenshot
+        val routed = router.infer(
+            label = "outcome-check-visual",
+            schema = AiTasks.outcomeCheck,
+            prompt = AiTasks.outcomeCheckPrompt(expectation, description),
+            systemInstruction = AiTasks.SYSTEM_INSTRUCTION,
+            image = minimizer.cropForInference(image, null),
+            requirements = InferenceRequirements(
+                needsVision = true,
+                minConfidence = SEMANTIC_CONFIDENCE_THRESHOLD,
+                localOnly = localOnly,
+                estimatedInputTokens = minimizer.estimateTokens(description),
+            ),
+        )
+        val check = routed.value ?: return ValidationOutcome(
+            spec.mode,
+            passed = false,
+            reason = words.outcomeNotVerified(),
+            confidence = 0f,
+            evaluated = false,
+        )
+        return ValidationOutcome(
+            mode = spec.mode,
+            passed = check.satisfied,
+            reason = if (check.satisfied) "visual outcome confirmed" else "expected visual outcome did not occur",
+            observed = check.observed,
+            confidence = minOf(check.confidence, routed.confidence),
+        )
     }
 
     /** Checks package, required text and forbidden text — all directly observable. */

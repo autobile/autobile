@@ -75,6 +75,13 @@ class ScreenController(private val context: Context) : ScreenActuator {
         return gesture(buildPath(x, y), TAP_DURATION_MS, "tap")
     }
 
+    override suspend fun longPressRatio(xRatio: Float, yRatio: Float, durationMs: Long): ActionResult {
+        val metrics = context.resources.displayMetrics
+        val x = metrics.widthPixels * xRatio.coerceIn(0f, 1f)
+        val y = metrics.heightPixels * yRatio.coerceIn(0f, 1f)
+        return gesture(buildPath(x, y), durationMs, "long press")
+    }
+
     /**
      * Swipes across the screen.
      *

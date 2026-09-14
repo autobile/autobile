@@ -27,6 +27,9 @@ class AutobileAccessibilityService : AccessibilityService() {
 
     private val screenshotExecutor = Executors.newSingleThreadExecutor()
 
+    @Volatile
+    private var lastForegroundPackage: String = ""
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         serviceInfo = (serviceInfo ?: AccessibilityServiceInfo()).apply {
@@ -53,6 +56,9 @@ class AutobileAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            event.packageName?.toString()?.takeIf { it.isNotBlank() }?.let { lastForegroundPackage = it }
+        }
         AccessibilityBridge.publish(event)
     }
 
@@ -76,7 +82,8 @@ class AutobileAccessibilityService : AccessibilityService() {
 
     /** Package name of the foreground window, or an empty string when unknown. */
     fun foregroundPackage(): String = runCatching {
-        rootInActiveWindow?.packageName?.toString().orEmpty()
+        rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
+            ?: lastForegroundPackage
     }.getOrDefault("")
 
     /**

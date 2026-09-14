@@ -33,6 +33,7 @@ import com.autobile.runtime.control.ActionResult
 import com.autobile.runtime.control.ScreenActuator
 import com.autobile.runtime.perception.ScreenObserver
 import com.autobile.runtime.perception.ScreenshotCapture
+import com.autobile.runtime.perception.VisualChangeDetector
 import com.autobile.runtime.recovery.RecoveryMove
 import com.autobile.runtime.recovery.SelfHealingEngine
 import com.autobile.runtime.resolver.ExecutionResolver
@@ -215,7 +216,11 @@ class SkillExecutor(
                 // Nothing was available to make the decision, so the run is paused rather
                 // than failed: the steps completed so far remain valid and the same
                 // automation will succeed once a runtime is reachable again.
-                val status = if (outcome.awaitingReasoning) OutcomeStatus.DEFERRED else OutcomeStatus.PARTIAL
+                val status = when {
+                    outcome.blocked -> OutcomeStatus.BLOCKED
+                    outcome.awaitingReasoning -> OutcomeStatus.DEFERRED
+                    else -> OutcomeStatus.PARTIAL
+                }
                 return partial(task, skill, results, cloudCalls, deviceAiCalls, message, status)
             }
         }
@@ -354,9 +359,9 @@ class SkillExecutor(
             // slow and rate-limited by the platform, and a step that matches by recorded
             // id — the ordinary case — never looks at one.
             var screenshotTaken: ScreenshotCapture? = null
-            val screenshot: suspend () -> Bitmap? = {
+            val screenshot: suspend () -> ScreenshotCapture = {
                 val capture = screenshotTaken ?: perception.captureScreenshot().also { screenshotTaken = it }
-                (capture as? ScreenshotCapture.Success)?.bitmap
+                capture
             }
 
             val resolution = resolver.resolve(
@@ -372,6 +377,25 @@ class SkillExecutor(
 
             awaitingReasoning = resolution is Resolution.NeedsReasoning
 
+            if (resolution is Resolution.VisionBlocked) {
+                observer.onEvent(
+                    event(
+                        task.id,
+                        ExecutionEventType.STEP_FAILED,
+                        step.id,
+                        index,
+                        resolution.reason,
+                        success = false,
+                    ),
+                )
+                return StepOutcome(
+                    result = failedStep(step, index, startedAt, resolution.reason, step.validation.mode),
+                    cloudCalls = cloudCalls,
+                    deviceAiCalls = deviceAiCalls,
+                    blocked = resolution.secureWindow,
+                )
+            }
+
             if (resolution is Resolution.FoundPoint) {
                 if (resolution.usedCloud) cloudCalls++
                 if (resolution.tier == RuntimeTier.DEVICE_AI) deviceAiCalls++
@@ -386,7 +410,8 @@ class SkillExecutor(
                         resolver = ResolverKind.VISION,
                     ),
                 )
-                val actionResult = controller.tapRatio(resolution.xRatio, resolution.yRatio)
+                val beforePixels = (screenshotTaken as? ScreenshotCapture.Success)?.bitmap
+                val actionResult = performAtPoint(step, resolution)
                 observer.onEvent(
                     event(
                         task.id,
@@ -410,8 +435,35 @@ class SkillExecutor(
                         snapshot
                     }
                     val wrote = confirmTextLanded(step, afterTyping, context)
-                    val validated = validateAfter(step, afterTyping, null, localOnly, observer, task, index)
-                    if (typed && wrote && validated.passed) {
+                    val afterCapture = perception.captureScreenshot()
+                    if (afterCapture is ScreenshotCapture.SecureWindowBlocked) {
+                        val reason = words.screenProtected()
+                        return StepOutcome(
+                            result = failedStep(step, index, startedAt, reason, step.validation.mode),
+                            cloudCalls = cloudCalls,
+                            deviceAiCalls = deviceAiCalls,
+                            blocked = true,
+                        )
+                    }
+                    val afterPixels = (afterCapture as? ScreenshotCapture.Success)?.bitmap
+                    val validated = validateAfterVisual(
+                        step,
+                        afterTyping,
+                        afterPixels,
+                        localOnly,
+                        observer,
+                        task,
+                        index,
+                    )
+                    val pixelsChanged = beforePixels != null && afterPixels != null &&
+                        VisualChangeDetector.changed(beforePixels, afterPixels)
+                    val textConfirmed = step.action is ActionSpec.InputText && wrote
+                    val visuallyConfirmed = when {
+                        step.validation.mode == ValidationMode.NONE -> pixelsChanged || textConfirmed
+                        afterTyping.nodes.isEmpty() -> pixelsChanged || (validated.evaluated && validated.passed)
+                        else -> true
+                    }
+                    if (typed && wrote && validated.passed && visuallyConfirmed) {
                         return StepOutcome(
                             result = StepResult(
                                 stepId = step.id,
@@ -455,7 +507,12 @@ class SkillExecutor(
                 val extracted: String?
                 val actionResult: ActionResult
                 if (readAction != null) {
-                    val reading = readValue(step, snapshot, screenshot(), localOnly)
+                    val reading = readValue(
+                        step,
+                        snapshot,
+                        (screenshot() as? ScreenshotCapture.Success)?.bitmap,
+                        localOnly,
+                    )
                     extracted = reading.value
                     if (reading.usedCloud) cloudCalls++
                     if (reading.tier == RuntimeTier.DEVICE_AI) deviceAiCalls++
@@ -623,6 +680,27 @@ class SkillExecutor(
         }
     }
 
+    /** Performs the step's declared gesture after vision located its target. */
+    private suspend fun performAtPoint(step: SkillStep, point: Resolution.FoundPoint): ActionResult =
+        when (val action = step.action) {
+            ActionSpec.Click, is ActionSpec.Tap, is ActionSpec.InputText ->
+                controller.tapRatio(point.xRatio, point.yRatio)
+
+            is ActionSpec.LongPress ->
+                controller.longPressRatio(point.xRatio, point.yRatio, action.durationMs)
+
+            is ActionSpec.Swipe ->
+                controller.swipe(action.direction, action.distanceRatio, action.durationMs)
+
+            is ActionSpec.Scroll ->
+                controller.scroll(null, action.direction)
+
+            is ActionSpec.ReadValue ->
+                ActionResult.Failed("A visually located value needs extraction, not a tap")
+
+            else -> ActionResult.Failed("${action::class.simpleName} cannot act at a visual point")
+        }
+
     /** A step that cannot proceed, with the reason kept rather than retried into noise. */
     private fun failedOutcome(
         step: SkillStep,
@@ -706,6 +784,47 @@ class SkillExecutor(
             extractedValue = extracted,
             localOnly = localOnly,
         )
+        observer.onEvent(
+            event(
+                task.id,
+                ExecutionEventType.VALIDATION_RESULT,
+                step.id,
+                index,
+                outcome.reason,
+                success = outcome.passed,
+            ),
+        )
+        return outcome
+    }
+
+    /** Validates against pixels when a visual action has no usable tree after it. */
+    private suspend fun validateAfterVisual(
+        step: SkillStep,
+        snapshot: ScreenSnapshot,
+        screenshot: Bitmap?,
+        localOnly: Boolean,
+        observer: ExecutionObserver,
+        task: AgentTask,
+        index: Int,
+    ): ValidationOutcome {
+        val pixelsArePrimary = snapshot.nodes.isEmpty() &&
+            screenshot != null &&
+            step.validation.mode != ValidationMode.NONE
+        val structural = if (pixelsArePrimary) {
+            null
+        } else {
+            validation.validate(
+                spec = step.validation,
+                expected = step.expectedState,
+                snapshot = snapshot,
+                localOnly = localOnly,
+            )
+        }
+        val outcome = if (pixelsArePrimary || (structural?.passed == false && screenshot != null)) {
+            validation.validateVisual(step.validation, step.expectedState, snapshot, checkNotNull(screenshot), localOnly)
+        } else {
+            checkNotNull(structural)
+        }
         observer.onEvent(
             event(
                 task.id,
@@ -917,6 +1036,8 @@ private data class StepOutcome(
     val deviceAiCalls: Int,
     /** True when the step stalled because no runtime could make a required decision. */
     val awaitingReasoning: Boolean = false,
+    /** True when Android explicitly blocked the perception needed for this step. */
+    val blocked: Boolean = false,
 )
 
 private data class ValueReading(

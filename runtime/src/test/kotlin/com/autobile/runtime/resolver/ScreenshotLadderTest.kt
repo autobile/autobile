@@ -9,6 +9,7 @@ import com.autobile.runtime.ScriptedProvider
 import com.autobile.runtime.node
 import com.autobile.runtime.routerWith
 import com.autobile.runtime.screen
+import com.autobile.runtime.perception.ScreenshotCapture
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -46,7 +47,7 @@ class ScreenshotLadderTest {
             .answerWith("point-match", PointMatch(true, 0.5f, 0.8f, 0.86f, "the button near the bottom"))
 
         val resolution = ExecutionResolver(routerWith(provider))
-            .resolve(target, unhelpfulScreen(), screenshot = { bitmap() })
+            .resolve(target, unhelpfulScreen(), screenshot = { ScreenshotCapture.Success(bitmap()) })
 
         assertThat(resolution).isInstanceOf(Resolution.FoundPoint::class.java)
         assertThat((resolution as Resolution.FoundPoint).yRatio).isEqualTo(0.8f)
@@ -58,7 +59,11 @@ class ScreenshotLadderTest {
         val snapshot = screen("com.example.app", "Home", node("claim", text = "daily reward", clickable = true))
 
         val resolution = ExecutionResolver(routerWith(ScriptedProvider()))
-            .resolve(target, snapshot, screenshot = { looked = true; bitmap() })
+            .resolve(
+                target,
+                snapshot,
+                screenshot = { looked = true; ScreenshotCapture.Success(bitmap()) },
+            )
 
         assertThat((resolution as Resolution.Found).tier).isEqualTo(RuntimeTier.DETERMINISTIC)
         // The screenshot is lazy: the fast path must not pay for one.
@@ -73,7 +78,7 @@ class ScreenshotLadderTest {
             .answerWith("point-match", PointMatch(false, -1f, -1f, 0f, "no such control"))
 
         val resolution = ExecutionResolver(routerWith(provider))
-            .resolve(target, unhelpfulScreen(), screenshot = { bitmap() })
+            .resolve(target, unhelpfulScreen(), screenshot = { ScreenshotCapture.Success(bitmap()) })
 
         assertThat(resolution).isInstanceOf(Resolution.NotFound::class.java)
     }
@@ -87,7 +92,7 @@ class ScreenshotLadderTest {
         val resolution = ExecutionResolver(routerWith(provider)).resolve(
             target,
             unhelpfulScreen(),
-            screenshot = { looked = true; bitmap() },
+            screenshot = { looked = true; ScreenshotCapture.Success(bitmap()) },
             allowVision = false,
         )
 

@@ -13,8 +13,8 @@ android {
         applicationId = "com.autobile"
         minSdk = 30
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.5.0"
+        versionCode = 19
+        versionName = "0.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

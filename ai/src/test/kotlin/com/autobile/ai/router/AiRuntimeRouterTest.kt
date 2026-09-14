@@ -246,6 +246,27 @@ class AiRuntimeRouterTest {
     }
 
     @Test
+    fun `a background restricted device runtime escalates to an allowed cloud tier`() = runTest {
+        val cloud = FakeProvider(RuntimeTier.CLOUD_LIGHT) { success(RuntimeTier.CLOUD_LIGHT) }
+        val router = AiRuntimeRouter(
+            listOf(
+                FakeProvider(RuntimeTier.DEVICE_AI) {
+                    failure(RuntimeTier.DEVICE_AI, InferenceErrorKind.DEVICE_BACKGROUND_RESTRICTED)
+                },
+                cloud,
+            ),
+        )
+
+        val routed = router.infer("test", schema, "prompt")
+
+        assertThat(routed.isSuccess).isTrue()
+        assertThat(routed.tier).isEqualTo(RuntimeTier.CLOUD_LIGHT)
+        assertThat(cloud.callCount).isEqualTo(1)
+        assertThat(routed.attempts.first().errorKind)
+            .isEqualTo(InferenceErrorKind.DEVICE_BACKGROUND_RESTRICTED)
+    }
+
+    @Test
     fun `a context too large for a tier skips it without spending a call`() = runTest {
         val device = FakeProvider(
             RuntimeTier.DEVICE_AI,

@@ -622,6 +622,9 @@ class SkillExecutorTest {
             screenshot = ScreenshotCapture.Success(
                 Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888),
             ),
+            nextScreenshot = ScreenshotCapture.Success(
+                Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888).apply { eraseColor(0xffffffff.toInt()) },
+            ),
             rejectFirstTextInput = true,
         )
         val provider = ScriptedProvider().answerWith(
@@ -646,5 +649,79 @@ class SkillExecutorTest {
         assertThat(provider.requestedLabels).contains("point-match")
         assertThat(screen.typed).containsExactly("body" to expected)
         assertThat(outcome.stepResults.single().resolver).isEqualTo(com.autobile.core.model.ResolverKind.VISION)
+    }
+
+    @Test
+    fun `a rootless canvas can execute through screenshot grounding`() = runTest {
+        val screen = FakeScreen(
+            current = screen(packageName = "com.example.game", windowTitle = ""),
+            screenshot = ScreenshotCapture.Success(Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888)),
+            nextScreenshot = ScreenshotCapture.Success(
+                Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888).apply { eraseColor(0xffffffff.toInt()) },
+            ),
+        )
+        val provider = ScriptedProvider().answerWith(
+            "point-match",
+            PointMatch(true, 0.5f, 0.7f, 0.9f, "play button"),
+        )
+        val step = clickStep(label = "Play", resourceId = null)
+        val automation = skill(listOf(step))
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(provider.requestedLabels).contains("point-match")
+        assertThat(screen.gestures).containsExactly("tap")
+        assertThat(outcome.stepResults.single().resolver)
+            .isEqualTo(com.autobile.core.model.ResolverKind.VISION)
+    }
+
+    @Test
+    fun `visual long press preserves the requested gesture`() = runTest {
+        val screen = FakeScreen(
+            current = screen(packageName = "com.example.game", windowTitle = ""),
+            screenshot = ScreenshotCapture.Success(Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888)),
+            nextScreenshot = ScreenshotCapture.Success(
+                Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888).apply { eraseColor(0xffffffff.toInt()) },
+            ),
+        )
+        val provider = ScriptedProvider().answerWith(
+            "point-match",
+            PointMatch(true, 0.5f, 0.7f, 0.9f, "item"),
+        )
+        val step = SkillStep(
+            id = "hold",
+            intent = StepIntent.SELECT_ITEM,
+            target = TargetSemantics(intentLabel = "Item"),
+            action = ActionSpec.LongPress(800),
+            validation = ValidationSpec(mode = ValidationMode.NONE),
+        )
+        val automation = skill(listOf(step))
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(screen.gestures).containsExactly("long_press")
+    }
+
+    @Test
+    fun `an unchanged rootless screen is not reported as a successful tap`() = runTest {
+        val unchanged = ScreenshotCapture.Success(Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888))
+        val screen = FakeScreen(
+            current = screen(packageName = "com.example.game", windowTitle = ""),
+            screenshot = unchanged,
+            nextScreenshot = unchanged,
+        )
+        val provider = ScriptedProvider().answerWith(
+            "point-match",
+            PointMatch(true, 0.5f, 0.7f, 0.9f, "play button"),
+        )
+        val step = clickStep(label = "Play", resourceId = null)
+        val automation = skill(listOf(step))
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.PARTIAL)
+        assertThat(outcome.stepResults.single().success).isFalse()
     }
 }

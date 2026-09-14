@@ -22,6 +22,8 @@ interface ScreenActuator {
 
     suspend fun tapRatio(xRatio: Float, yRatio: Float): ActionResult
 
+    suspend fun longPressRatio(xRatio: Float, yRatio: Float, durationMs: Long): ActionResult
+
     suspend fun swipe(direction: Direction, distanceRatio: Float, durationMs: Long): ActionResult
 
     /** Scrolls [container] if it can scroll itself, otherwise swipes. */
