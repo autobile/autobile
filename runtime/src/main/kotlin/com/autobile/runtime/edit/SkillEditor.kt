@@ -301,7 +301,10 @@ class SkillEditor(
         val TIME_PATTERN = Regex("(?:^|\\s)([01]?\\d|2[0-3]):([0-5]\\d)(?:\\s|$)")
         val KOREAN_TIME_PATTERN = Regex("(?:^|\\s)([01]?\\d|2[0-3])\\s*시(?:\\s*([0-5]?\\d)\\s*분)?")
         val DESTINATION_NAMES = listOf("destination", "channel", "recipient", "target", "room")
-        val TEMPLATE_VARIABLE = Regex("\\{([A-Za-z][A-Za-z0-9_]*)}")
+        // Android's ICU regex engine (including API 30) requires the closing brace to
+        // be escaped as well. The desktop JVM accepts a bare `}`, which let unit tests
+        // pass while the release APK crashed during AppGraph construction.
+        val TEMPLATE_VARIABLE = Regex("\\{([A-Za-z][A-Za-z0-9_]*)\\}")
 
         fun hasCurrentMomentIntent(value: String): Boolean {
             val normalised = value.lowercase()

@@ -2,6 +2,22 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.6.4] - 2026-09-15
+
+### Fixed
+
+- Prevent Android 11's ICU regex engine from crashing the process while the runtime
+  initializes temporal input editing.
+- Install and launch the minified release APK on an API 30 emulator in every required
+  verification run.
+
+### Changed
+
+- Remove redundant release-unit-test variants from pull-request CI and reuse the
+  already assembled minified APK for the startup gate.
+- Enable hardware acceleration for the startup emulator and avoid rerunning the full
+  verification suite during signed artifact publication.
+
 ## [0.6.3] - 2026-09-15
 
 ### Fixed
@@ -58,3 +74,4 @@ All notable changes to Autobile are documented here. Releases follow semantic ve
 [0.6.1]: https://github.com/autobile/autobile/releases/tag/v0.6.1
 [0.6.2]: https://github.com/autobile/autobile/releases/tag/v0.6.2
 [0.6.3]: https://github.com/autobile/autobile/releases/tag/v0.6.3
+[0.6.4]: https://github.com/autobile/autobile/releases/tag/v0.6.4
