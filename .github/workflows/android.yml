@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: android-${{ github.ref }}
@@ -35,20 +36,16 @@ jobs:
           retention-days: 1
 
   startup:
-    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: "21"
-      - name: Download minified APK
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: minified-apk
-          path: startup-apk
       - name: Enable KVM
         run: sudo chmod 666 /dev/kvm
       - name: Install and launch minified app
@@ -59,7 +56,9 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none
-          script: .github/scripts/startup-smoke.sh startup-apk
+          # The emulator boots in parallel with the build. The script waits for the
+          # minified artifact, so device setup is not added after the 4-minute R8 gate.
+          script: .github/scripts/startup-smoke.sh
 
   verify:
     if: always()

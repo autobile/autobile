@@ -1,7 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly apk_dir="${1:?APK directory is required}"
+readonly apk_dir="${1:-$RUNNER_TEMP/startup-apk}"
+readonly artifact_zip="$RUNNER_TEMP/minified-apk.zip"
+
+download_apk() {
+  local artifact_id=""
+  local attempt
+  mkdir -p "$apk_dir"
+  for attempt in {1..90}; do
+    artifact_id="$(
+      gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+        --jq '.artifacts[] | select(.name == "minified-apk") | .id' \
+        | head -1
+    )"
+    if [[ -n "$artifact_id" ]]; then
+      gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$artifact_zip"
+      unzip -q "$artifact_zip" -d "$apk_dir"
+      return
+    fi
+    sleep 5
+  done
+  echo "Timed out waiting for minified-apk from run $GITHUB_RUN_ID" >&2
+  exit 1
+}
+
+download_apk
+
 readonly apk="$(find "$apk_dir" -type f -name '*.apk' -print -quit)"
 readonly keystore="$RUNNER_TEMP/startup-check.jks"
 

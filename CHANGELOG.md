@@ -17,6 +17,8 @@ All notable changes to Autobile are documented here. Releases follow semantic ve
   already assembled minified APK for the startup gate.
 - Enable hardware acceleration for the startup emulator and avoid rerunning the full
   verification suite during signed artifact publication.
+- Boot the startup emulator concurrently with the minified build instead of adding its
+  setup time after R8 completes.
 
 ## [0.6.3] - 2026-09-15
 
