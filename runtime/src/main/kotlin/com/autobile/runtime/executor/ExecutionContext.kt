@@ -1,10 +1,12 @@
 package com.autobile.runtime.executor
 
+import com.autobile.core.common.TemporalText
 import com.autobile.core.model.SemanticSkill
 import com.autobile.core.model.SkillConstant
 import com.autobile.core.model.SkillVariable
 import com.autobile.core.model.ValueRef
 import com.autobile.core.model.VariableBinding
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -46,10 +48,30 @@ class ExecutionContext(
 
     /** Resolves a reference to the string that should be typed or sent. */
     fun resolve(ref: ValueRef): String? = when (ref) {
-        is ValueRef.Literal -> ref.value
+        is ValueRef.Literal -> resolveLegacyTemporalLiteral(ref.value)
         is ValueRef.Constant -> constants[ref.name]?.value
         is ValueRef.Variable -> resolveVariable(ref.name)
         is ValueRef.Template -> renderTemplate(ref.template)
+    }
+
+    /**
+     * Preserves update compatibility for skills compiled before embedded timestamps
+     * became templates. The same conservative temporal rule used by the compiler is
+     * applied against the skill creation time, so existing notes become dynamic without
+     * requiring the user to teach or explain the automation again.
+     */
+    private fun resolveLegacyTemporalLiteral(value: String): String {
+        if (skill.createdAt <= 0L) return value
+        val writtenOn = LocalDateTime.ofInstant(
+            Instant.ofEpochMilli(skill.createdAt),
+            ZoneId.systemDefault(),
+        )
+        val located = TemporalText.locate(value, writtenOn) ?: return value
+        val rendered = runCatching {
+            now().plusDays(located.recognised.offsetDays.toLong())
+                .format(DateTimeFormatter.ofPattern(located.recognised.pattern))
+        }.getOrNull() ?: return value
+        return value.replaceRange(located.range, rendered)
     }
 
     fun resolveVariable(name: String): String? {

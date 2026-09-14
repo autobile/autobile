@@ -2,6 +2,13 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.6.3] - 2026-09-15
+
+### Fixed
+
+- Render temporal literals in automations saved by earlier versions against the current
+  run time, without requiring the user to recreate or edit the automation.
+
 ## [0.6.2] - 2026-09-15
 
 ### Fixed
@@ -50,3 +57,4 @@ All notable changes to Autobile are documented here. Releases follow semantic ve
 [0.6.0]: https://github.com/autobile/autobile/releases/tag/v0.6.0
 [0.6.1]: https://github.com/autobile/autobile/releases/tag/v0.6.1
 [0.6.2]: https://github.com/autobile/autobile/releases/tag/v0.6.2
+[0.6.3]: https://github.com/autobile/autobile/releases/tag/v0.6.3
