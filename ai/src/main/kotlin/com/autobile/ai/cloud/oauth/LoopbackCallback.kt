@@ -89,45 +89,62 @@ class LoopbackCallback(private val ports: List<Int> = ChatGptSignIn.CALLBACK_POR
      * this port — a stale redirect, another app's probe — is answered and discarded
      * rather than treated as an approval.
      */
-    private fun serve(listening: ServerSocket, state: String): Result<String> = try {
-        listening.accept().use { connection ->
-            val requestLine = connection.getInputStream().bufferedReader().readLine().orEmpty()
-            val query = parseQuery(requestLine)
-            val body: String
-            val outcome: Result<String>
-            when {
-                query["error"] != null -> {
-                    body = page(DENIED_TITLE, query["error_description"] ?: DENIED_BODY)
-                    outcome = Result.failure(SignInFailed(query["error_description"] ?: "sign-in was declined"))
-                }
+    private fun serve(listening: ServerSocket, state: String): Result<String> {
+        return try {
+            while (true) {
+                val reply = listening.accept().use { connection ->
+                    val requestLine = connection.getInputStream().bufferedReader().readLine().orEmpty()
+                    val query = parseQuery(requestLine)
+                    val answer = when {
+                        query["error"] != null -> CallbackReply(
+                            page(DENIED_TITLE, query["error_description"] ?: DENIED_BODY),
+                            Result.failure(SignInFailed(query["error_description"] ?: "sign-in was declined")),
+                            terminal = true,
+                        )
 
-                query["state"] != state -> {
-                    body = page(PROBLEM_TITLE, MISMATCH_BODY)
-                    outcome = Result.failure(SignInFailed("The sign-in reply did not match this attempt"))
-                }
+                        query["state"] != state -> CallbackReply(
+                            page(PROBLEM_TITLE, MISMATCH_BODY),
+                            Result.failure(SignInFailed("The sign-in reply did not match this attempt")),
+                            terminal = false,
+                        )
 
-                query["code"].isNullOrBlank() -> {
-                    body = page(PROBLEM_TITLE, NO_CODE_BODY)
-                    outcome = Result.failure(SignInFailed("The sign-in reply carried no code"))
-                }
+                        query["code"].isNullOrBlank() -> CallbackReply(
+                            page(PROBLEM_TITLE, NO_CODE_BODY),
+                            Result.failure(SignInFailed("The sign-in reply carried no code")),
+                            terminal = false,
+                        )
 
-                else -> {
-                    body = page(DONE_TITLE, DONE_BODY)
-                    outcome = Result.success(query.getValue("code"))
+                        else -> CallbackReply(
+                            page(DONE_TITLE, DONE_BODY),
+                            Result.success(query.getValue("code")),
+                            terminal = true,
+                        )
+                    }
+                    connection.getOutputStream().use { stream ->
+                        stream.write(httpResponse(answer.body).toByteArray(Charsets.UTF_8))
+                        stream.flush()
+                    }
+                    answer
                 }
+                // Browser probes, favicons and stale callbacks must not consume the one
+                // listener the real authorization response still needs.
+                if (reply.terminal) return reply.outcome
             }
-            connection.getOutputStream().use { stream ->
-                stream.write(httpResponse(body).toByteArray(Charsets.UTF_8))
-                stream.flush()
-            }
-            outcome
+            @Suppress("UNREACHABLE_CODE")
+            Result.failure(SignInFailed("The sign-in listener stopped"))
+        } catch (e: SocketTimeoutException) {
+            Result.failure(SignInFailed("The sign-in was not completed in time"))
+        } catch (e: IOException) {
+            Logx.w("Sign-in callback failed", e)
+            Result.failure(SignInFailed(e.message ?: "the sign-in reply could not be read"))
         }
-    } catch (e: SocketTimeoutException) {
-        Result.failure(SignInFailed("The sign-in was not completed in time"))
-    } catch (e: IOException) {
-        Logx.w("Sign-in callback failed", e)
-        Result.failure(SignInFailed(e.message ?: "the sign-in reply could not be read"))
     }
+
+    private data class CallbackReply(
+        val body: String,
+        val outcome: Result<String>,
+        val terminal: Boolean,
+    )
 
     fun close() {
         runCatching { socket?.close() }

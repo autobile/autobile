@@ -128,6 +128,7 @@ object ChatGptSignIn {
             "grant_type=refresh_token" +
                 "&client_id=${encode(CLIENT_ID)}" +
                 "&refresh_token=${encode(session.refreshToken)}",
+            existingRefreshToken = session.refreshToken,
         ).map { renewed ->
             renewed.copy(
                 refreshToken = renewed.refreshToken.ifBlank { session.refreshToken },
@@ -137,7 +138,11 @@ object ChatGptSignIn {
             )
         }
 
-    private suspend fun post(operation: String, form: String): Result<CloudSession> = withContext(Dispatchers.IO) {
+    private suspend fun post(
+        operation: String,
+        form: String,
+        existingRefreshToken: String = "",
+    ): Result<CloudSession> = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         try {
             connection = (URL("$ISSUER/oauth/token").openConnection() as HttpURLConnection).apply {
@@ -156,7 +161,7 @@ object ChatGptSignIn {
                 return@withContext Result.failure(failureFor(status, detail))
             }
             val body = connection.inputStream.bufferedReader().use { it.readText() }
-            parse(body)?.let { Result.success(it) }
+            parseTokenResponse(body, existingRefreshToken)?.let { Result.success(it) }
                 ?: Result.failure(SignInFailed("The sign-in reply did not contain a token"))
         } catch (e: Throwable) {
             Logx.w("ChatGPT sign-in $operation failed", e)
@@ -192,27 +197,34 @@ object ChatGptSignIn {
         )
     }
 
-    private fun parse(body: String): CloudSession? {
+    internal fun parseTokenResponse(
+        body: String,
+        existingRefreshToken: String = "",
+        now: Long = System.currentTimeMillis(),
+    ): CloudSession? {
         val root = runCatching { AutobileJson.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return null
         val access = (root["access_token"] as? JsonPrimitive)?.content.orEmpty()
         if (access.isBlank()) return null
+        val refresh = (root["refresh_token"] as? JsonPrimitive)?.content.orEmpty()
+            .ifBlank { existingRefreshToken }
+        if (refresh.isBlank()) return null
 
         // The access token carries the account; the identity token is only consulted for
         // an address the access token happened not to include.
         val claims = IdentityClaims.parse(access)
         val identity = IdentityClaims.parse((root["id_token"] as? JsonPrimitive)?.content)
-        val lifetimeSeconds = (root["expires_in"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0L
+        val lifetimeSeconds = (root["expires_in"] as? JsonPrimitive)?.content?.toLongOrNull()
+            ?.takeIf { it > 0L } ?: return null
 
         return CloudSession(
             accessToken = access,
-            refreshToken = (root["refresh_token"] as? JsonPrimitive)?.content.orEmpty(),
+            refreshToken = refresh,
             accountId = claims.accountId.ifBlank { identity.accountId },
             email = claims.email.ifBlank { identity.email },
             plan = claims.plan.ifBlank { identity.plan },
             expiresAt = when {
                 claims.expiresAt > 0 -> claims.expiresAt
-                lifetimeSeconds > 0 -> System.currentTimeMillis() + lifetimeSeconds * 1_000
-                else -> 0L
+                else -> now + lifetimeSeconds * 1_000
             },
         )
     }

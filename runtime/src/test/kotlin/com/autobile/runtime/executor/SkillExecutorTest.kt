@@ -1,10 +1,12 @@
 package com.autobile.runtime.executor
 
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
 import com.autobile.ai.task.ElementMatch
 import com.autobile.ai.task.ExtractedValue
 import com.autobile.ai.task.OutcomeCheck
+import com.autobile.ai.task.PointMatch
 import com.autobile.ai.task.RecoveryAction
 import com.autobile.ai.task.RecoveryProposal
 import com.autobile.core.data.AppPolicyStore
@@ -45,6 +47,7 @@ import com.autobile.core.model.ValueSemantics
 import com.autobile.runtime.FakeScreen
 import com.autobile.runtime.ScriptedProvider
 import com.autobile.runtime.node
+import com.autobile.runtime.perception.ScreenshotCapture
 import com.autobile.runtime.recovery.SelfHealingEngine
 import com.autobile.runtime.resolver.ExecutionResolver
 import com.autobile.runtime.risk.RiskEngine
@@ -600,5 +603,47 @@ class SkillExecutorTest {
         executor(appScreen, ScriptedProvider()).execute(skill, task(skill), Recorder())
 
         assertThat(appScreen.clicked).isNotEmpty()
+    }
+
+    @Test
+    fun `a rejected text action falls through to visual grounding`() = runTest {
+        val expected = "26.09.14 12:35"
+        val field = node(
+            "body",
+            resourceId = "com.example.notes:id/body",
+            editable = true,
+            clickable = false,
+            bounds = Bounds(40, 300, 1040, 1800),
+        )
+        val screen = FakeScreen(
+            current = screen("com.example.notes", "Editor", field),
+            nextScreen = screen("com.example.notes", "Editor", field.copy(text = expected)),
+            screenshot = ScreenshotCapture.Success(
+                Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888),
+            ),
+            rejectFirstTextInput = true,
+        )
+        val provider = ScriptedProvider().answerWith(
+            "point-match",
+            PointMatch(true, 0.5f, 0.5f, 0.9f, "note body"),
+        )
+        val step = SkillStep(
+            id = "write",
+            intent = StepIntent.ENTER_TEXT,
+            target = TargetSemantics(
+                intentLabel = "note body",
+                locators = listOf(Locator(LocatorKind.RESOURCE_ID, "com.example.notes:id/body")),
+            ),
+            action = ActionSpec.InputText(expected),
+            validation = ValidationSpec(mode = ValidationMode.NONE),
+        )
+        val automation = skill(listOf(step))
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(provider.requestedLabels).contains("point-match")
+        assertThat(screen.typed).containsExactly("body" to expected)
+        assertThat(outcome.stepResults.single().resolver).isEqualTo(com.autobile.core.model.ResolverKind.VISION)
     }
 }

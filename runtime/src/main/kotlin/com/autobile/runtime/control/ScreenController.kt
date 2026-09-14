@@ -1,6 +1,8 @@
 package com.autobile.runtime.control
 
 import android.accessibilityservice.GestureDescription
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Path
@@ -144,19 +146,80 @@ class ScreenController(private val context: Context) : ScreenActuator {
      * with the app's own input handling.
      */
     override suspend fun inputText(node: UiNode, value: String, clearExisting: Boolean): ActionResult {
-        val target = findLiveNode(node) ?: return ActionResult.Failed("Text field is no longer on screen")
-        val editable = editableSelfOrAncestor(target)
-            ?: return ActionResult.Failed("Target does not accept text input")
+        val target = findLiveNode(node)
+        val input = target?.let(::textInputSelfOrAncestor)
+        if (input != null) return deliverText(input, value, clearExisting)
 
-        editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-        val text = if (clearExisting) value else (editable.text?.toString().orEmpty() + value)
+        // Rich editors sometimes expose the drawing surface but not its text action
+        // until it owns input focus. Touch the recorded field, then ask the live tree
+        // for the input focus Android just created.
+        if (!node.bounds.isEmpty) {
+            val tapped = tapAt(node.bounds)
+            if (tapped.succeeded) {
+                findFocusedTextInput()?.let { return deliverText(it, value, clearExisting) }
+            }
+        }
+        return ActionResult.Failed("Target does not accept text input")
+    }
+
+    override suspend fun inputTextAtFocus(value: String, clearExisting: Boolean): ActionResult {
+        val input = findFocusedTextInput()
+            ?: return ActionResult.Failed("No text field owns input focus")
+        return deliverText(input, value, clearExisting)
+    }
+
+    /**
+     * Delivers text through the least invasive mechanism the field accepts.
+     *
+     * `ACTION_SET_TEXT` is atomic and remains the fast path. Samsung Notes and a number
+     * of WebView-backed editors advertise a field but reject that action; after focus is
+     * established, `ACTION_PASTE` is the framework-supported fallback. The clipboard is
+     * restored immediately and the payload is never logged.
+     */
+    private suspend fun deliverText(
+        input: AccessibilityNodeInfo,
+        value: String,
+        clearExisting: Boolean,
+    ): ActionResult {
+        input.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        delay(INPUT_FOCUS_SETTLE_MS)
+        val text = if (clearExisting) value else (input.text?.toString().orEmpty() + value)
         val arguments = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
-        if (editable.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)) {
+        if (input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)) {
             return ActionResult.Performed("set text")
         }
-        return ActionResult.Failed("Text could not be entered")
+
+        val clipboard = context.getSystemService(ClipboardManager::class.java)
+            ?: return ActionResult.Failed("Text could not be entered")
+        val previous = runCatching { clipboard.primaryClip }.getOrNull()
+        return try {
+            if (clearExisting) selectAll(input)
+            clipboard.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, value))
+            if (input.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
+                delay(POST_PASTE_SETTLE_MS)
+                ActionResult.Performed("paste text")
+            } else {
+                ActionResult.Failed("Text could not be entered")
+            }
+        } finally {
+            // A fallback must not leave note contents, messages, or generated values in
+            // the global clipboard after the step finishes.
+            runCatching {
+                if (previous != null) clipboard.setPrimaryClip(previous) else clipboard.clearPrimaryClip()
+            }
+        }
+    }
+
+    private fun selectAll(input: AccessibilityNodeInfo) {
+        val length = input.text?.length ?: 0
+        if (length <= 0) return
+        val selection = Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, length)
+        }
+        input.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selection)
     }
 
     override fun pressBack(): ActionResult {
@@ -260,16 +323,27 @@ class ScreenController(private val context: Context) : ScreenActuator {
         return null
     }
 
-    private fun editableSelfOrAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+    private fun textInputSelfOrAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node
         var hops = 0
         while (current != null && hops < MAX_ANCESTOR_HOPS) {
-            if (current.isEditable) return current
+            if (current.acceptsTextInput()) return current
             current = current.parent
             hops++
         }
         return null
     }
+
+    private fun findFocusedTextInput(): AccessibilityNodeInfo? {
+        val root = AccessibilityBridge.require()?.activeRoot() ?: return null
+        return runCatching { root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
+            ?.let(::textInputSelfOrAncestor)
+    }
+
+    private fun AccessibilityNodeInfo.acceptsTextInput(): Boolean =
+        isEditable || actionList.any {
+            it.id == AccessibilityNodeInfo.ACTION_SET_TEXT || it.id == AccessibilityNodeInfo.ACTION_PASTE
+        }
 
     private companion object {
         const val NO_SERVICE = "Accessibility access is not granted"
@@ -277,8 +351,11 @@ class ScreenController(private val context: Context) : ScreenActuator {
         const val SCROLL_DURATION_MS = 320L
         const val SCROLL_DISTANCE_RATIO = 0.55f
         const val POST_GESTURE_SETTLE_MS = 120L
+        const val INPUT_FOCUS_SETTLE_MS = 120L
+        const val POST_PASTE_SETTLE_MS = 160L
         const val EDGE_INSET = 24f
         const val MAX_ANCESTOR_HOPS = 6
+        const val CLIP_LABEL = "Autobile input"
     }
 }
 

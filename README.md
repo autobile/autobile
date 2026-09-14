@@ -35,7 +35,7 @@ You teach it once. After that it runs without you, and shows you what it did.
 
 ### 1. Install
 
-Download `autobile-0.3.0.apk` from the
+Download the APK from the
 [latest release](https://github.com/autobile/autobile/releases/latest) and install it.
 Autobile is not on Google Play — see [Distribution](#distribution).
 
@@ -129,13 +129,16 @@ found pauses and says so, instead of the automation quietly breaking.
 
 Optional, off by default, and nothing leaves your phone until you turn it on.
 
-1. Get an API key from [Google AI Studio](https://aistudio.google.com/apikey), which has
-   a free tier
-2. **Settings → Cloud assistance → Use the cloud**
-3. Paste the key
+1. Open **Settings → Cloud assistance → Use the cloud**
+2. Select a provider
+3. Paste that provider's API key, or use browser sign-in for the experimental ChatGPT
+   subscription provider
 
 The endpoint defaults to Google's Gemini API and is editable, so you can point it at a
-compatible deployment you control instead.
+compatible deployment you control instead. Subscription sign-in follows the Codex PKCE
+browser flow and refreshes the grant before it expires. OpenAI documents ChatGPT sign-in
+for Codex clients, but does not promise this third-party integration as a stable public
+API; keep the API-key provider available if the subscription surface changes.
 
 Two separate switches, on purpose:
 
@@ -185,7 +188,7 @@ because a record that changes language later is no longer a record of what happe
 ## Project status
 
 Early. The core loop — teach, confirm, compile, replay, validate, repair — works and is
-covered by 182 unit tests plus instrumentation tests that run on a device against the
+covered by automated unit tests plus instrumentation tests that run on a device against the
 shrunk release build. What has not been measured at scale is how reliably learned
 automations hold up across the long tail of third-party apps.
 

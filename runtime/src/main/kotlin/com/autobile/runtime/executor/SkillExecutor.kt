@@ -312,10 +312,13 @@ class SkillExecutor(
         var attempt = 0
         var awaitingReasoning = false
         var openedTargetApp = false
+        var forceVision = false
         val attemptedMoves = mutableListOf<String>()
         val navigationSteps = mutableListOf<SkillStep>()
 
         while (attempt <= step.fallback.maxRetries) {
+            val thisAttemptUsesVision = forceVision
+            forceVision = false
             // Autobile's own screen is never something to act on. It carries the
             // automation's name, goal and step descriptions, so a label match against it
             // succeeds readily and the agent ends up tapping its own interface.
@@ -364,6 +367,7 @@ class SkillExecutor(
                 allowVision = step.fallback.allowVision,
                 localOnly = localOnly || !step.fallback.allowCloudAi,
                 requireEditable = step.action is ActionSpec.InputText,
+                forceVision = thisAttemptUsesVision,
             )
 
             awaitingReasoning = resolution is Resolution.NeedsReasoning
@@ -399,8 +403,15 @@ class SkillExecutor(
                     // Touching the place is often only half of it: a field reached this
                     // way still has to be typed into, and by now it has focus.
                     val typed = typeAfterTouch(step, snapshot, context)
-                    val validated = validateAfter(step, snapshot, null, localOnly, observer, task, index)
-                    if (typed && validated.passed) {
+                    val afterTyping = if (typed) {
+                        (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)
+                            ?.snapshot ?: snapshot
+                    } else {
+                        snapshot
+                    }
+                    val wrote = confirmTextLanded(step, afterTyping, context)
+                    val validated = validateAfter(step, afterTyping, null, localOnly, observer, task, index)
+                    if (typed && wrote && validated.passed) {
                         return StepOutcome(
                             result = StepResult(
                                 stepId = step.id,
@@ -499,12 +510,26 @@ class SkillExecutor(
                             deviceAiCalls = deviceAiCalls,
                         )
                     }
+                    // The framework accepting an action is not proof that the app
+                    // changed. Do not repeat the same stale node action on the next
+                    // attempt; look at the visible target and act at that point.
+                    forceVision = step.fallback.allowVision
+                } else {
+                    forceVision = step.fallback.allowVision
                 }
             }
 
             attempt++
             if (attempt > step.fallback.maxRetries) break
             if (step.fallback.onFailure == com.autobile.core.model.FailureAction.ABORT) break
+
+            if (forceVision) {
+                observer.onEvent(
+                    event(task.id, ExecutionEventType.RECOVERY_STARTED, step.id, index, "visual fallback"),
+                )
+                recovered = true
+                continue
+            }
 
             observer.onEvent(
                 event(task.id, ExecutionEventType.RECOVERY_STARTED, step.id, index, "attempt $attempt"),
@@ -590,9 +615,12 @@ class SkillExecutor(
         val input = step.action as? ActionSpec.InputText ?: return true
         val field = snapshot.nodes.firstOrNull { it.editable && it.focused }
             ?: snapshot.nodes.firstOrNull { it.editable }
-            ?: return false
         val value = context.resolve(input.value) ?: return false
-        return controller.inputText(field, value, input.clearExisting).succeeded
+        return if (field != null) {
+            controller.inputText(field, value, input.clearExisting).succeeded
+        } else {
+            controller.inputTextAtFocus(value, input.clearExisting).succeeded
+        }
     }
 
     /** A step that cannot proceed, with the reason kept rather than retried into noise. */

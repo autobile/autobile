@@ -24,6 +24,9 @@ data class CloudSession(
 ) {
     val isEmpty: Boolean get() = accessToken.isBlank()
 
+    /** A subscription grant must be renewable; an access token alone is temporary. */
+    val canAuthorize: Boolean get() = accessToken.isNotBlank() && refreshToken.isNotBlank()
+
     /**
      * Whether the token should be renewed before it is used.
      *
@@ -31,7 +34,7 @@ data class CloudSession(
      * the run, and a minute costs nothing.
      */
     fun needsRefresh(now: Long = System.currentTimeMillis()): Boolean =
-        expiresAt > 0L && now >= expiresAt - REFRESH_MARGIN_MS
+        refreshToken.isNotBlank() && (expiresAt <= 0L || now >= expiresAt - REFRESH_MARGIN_MS)
 
     /** What the settings screen shows in place of the account itself. */
     val label: String get() = listOf(email, plan).filter { it.isNotBlank() }.joinToString(" · ")
