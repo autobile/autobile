@@ -143,6 +143,7 @@ data class InferenceError(
             InferenceErrorKind.TIMEOUT,
             InferenceErrorKind.BUSY,
             InferenceErrorKind.QUOTA_EXCEEDED,
+            InferenceErrorKind.DEVICE_BACKGROUND_RESTRICTED,
             InferenceErrorKind.POLICY_BLOCKED,
         )
     }
@@ -159,12 +160,15 @@ enum class InferenceErrorKind {
     NETWORK,
     TIMEOUT,
     CANCELLED,
+    /** The on-device runtime cannot infer while this app is behind the controlled app. */
+    DEVICE_BACKGROUND_RESTRICTED,
     POLICY_BLOCKED,
     UNKNOWN;
 
     fun toEscalationReason(): EscalationReason = when (this) {
         UNAVAILABLE, NETWORK, TIMEOUT, UNKNOWN -> EscalationReason.RUNTIME_UNAVAILABLE
         BUSY, QUOTA_EXCEEDED -> EscalationReason.QUOTA_OR_BUSY
+        DEVICE_BACKGROUND_RESTRICTED -> EscalationReason.RUNTIME_UNAVAILABLE
         REQUEST_TOO_LARGE -> EscalationReason.CONTEXT_COMPLEXITY_EXCEEDED
         UNSUPPORTED -> EscalationReason.MODALITY_UNSUPPORTED
         PARSE_FAILED -> EscalationReason.STRUCTURED_OUTPUT_UNSUPPORTED

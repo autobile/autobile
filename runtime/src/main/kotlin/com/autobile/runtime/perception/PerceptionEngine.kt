@@ -27,10 +27,22 @@ class PerceptionEngine(
 
         if (settleMs > 0) delay(settleMs)
 
-        val root = service.activeRoot()
-            ?: return PerceptionResult.Unavailable("No inspectable window is in the foreground")
-
         val metrics = context.resources.displayMetrics
+        val root = service.activeRoot()
+        if (root == null) {
+            // Games, canvases and some embedded surfaces deliberately expose no tree.
+            // That removes the deterministic perception tier, not screenshot capture or
+            // gesture control. Preserve the window identity and dimensions so the
+            // executor can continue through its visual resolver.
+            return PerceptionResult.Success(
+                ScreenSnapshot(
+                    packageName = service.foregroundPackage(),
+                    screenWidth = metrics.widthPixels,
+                    screenHeight = metrics.heightPixels,
+                    capturedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
         val snapshot = treeReader.read(
             root = root,
             screenWidth = metrics.widthPixels,

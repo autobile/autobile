@@ -148,6 +148,7 @@ class FakeScreen(
     /** Swapped in after the first successful action, to model a screen transition. */
     private val nextScreen: ScreenSnapshot? = null,
     private val screenshot: ScreenshotCapture = ScreenshotCapture.Unavailable("not needed"),
+    private val nextScreenshot: ScreenshotCapture? = null,
     private val rejectNodeClicks: Boolean = false,
     private val rejectFirstTextInput: Boolean = false,
 ) : ScreenObserver, ScreenActuator {
@@ -156,9 +157,11 @@ class FakeScreen(
     val typed = mutableListOf<Pair<String, String>>()
     val launched = mutableListOf<String>()
     val scrolled = mutableListOf<Direction>()
+    val gestures = mutableListOf<String>()
     var backPresses: Int = 0
         private set
     private var textInputAttempts = 0
+    private var actionOccurred = false
 
     override suspend fun observe(settleMs: Long): PerceptionResult =
         perception ?: PerceptionResult.Success(current)
@@ -166,7 +169,8 @@ class FakeScreen(
     override suspend fun observeStable(timeoutMs: Long, settleMs: Long): PerceptionResult =
         perception ?: PerceptionResult.Success(current)
 
-    override suspend fun captureScreenshot(): ScreenshotCapture = screenshot
+    override suspend fun captureScreenshot(): ScreenshotCapture =
+        if (actionOccurred) nextScreenshot ?: screenshot else screenshot
 
     override suspend fun click(node: UiNode): ActionResult {
         clicked += node.nodeId
@@ -183,9 +187,20 @@ class FakeScreen(
 
     override suspend fun tapAt(bounds: Bounds): ActionResult = ActionResult.Performed("tap")
 
-    override suspend fun tapRatio(xRatio: Float, yRatio: Float): ActionResult = ActionResult.Performed("tap")
+    override suspend fun tapRatio(xRatio: Float, yRatio: Float): ActionResult {
+        gestures += "tap"
+        advance()
+        return ActionResult.Performed("tap")
+    }
+
+    override suspend fun longPressRatio(xRatio: Float, yRatio: Float, durationMs: Long): ActionResult {
+        gestures += "long_press"
+        advance()
+        return ActionResult.Performed("long press")
+    }
 
     override suspend fun swipe(direction: Direction, distanceRatio: Float, durationMs: Long): ActionResult {
+        gestures += "swipe"
         scrolled += direction
         return ActionResult.Performed("swipe")
     }
@@ -227,6 +242,7 @@ class FakeScreen(
 
     /** Moves to the follow-up screen, once, so a recovery tap can reveal a new target. */
     private fun advance() {
+        actionOccurred = true
         nextScreen?.let { current = it }
     }
 }

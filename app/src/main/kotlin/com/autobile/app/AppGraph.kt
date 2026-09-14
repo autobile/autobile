@@ -154,7 +154,9 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
     private val controller = ScreenController(context)
     private val resolver = ExecutionResolver(aiRouter, minimizer) { settings.privacy().maskSensitiveFields }
     private val riskEngine = RiskEngine(policyStore, settings, runtimeWords)
-    private val validation = ValidationEngine(aiRouter, minimizer, runtimeWords)
+    private val validation = ValidationEngine(aiRouter, minimizer, runtimeWords) {
+        settings.privacy().maskSensitiveFields
+    }
     private val healing = SelfHealingEngine(aiRouter, riskEngine, minimizer)
     private val executor = SkillExecutor(
         perception = perception,

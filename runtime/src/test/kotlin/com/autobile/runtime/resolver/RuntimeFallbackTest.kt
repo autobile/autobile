@@ -82,6 +82,20 @@ class RuntimeFallbackTest {
     }
 
     @Test
+    fun `Nano blocked behind the controlled app gives way to the cloud`() = runTest {
+        val device = ScriptedProvider(RuntimeTier.DEVICE_AI, "nano")
+            .failWith("element-match", InferenceErrorKind.DEVICE_BACKGROUND_RESTRICTED)
+        val cloud = ScriptedProvider(RuntimeTier.CLOUD_LIGHT, "cloud")
+            .answerWith("element-match", matched)
+
+        val resolution = ExecutionResolver(routerWith(device, cloud))
+            .resolve(target, ambiguousScreen(), localOnly = false)
+
+        assertThat((resolution as Resolution.Found).tier).isEqualTo(RuntimeTier.CLOUD_LIGHT)
+        assertThat(cloud.requestedLabels).containsExactly("element-match")
+    }
+
+    @Test
     fun `a network that has gone away leaves the step unresolved, not wrongly resolved`() = runTest {
         val device = ScriptedProvider(RuntimeTier.DEVICE_AI, "nano", available = false)
         val cloud = ScriptedProvider(RuntimeTier.CLOUD_LIGHT, "cloud")

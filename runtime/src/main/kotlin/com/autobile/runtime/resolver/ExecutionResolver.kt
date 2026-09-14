@@ -13,6 +13,7 @@ import com.autobile.core.model.TargetSemantics
 import com.autobile.core.model.UiNode
 import com.autobile.core.model.boundingBox
 import com.autobile.runtime.perception.ScreenshotMasking
+import com.autobile.runtime.perception.ScreenshotCapture
 
 /**
  * Finds the element a step is talking about.
@@ -56,7 +57,7 @@ class ExecutionResolver(
          * for a picture of the screen, and paying for one on every step would tax the
          * fast path to serve the rare one.
          */
-        screenshot: suspend () -> Bitmap? = { null },
+        screenshot: suspend () -> ScreenshotCapture? = { null },
         allowInference: Boolean = true,
         allowVision: Boolean = true,
         localOnly: Boolean = false,
@@ -136,9 +137,17 @@ class ExecutionResolver(
             )
         }
 
-        val picture = if (allowVision) screenshot() else null
+        val capture = if (allowVision) screenshot() else null
+        val picture = (capture as? ScreenshotCapture.Success)?.bitmap
         if (picture == null) {
-            return unresolved(routed.result.error, target)
+            if (capture is ScreenshotCapture.SecureWindowBlocked) return checkNotNull(capture.blockedResolution())
+            val unresolved = unresolved(routed.result.error, target)
+            // A runtime outage is the reason this step cannot proceed even if pixels
+            // are unavailable too. Preserve it as deferrable instead of converting a
+            // temporary provider outage into a permanent-looking screen failure.
+            if (unresolved is Resolution.NeedsReasoning) return unresolved
+            capture?.blockedResolution()?.let { return it }
+            return unresolved
         }
 
         // Still within the tree: the same elements, looked at rather than read. Cheap,
@@ -154,7 +163,7 @@ class ExecutionResolver(
         return lookOrGiveUp(
             target,
             snapshot,
-            { picture },
+            { ScreenshotCapture.Success(picture) },
             allowVision,
             localOnly,
             visuallyUnresolved(visually, target),
@@ -182,14 +191,30 @@ class ExecutionResolver(
     private suspend fun lookOrGiveUp(
         target: TargetSemantics,
         snapshot: ScreenSnapshot,
-        screenshot: suspend () -> Bitmap?,
+        screenshot: suspend () -> ScreenshotCapture?,
         allowVision: Boolean,
         localOnly: Boolean,
         reasonIfBlind: String,
     ): Resolution {
         if (!allowVision) return Resolution.NotFound(reasonIfBlind)
-        val picture = screenshot() ?: return Resolution.NotFound(reasonIfBlind)
-        return resolveByLooking(target, snapshot, picture, localOnly)
+        return when (val capture = screenshot()) {
+            null -> Resolution.NotFound(reasonIfBlind)
+            is ScreenshotCapture.Success -> resolveByLooking(target, snapshot, capture.bitmap, localOnly)
+            is ScreenshotCapture.SecureWindowBlocked -> Resolution.VisionBlocked(
+                "Screen capture is blocked for ${capture.packageName.ifBlank { "this protected app" }}",
+                secureWindow = true,
+            )
+            is ScreenshotCapture.Unavailable -> Resolution.VisionBlocked(capture.reason, secureWindow = false)
+        }
+    }
+
+    private fun ScreenshotCapture.blockedResolution(): Resolution.VisionBlocked? = when (this) {
+        is ScreenshotCapture.Success -> null
+        is ScreenshotCapture.SecureWindowBlocked -> Resolution.VisionBlocked(
+            "Screen capture is blocked for ${packageName.ifBlank { "this protected app" }}",
+            secureWindow = true,
+        )
+        is ScreenshotCapture.Unavailable -> Resolution.VisionBlocked(reason, secureWindow = false)
     }
 
     /**
@@ -480,4 +505,7 @@ sealed interface Resolution {
 
     /** A decision is needed but reasoning was not permitted for this attempt. */
     data class NeedsReasoning(val reason: String) : Resolution
+
+    /** Visual recovery was required but Android could not provide a screenshot. */
+    data class VisionBlocked(val reason: String, val secureWindow: Boolean) : Resolution
 }
