@@ -65,6 +65,14 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
     /** The sign-in in progress, so a second tap does not open a second browser tab. */
     private var signIn: Job? = null
 
+    /**
+     * What the sign-in that is waiting needs in order to finish.
+     *
+     * Kept off the observable state: the verifier is the secret that proves this app
+     * started the sign-in, and state that reaches the interface reaches logs with it.
+     */
+    private var pendingSignIn: PendingSignIn? = null
+
     init {
         viewModelScope.launch {
             graph.skillStore.observeSkills().collectLatest { skills ->
@@ -161,11 +169,16 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
             is RunResult.Completed -> {
                 _state.update {
                     it.copy(
-                        message = if (result.outcome.goalValidated) {
-                            graph.appContext.getString(R.string.msg_first_run_complete)
-                        } else {
-                            result.outcome.message
-                        },
+                        // The stored message is a diagnostic written for the timeline.
+                        // Handing it to someone on their first run spends their first
+                        // impression on vocabulary that only means something in here.
+                        message = graph.appContext.getString(
+                            if (result.outcome.goalValidated) {
+                                R.string.msg_first_run_complete
+                            } else {
+                                R.string.msg_first_run_unverified
+                            },
+                        ),
                         onboardingStep = OnboardingStep.TEACH,
                     )
                 }
@@ -532,24 +545,52 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
                 failed(SignInFailed(graph.appContext.getString(R.string.msg_cloud_no_browser)))
                 return@launch
             }
+            pendingSignIn = PendingSignIn(state, pkce.verifier, redirect)
             val code = callback.awaitCode(state).getOrElse { failed(it); return@launch }
-            val session = ChatGptSignIn.exchange(code, pkce.verifier, redirect)
-                .getOrElse { failed(it); return@launch }
-            graph.settings.setCloudSession(CloudSession.encode(session), session.label)
-            _state.update {
-                it.copy(
-                    privacy = graph.settings.privacy(),
-                    cloudSignInPending = false,
-                    message = graph.appContext.getString(R.string.msg_cloud_signed_in),
-                )
-            }
-            refreshCapabilities()
+            completeSignIn(code)
         }
+    }
+
+    /**
+     * Finishes a sign-in from a code the person pasted themselves.
+     *
+     * The loopback redirect is how this normally completes, and on most phones it does.
+     * It cannot be relied on though: a browser may refuse to navigate to a local
+     * address, or hand the redirect to a different app entirely. Without somewhere to
+     * paste what is left in the address bar, those people simply cannot sign in, and
+     * nothing on screen would tell them why.
+     */
+    fun completePastedSignIn(pasted: String) {
+        val attempt = pendingSignIn ?: run {
+            failed(SignInFailed(graph.appContext.getString(R.string.msg_cloud_sign_in_not_started)))
+            return
+        }
+        val code = ChatGptSignIn.readPastedCode(pasted, attempt.state)
+            .getOrElse { failed(it); return }
+        signIn?.cancel()
+        signIn = viewModelScope.launch { completeSignIn(code) }
+    }
+
+    private suspend fun completeSignIn(code: String) {
+        val attempt = pendingSignIn ?: return
+        val session = ChatGptSignIn.exchange(code, attempt.verifier, attempt.redirectUri)
+            .getOrElse { failed(it); return }
+        pendingSignIn = null
+        graph.settings.setCloudSession(CloudSession.encode(session), session.label)
+        _state.update {
+            it.copy(
+                privacy = graph.settings.privacy(),
+                cloudSignInPending = false,
+                message = graph.appContext.getString(R.string.msg_cloud_signed_in),
+            )
+        }
+        refreshCapabilities()
     }
 
     fun cancelCloudSignIn() {
         signIn?.cancel()
         signIn = null
+        pendingSignIn = null
         _state.update { it.copy(cloudSignInPending = false) }
     }
 
@@ -650,6 +691,13 @@ data class TeachDraft(
     val usedCloud: Boolean,
     /** Which runtime worked out what this meant, or null when the rules did. */
     val understoodBy: RuntimeTier? = null,
+)
+
+/** The half of a sign-in that must survive the trip to the browser and back. */
+private data class PendingSignIn(
+    val state: String,
+    val verifier: String,
+    val redirectUri: String,
 )
 
 data class AppUiState(

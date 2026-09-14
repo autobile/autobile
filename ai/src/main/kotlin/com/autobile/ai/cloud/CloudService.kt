@@ -51,7 +51,9 @@ enum class CloudService(
         displayName = "ChatGPT subscription",
         dialect = CloudDialect.CHATGPT,
         endpoint = "https://chatgpt.com/backend-api/codex",
-        lightModel = "gpt-5.4",
+        // Both read pictures. The small one classifies, the large one reasons about a
+        // screen and repairs a broken step, which is the split the router already makes.
+        lightModel = "gpt-5.4-mini",
         advancedModel = "gpt-5.4",
         credentialUrl = "",
         authMethod = CloudAuthMethod.SIGN_IN,

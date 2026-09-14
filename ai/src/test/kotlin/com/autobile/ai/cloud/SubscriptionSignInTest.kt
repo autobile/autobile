@@ -63,6 +63,26 @@ class SubscriptionSignInTest {
     }
 
     @Test
+    fun `the sign-in asks only for what the product uses`() {
+        val url = ChatGptSignIn.authorizeUrl(ChatGptSignIn.redirectUri(1455), Pkce("v", "c"), "st")
+
+        // Identifying the account, and renewing without asking again. Nothing further:
+        // a scope the product never exercises is consent taken for no reason.
+        assertThat(url).contains("scope=openid+profile+email+offline_access")
+        assertThat(url).doesNotContain("connectors")
+    }
+
+    @Test
+    fun `the sign-in says which app is asking`() {
+        val url = ChatGptSignIn.authorizeUrl(ChatGptSignIn.redirectUri(1455), Pkce("v", "c"), "st")
+
+        // Named honestly rather than borrowing another client's name, so what the
+        // service records about who is calling is true.
+        assertThat(ChatGptSignIn.ORIGINATOR).isEqualTo("autobile")
+        assertThat(url).contains("originator=autobile")
+    }
+
+    @Test
     fun `the redirect names a port the issuer will accept`() {
         ChatGptSignIn.CALLBACK_PORTS.forEach { port ->
             assertThat(ChatGptSignIn.redirectUri(port)).isEqualTo("http://localhost:$port/auth/callback")
@@ -89,11 +109,21 @@ class SubscriptionSignInTest {
     }
 
     @Test
-    fun `the account is read out of the identity token`() {
-        val claims = IdentityClaims.parse(idToken())
+    fun `the account is read out of the access token`() {
+        // Read from the access token rather than the identity token because a refresh
+        // returns only the former. Reading the other would mean the account id — which
+        // every request has to carry — went missing the first time a session renewed.
+        val claims = IdentityClaims.parse(accessToken())
+
         assertThat(claims.email).isEqualTo("someone@example.com")
         assertThat(claims.accountId).isEqualTo("acct-123")
         assertThat(claims.plan).isEqualTo("pro")
+    }
+
+    @Test
+    fun `the expiry the issuer signed outranks any relative lifetime`() {
+        val claims = IdentityClaims.parse(accessToken(expiresAtSeconds = 1_800_000_000L))
+        assertThat(claims.expiresAt).isEqualTo(1_800_000_000_000L)
     }
 
     @Test
@@ -135,7 +165,52 @@ class SubscriptionSignInTest {
         assertThat(keyed).isEqualTo(CloudCredential.Key("k"))
 
         val signedIn = CloudCredential.of(CloudService.CHATGPT, "k", session)
-        assertThat(signedIn).isEqualTo(CloudCredential.Session("access", "acct"))
+        assertThat(signedIn).isInstanceOf(CloudCredential.Session::class.java)
+        with(signedIn as CloudCredential.Session) {
+            assertThat(accessToken).isEqualTo("access")
+            assertThat(accountId).isEqualTo("acct")
+            assertThat(requestId).isNotEmpty()
+        }
+    }
+
+    @Test
+    fun `each request is identified separately`() {
+        val session = CloudSession("access", "refresh", accountId = "acct")
+        val ids = (1..20).map {
+            (CloudCredential.of(CloudService.CHATGPT, "", session) as CloudCredential.Session).requestId
+        }
+        assertThat(ids.toSet()).hasSize(20)
+    }
+
+    @Test
+    fun `a pasted redirect is accepted whole or as the bare code`() {
+        assertThat(ChatGptSignIn.readPastedCode("abc123", "st").getOrNull()).isEqualTo("abc123")
+        assertThat(
+            ChatGptSignIn.readPastedCode("http://localhost:1455/auth/callback?code=abc123&state=st", "st").getOrNull(),
+        ).isEqualTo("abc123")
+    }
+
+    @Test
+    fun `a pasted redirect from another attempt is refused`() {
+        val result = ChatGptSignIn.readPastedCode(
+            "http://localhost:1455/auth/callback?code=abc&state=someone-elses",
+            "st",
+        )
+        assertThat(result.isFailure).isTrue()
+    }
+
+    @Test
+    fun `a pasted refusal reports what the issuer said`() {
+        val result = ChatGptSignIn.readPastedCode(
+            "http://localhost:1455/auth/callback?error=access_denied&error_description=You%20said%20no",
+            "st",
+        )
+        assertThat(result.exceptionOrNull()).hasMessageThat().isEqualTo("You said no")
+    }
+
+    @Test
+    fun `nothing pasted is reported rather than exchanged`() {
+        assertThat(ChatGptSignIn.readPastedCode("   ", "st").isFailure).isTrue()
     }
 
     @Test
@@ -144,9 +219,10 @@ class SubscriptionSignInTest {
             .isEqualTo(CloudCredential.None)
     }
 
-    private fun idToken(): String {
+    private fun accessToken(expiresAtSeconds: Long = 0L): String {
         val payload = """
-            {"email":"someone@example.com",
+            {"exp":$expiresAtSeconds,
+             "https://api.openai.com/profile":{"email":"someone@example.com"},
              "https://api.openai.com/auth":{"chatgpt_account_id":"acct-123","chatgpt_plan_type":"pro"}}
         """.trimIndent()
         return "header.${base64Url(payload.toByteArray(Charsets.UTF_8))}.signature"

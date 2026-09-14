@@ -1,5 +1,6 @@
 package com.autobile.ai.cloud
 
+import com.autobile.ai.cloud.oauth.ChatGptSignIn
 import com.autobile.core.common.AutobileJson
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -59,10 +60,19 @@ enum class CloudDialect {
 
         is CloudCredential.Session -> buildMap {
             put("Authorization", "Bearer ${credential.accessToken}")
-            if (credential.accountId.isNotBlank()) put("ChatGPT-Account-ID", credential.accountId)
-            // Names the client the subscription surface expects to be talking to.
-            put("originator", CHATGPT_ORIGINATOR)
+            // Without the account the surface cannot tell which subscription to bill.
+            if (credential.accountId.isNotBlank()) put("chatgpt-account-id", credential.accountId)
+            // Autobile names itself, rather than borrowing another client's name.
+            put("originator", ChatGptSignIn.ORIGINATOR)
+            put("User-Agent", USER_AGENT)
+            // The surface answers only as a stream, and only when asked on this beta.
+            put("OpenAI-Beta", "responses=experimental")
             put("Accept", "text/event-stream")
+            // Cache affinity is derived from these, so one value serves both.
+            credential.requestId.takeIf { it.isNotBlank() }?.let {
+                put("session_id", it)
+                put("x-client-request-id", it)
+            }
         }
 
         CloudCredential.None -> emptyMap()
@@ -252,7 +262,11 @@ enum class CloudDialect {
         imageBase64: String?,
     ) = buildJsonObject {
         put("model", model)
-        put("instructions", systemInstruction.orEmpty())
+        // Refused outright when true — this surface never stores a conversation.
+        put("store", false)
+        put("stream", true)
+        // Must not be empty. A blank instruction is rejected rather than defaulted.
+        put("instructions", systemInstruction?.takeIf { it.isNotBlank() } ?: DEFAULT_INSTRUCTIONS)
         putJsonArray("input") {
             add(
                 buildJsonObject {
@@ -264,6 +278,7 @@ enum class CloudDialect {
                             add(
                                 buildJsonObject {
                                     put("type", "input_image")
+                                    put("detail", "auto")
                                     put("image_url", "data:$IMAGE_MIME;base64,$it")
                                 },
                             )
@@ -272,11 +287,8 @@ enum class CloudDialect {
                 },
             )
         }
-        put("tool_choice", "auto")
-        put("parallel_tool_calls", false)
-        put("store", false)
-        put("stream", true)
-        putJsonArray("include") {}
+        putJsonObject("text") { put("verbosity", "low") }
+        putJsonArray("include") { add(JsonPrimitive("reasoning.encrypted_content")) }
     }.toString()
 
     /**
@@ -312,9 +324,24 @@ enum class CloudDialect {
             }
             ?.joinToString("")
 
-    private companion object {
-        const val IMAGE_MIME = "image/jpeg"
-        const val ANTHROPIC_VERSION = "2023-06-01"
-        const val CHATGPT_ORIGINATOR = "codex_cli_rs"
+    companion object {
+        /**
+         * Sent when the caller supplies no system prompt.
+         *
+         * The field cannot be empty — this surface rejects a blank instruction rather
+         * than filling one in — so something harmless has to stand in its place.
+         */
+        const val DEFAULT_INSTRUCTIONS = "You are a helpful assistant."
+
+        private const val IMAGE_MIME = "image/jpeg"
+        private const val ANTHROPIC_VERSION = "2023-06-01"
+
+        /**
+         * How the product introduces itself over HTTP.
+         *
+         * Honest about what is calling and from where, which is what a service
+         * operator needs in order to tell ordinary traffic from something else.
+         */
+        private val USER_AGENT: String = "autobile (Android ${android.os.Build.VERSION.RELEASE})"
     }
 }

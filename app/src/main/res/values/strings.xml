@@ -328,6 +328,7 @@
     <string name="msg_automation_deleted">Automation deleted</string>
     <string name="msg_automation_finished">Automation finished</string>
     <string name="msg_first_run_complete">First automation completed</string>
+    <string name="msg_first_run_unverified">The steps ran, but the result could not be confirmed</string>
     <string name="msg_version_unavailable">That version is no longer available</string>
     <string name="msg_version_restored">Restored as version %1$d</string>
     <string name="msg_show_me_how">Show me how to %1$s</string>
@@ -340,10 +341,12 @@
     <string name="msg_cloud_signed_out">Signed out</string>
     <string name="msg_cloud_sign_in_failed">Sign-in did not complete</string>
     <string name="msg_cloud_no_browser">No browser is available to sign in with</string>
+    <string name="msg_cloud_sign_in_not_started">Start the sign-in first, then paste what the browser gives you back</string>
     <string name="msg_generic_error">Something went wrong</string>
     <string name="default_automation_name">My automation</string>
     <string name="starter_skill_name">Open phone settings</string>
     <string name="starter_skill_goal">Open Android settings</string>
+    <string name="starter_skill_postcondition">The settings app is on screen</string>
     <string name="starter_skill_description">A safe first automation you can replay any time.</string>
     <string name="starter_skill_target">Android settings</string>
     <string name="starter_skill_target_description">the Android settings app</string>
@@ -429,6 +432,9 @@
     <string name="settings_cloud_sign_out">Sign out</string>
     <string name="settings_cloud_sign_in_waiting">Waiting for the browser. Finish signing in there and come back.</string>
     <string name="settings_cloud_sign_in_cancel">Cancel sign-in</string>
+    <string name="settings_cloud_paste_label">Or paste it back here</string>
+    <string name="settings_cloud_paste_hint">The code, or the whole address</string>
+    <string name="settings_cloud_paste_finish">Finish sign-in</string>
     <string name="settings_cloud_get_key">Get a %1$s key</string>
     <string name="settings_cloud_text_only">%1$s reads text only. Screens it cannot read will not be sent as pictures.</string>
     <string name="settings_cloud_show_advanced">Use a different endpoint</string>

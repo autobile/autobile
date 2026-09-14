@@ -135,12 +135,20 @@ class CloudDialectTest {
         assertThat(CloudDialect.CHATGPT.requestUrl("https://chatgpt.com/backend-api/codex", "gpt-5.4"))
             .isEqualTo("https://chatgpt.com/backend-api/codex/responses")
 
-        val headers = CloudDialect.CHATGPT.authHeaders(CloudCredential.Session("tok", "acct"))
+        val headers = CloudDialect.CHATGPT.authHeaders(CloudCredential.Session("tok", "acct", "req-1"))
         assertThat(headers).containsEntry("Authorization", "Bearer tok")
         // Without the account the surface cannot tell which subscription to bill.
-        assertThat(headers).containsEntry("ChatGPT-Account-ID", "acct")
+        assertThat(headers).containsEntry("chatgpt-account-id", "acct")
         // The reply arrives as events, and asking for anything else gets a refusal.
         assertThat(headers).containsEntry("Accept", "text/event-stream")
+        // Omitting the beta header gets the request turned away by this surface.
+        assertThat(headers).containsEntry("OpenAI-Beta", "responses=experimental")
+        // Autobile names itself rather than borrowing another client's name.
+        assertThat(headers).containsEntry("originator", "autobile")
+        assertThat(headers["User-Agent"]).contains("autobile")
+        // Both carry the same value; cache affinity is derived from them.
+        assertThat(headers).containsEntry("session_id", "req-1")
+        assertThat(headers).containsEntry("x-client-request-id", "req-1")
     }
 
     @Test
@@ -150,17 +158,31 @@ class CloudDialectTest {
         assertThat(body).contains("\"instructions\":\"$system\"")
         assertThat(body).contains("input_text")
         assertThat(body).contains("\"stream\":true")
+        // "Store must be set to false" is this surface's answer to anything else.
+        assertThat(body).contains("\"store\":false")
         // Sampling and length controls make this surface answer HTTP 400 with no
         // indication which field was at fault.
         assertThat(body).doesNotContain("temperature")
         assertThat(body).doesNotContain("max_output_tokens")
         assertThat(body).doesNotContain("max_completion_tokens")
+        // Tool fields belong to a request that carries tools; this one never does.
+        assertThat(body).doesNotContain("tool_choice")
+        assertThat(body).doesNotContain("parallel_tool_calls")
+    }
+
+    @Test
+    fun `a request with no system prompt still carries an instruction`() {
+        // An empty instruction is refused rather than defaulted by the service.
+        val body = CloudDialect.CHATGPT.requestBody("gpt-5.4", null, prompt, null, 0.2f, 256, false)
+        assertThat(body).contains(CloudDialect.DEFAULT_INSTRUCTIONS)
+        assertThat(body).doesNotContain("\"instructions\":\"\"")
     }
 
     @Test
     fun `a picture rides along as an input image`() {
         val body = CloudDialect.CHATGPT.requestBody("gpt-5.4", null, prompt, "AAAA", 0.2f, 256, false)
         assertThat(body).contains("input_image")
+        assertThat(body).contains("\"detail\":\"auto\"")
         assertThat(body).contains("data:image/jpeg;base64,AAAA")
     }
 

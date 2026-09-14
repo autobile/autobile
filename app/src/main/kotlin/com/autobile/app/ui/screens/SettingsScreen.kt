@@ -344,12 +344,38 @@ private fun CloudSignIn(state: AppUiState, viewModel: AppViewModel) {
         TextAction(stringResource(R.string.settings_cloud_sign_out), viewModel::signOutOfCloud, color = theme.muted)
     } else if (state.cloudSignInPending) {
         Statement(stringResource(R.string.settings_cloud_sign_in_waiting), color = theme.muted)
-        Spacer(Modifier.height(10.dp))
-        TextAction(
-            stringResource(R.string.settings_cloud_sign_in_cancel),
-            viewModel::cancelCloudSignIn,
-            color = theme.muted,
+        Spacer(Modifier.height(12.dp))
+        // The browser normally hands the sign-in back on its own. When it will not —
+        // some browsers refuse a local address, some pass the redirect to another app —
+        // this is the difference between finishing and being stuck with no explanation.
+        var pasted by remember { mutableStateOf("") }
+        OutlinedTextField(
+            value = pasted,
+            onValueChange = { pasted = it },
+            label = { Text(stringResource(R.string.settings_cloud_paste_label), style = TypeScale.meta) },
+            placeholder = {
+                Text(stringResource(R.string.settings_cloud_paste_hint), style = TypeScale.body, color = theme.muted)
+            },
+            textStyle = TypeScale.body,
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth(),
+            colors = fieldColors(),
         )
+        Spacer(Modifier.height(10.dp))
+        Row {
+            TextAction(
+                stringResource(R.string.settings_cloud_paste_finish),
+                { viewModel.completePastedSignIn(pasted) },
+                color = if (pasted.isBlank()) theme.muted else theme.live,
+            )
+            Spacer(Modifier.width(16.dp))
+            TextAction(
+                stringResource(R.string.settings_cloud_sign_in_cancel),
+                viewModel::cancelCloudSignIn,
+                color = theme.muted,
+            )
+        }
     } else {
         Statement(stringResource(R.string.settings_cloud_sign_in_detail), color = theme.muted)
         Spacer(Modifier.height(12.dp))

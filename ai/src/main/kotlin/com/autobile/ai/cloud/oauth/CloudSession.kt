@@ -4,6 +4,7 @@ import com.autobile.core.common.AutobileJson
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /**
  * A signed-in cloud account.
@@ -51,32 +52,46 @@ data class CloudSession(
 }
 
 /**
- * The account details carried inside an OpenID identity token.
+ * Who a session belongs to, read out of the access token itself.
  *
- * The token is read, never verified here: it arrived over TLS from the issuer in
- * exchange for a code this process generated the verifier for, and nothing security
- * relevant is decided from these fields — they name the account in the settings screen
- * and address the request. The signature is the issuer's business.
+ * The access token is the source rather than the identity token because it is the only
+ * one of the two that comes back from a refresh. Reading the identity token instead
+ * would mean the account id — which every request has to carry — quietly went missing
+ * the first time a session was renewed.
+ *
+ * The token is read, never verified: it arrived over TLS from the issuer in exchange for
+ * a code this process generated the verifier for, and nothing security relevant is
+ * decided from these fields. They name the account on screen and address the request.
+ * The signature is the issuer's business.
  */
 data class IdentityClaims(
     val email: String = "",
     val accountId: String = "",
     val plan: String = "",
+    /** Expiry the issuer put in the token, which outranks any relative lifetime. */
+    val expiresAt: Long = 0L,
 ) {
     companion object {
-        /** The namespaced claim OpenAI puts its account fields under. */
         private const val AUTH_CLAIM = "https://api.openai.com/auth"
+        private const val PROFILE_CLAIM = "https://api.openai.com/profile"
 
-        fun parse(idToken: String?): IdentityClaims {
-            val payload = idToken?.split('.')?.getOrNull(1) ?: return IdentityClaims()
+        fun parse(jwt: String?): IdentityClaims {
+            val payload = jwt?.split('.')?.getOrNull(1) ?: return IdentityClaims()
             val json = runCatching {
                 AutobileJson.parseToJsonElement(String(decodeBase64Url(payload), Charsets.UTF_8)) as? JsonObject
             }.getOrNull() ?: return IdentityClaims()
+
             val auth = json[AUTH_CLAIM] as? JsonObject
+            val profile = json[PROFILE_CLAIM] as? JsonObject
+            val expiresSeconds = (json["exp"] as? JsonPrimitive)?.longOrNull ?: 0L
             return IdentityClaims(
-                email = (json["email"] as? JsonPrimitive)?.content.orEmpty(),
+                // The profile claim is where the address lives; a bare top-level `email`
+                // is accepted too because the identity token spells it that way.
+                email = (profile?.get("email") as? JsonPrimitive)?.content
+                    ?: (json["email"] as? JsonPrimitive)?.content.orEmpty(),
                 accountId = (auth?.get("chatgpt_account_id") as? JsonPrimitive)?.content.orEmpty(),
                 plan = (auth?.get("chatgpt_plan_type") as? JsonPrimitive)?.content.orEmpty(),
+                expiresAt = if (expiresSeconds > 0) expiresSeconds * 1_000 else 0L,
             )
         }
 

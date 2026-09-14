@@ -11,6 +11,7 @@ import com.autobile.ai.cloud.CloudConfig
 import com.autobile.ai.cloud.CloudService
 import com.autobile.ai.cloud.oauth.ChatGptSignIn
 import com.autobile.ai.cloud.oauth.CloudSession
+import com.autobile.ai.cloud.oauth.SignInFailed
 import com.autobile.ai.context.ContextMinimizer
 import com.autobile.ai.local.LocalModelProvider
 import com.autobile.ai.mlkit.MLKitGeminiNanoProvider
@@ -27,6 +28,8 @@ import com.autobile.core.data.SkillStore
 import com.autobile.core.data.TraceStore
 import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AutonomyLevel
+import com.autobile.core.model.Condition
+import com.autobile.core.model.ConditionKind
 import com.autobile.core.model.ExpectedState
 import com.autobile.core.model.PatchAuthor
 import com.autobile.core.model.ResolverKind
@@ -117,8 +120,15 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
      * it would sign the user out over a moment of bad signal.
      */
     private suspend fun renewCloudSession(session: CloudSession) {
-        val renewed = ChatGptSignIn.refresh(session).getOrNull() ?: return
-        settings.setCloudSession(CloudSession.encode(renewed), renewed.label)
+        ChatGptSignIn.refresh(session)
+            .onSuccess { settings.setCloudSession(CloudSession.encode(it), it.label) }
+            .onFailure { cause ->
+                // A grant the issuer has retired will never work again, so the session is
+                // cleared and the settings screen falls back to the sign-in button.
+                // Keeping it would leave an account that silently never answers, with no
+                // hint that signing in again is the fix.
+                if ((cause as? SignInFailed)?.grantIsDead == true) settings.setCloudSession("", "")
+            }
     }
 
     override val aiRouter = AiRuntimeRouter(
@@ -267,6 +277,16 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
                 goal = appContext.getString(R.string.starter_skill_goal),
                 description = appContext.getString(R.string.starter_skill_description),
                 trigger = TriggerSpec.Manual,
+                // The onboarding text promises this automation checks that the settings
+                // app actually appeared. Without a post-condition it checked nothing and
+                // reported so in words nobody outside the codebase would recognise.
+                postconditions = listOf(
+                    Condition(
+                        description = appContext.getString(R.string.starter_skill_postcondition),
+                        kind = ConditionKind.STRUCTURAL,
+                        packageName = "com.android.settings",
+                    ),
+                ),
                 steps = listOf(
                     SkillStep(
                         id = Ids.step(),
