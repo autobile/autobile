@@ -53,8 +53,8 @@ enum class CloudService(
         endpoint = "https://chatgpt.com/backend-api/codex",
         // Both read pictures. The small one classifies, the large one reasons about a
         // screen and repairs a broken step, which is the split the router already makes.
-        lightModel = "gpt-5.4-mini",
-        advancedModel = "gpt-5.4",
+        lightModel = "gpt-5.6-luna",
+        advancedModel = "gpt-6-astra",
         credentialUrl = "",
         authMethod = CloudAuthMethod.SIGN_IN,
     ),
@@ -93,5 +93,26 @@ enum class CloudService(
     companion object {
         fun from(name: String?): CloudService =
             entries.firstOrNull { it.name == name } ?: GEMINI
+
+        private val LEGACY_CHATGPT_MODELS = setOf("gpt-5.4-mini", "gpt-5.4")
     }
+
+    /**
+     * Applies a preset update without overwriting a model the user chose explicitly.
+     *
+     * v0.6.0 persisted the then-current ChatGPT preset values. Those values are no
+     * longer advertised by the subscription model catalog, but they are
+     * indistinguishable from a custom value at the storage layer. Exact legacy preset
+     * values are therefore migrated here while every other non-blank value remains an
+     * explicit override.
+     */
+    fun configuredModel(value: String, advanced: Boolean): String {
+        val fallback = if (advanced) advancedModel else lightModel
+        if (value.isBlank()) return fallback
+        if (this == CHATGPT && value in LEGACY_CHATGPT_MODELS) return fallback
+        return value
+    }
+
+    fun usesPresetModel(value: String): Boolean =
+        value.isBlank() || (this == CHATGPT && value in LEGACY_CHATGPT_MODELS)
 }

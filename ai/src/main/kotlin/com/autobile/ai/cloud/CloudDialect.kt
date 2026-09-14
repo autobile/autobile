@@ -78,6 +78,12 @@ enum class CloudDialect {
         CloudCredential.None -> emptyMap()
     }
 
+    /** Headers for the subscription model catalog, which is JSON rather than SSE. */
+    fun modelCatalogHeaders(credential: CloudCredential): Map<String, String> =
+        if (this != CHATGPT) emptyMap() else authHeaders(credential)
+            .filterKeys { it !in setOf("Accept", "OpenAI-Beta", "session_id", "x-client-request-id") }
+            .plus("Accept" to "application/json")
+
     fun requestBody(
         model: String,
         systemInstruction: String?,

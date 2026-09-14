@@ -60,6 +60,7 @@ class CloudAiProvider(
     override val id: String = if (tier == RuntimeTier.CLOUD_ADVANCED) "cloud-advanced" else "cloud-light"
 
     private val consecutiveFailures = AtomicLong(0)
+    @Volatile private var chatGptCatalog: CachedChatGptCatalog? = null
 
     override suspend fun capabilities(): ProviderCapabilities {
         val cfg = config()
@@ -136,7 +137,8 @@ class CloudAiProvider(
         val startedAt = System.currentTimeMillis()
         var connection: HttpURLConnection? = null
         try {
-            val url = URL(cfg.requestUrl(tier))
+            val model = currentModel(cfg)
+            val url = URL(cfg.service.dialect.requestUrl(cfg.endpoint, model))
             connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = cfg.connectTimeoutMs
@@ -146,7 +148,7 @@ class CloudAiProvider(
                 cfg.credential.let { cfg.service.dialect.authHeaders(it) }.forEach(::setRequestProperty)
             }
             val body = cfg.service.dialect.requestBody(
-                model = cfg.modelFor(tier),
+                model = model,
                 systemInstruction = systemInstruction,
                 prompt = prompt,
                 imageBase64 = image?.let(::encodeImage),
@@ -161,7 +163,10 @@ class CloudAiProvider(
                 val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 consecutiveFailures.incrementAndGet()
                 Logx.w("Cloud inference HTTP $status [$label]")
-                return@withContext failure<String>(mapHttpStatus(status), "HTTP $status ${Logx.redact(error)}")
+                return@withContext failure<String>(
+                    CloudHttpErrorClassifier.classify(status, error),
+                    "HTTP $status ${Logx.redact(error)}",
+                )
             }
 
             val responseText = connection.inputStream.bufferedReader().use { it.readText() }
@@ -205,19 +210,53 @@ class CloudAiProvider(
         return config()
     }
 
+    /**
+     * Uses the account's live subscription catalog when the preset has aged out.
+     * Discovery is best-effort: a network failure must not prevent a valid configured
+     * model from being attempted.
+     */
+    private fun currentModel(cfg: CloudConfig): String {
+        val requested = cfg.modelFor(tier)
+        if (cfg.service != CloudService.CHATGPT) return requested
+        val discoveryEnabled = if (tier == RuntimeTier.CLOUD_ADVANCED) {
+            cfg.discoverAdvancedModel
+        } else {
+            cfg.discoverLightModel
+        }
+        if (!discoveryEnabled) return requested
+        val cacheKey = "${cfg.endpoint.trimEnd('/')}|${cfg.session.accountId}"
+        val catalog = chatGptCatalog
+            ?.takeIf { it.key == cacheKey }
+            ?.catalog
+            ?: discoverChatGptModels(cfg)?.also {
+                chatGptCatalog = CachedChatGptCatalog(cacheKey, it)
+            }
+        return catalog?.select(requested)?.ifBlank { requested } ?: requested
+    }
+
+    private fun discoverChatGptModels(cfg: CloudConfig): ChatGptModelCatalog? {
+        var connection: HttpURLConnection? = null
+        return try {
+            val base = cfg.endpoint.trimEnd('/')
+            connection = (URL("$base/models?client_version=$CLIENT_VERSION").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = cfg.connectTimeoutMs
+                readTimeout = cfg.readTimeoutMs
+                cfg.service.dialect.modelCatalogHeaders(cfg.credential).forEach(::setRequestProperty)
+            }
+            if (connection.responseCode !in 200..299) return null
+            ChatGptModelCatalog.parse(connection.inputStream.bufferedReader().use { it.readText() })
+        } catch (_: java.io.IOException) {
+            null
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
     private fun encodeImage(bitmap: Bitmap): String {
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
         return Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
-    }
-
-    private fun mapHttpStatus(status: Int): InferenceErrorKind = when (status) {
-        400 -> InferenceErrorKind.UNSUPPORTED
-        401, 403 -> InferenceErrorKind.POLICY_BLOCKED
-        413 -> InferenceErrorKind.REQUEST_TOO_LARGE
-        429 -> InferenceErrorKind.QUOTA_EXCEEDED
-        in 500..599 -> InferenceErrorKind.UNAVAILABLE
-        else -> InferenceErrorKind.UNKNOWN
     }
 
     private fun <T : Any> failure(kind: InferenceErrorKind, message: String): InferenceResult<T> =
@@ -231,7 +270,13 @@ class CloudAiProvider(
 
     private companion object {
         const val JPEG_QUALITY = 80
+        const val CLIENT_VERSION = "0.6.1"
     }
+
+    private data class CachedChatGptCatalog(
+        val key: String,
+        val catalog: ChatGptModelCatalog,
+    )
 }
 
 /**
@@ -251,6 +296,9 @@ data class CloudConfig(
     val session: CloudSession = CloudSession.NONE,
     val lightModel: String = DEFAULT_LIGHT_MODEL,
     val advancedModel: String = DEFAULT_ADVANCED_MODEL,
+    /** Whether a service preset may follow the signed-in account's live model catalog. */
+    val discoverLightModel: Boolean = false,
+    val discoverAdvancedModel: Boolean = false,
     val allowImages: Boolean = false,
     val maxInputTokens: Int = 32_000,
     val connectTimeoutMs: Int = 10_000,

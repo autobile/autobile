@@ -82,6 +82,18 @@ Keep commits focused and their subjects short. Pull request descriptions should 
 the problem, the approach, and anything a reviewer should be sceptical about. Mention test
 coverage and how you verified device-facing behaviour.
 
+## Release versioning
+
+Autobile follows Semantic Versioning. Before 1.0, increment:
+
+- `PATCH` for backward-compatible defect and security fixes.
+- `MINOR` for backward-compatible capabilities, execution paths, or product behaviour.
+- `MAJOR` only when a stable public contract is intentionally broken after 1.0.
+
+Every release also increments Android `versionCode`. A release tag is created only from
+a protected `main` commit after the pull request and the merged commit have both passed
+the complete verification workflow.
+
 ## Never commit
 
 Credentials, signing keys, learned user data, demonstration traces, screenshots of real

@@ -105,8 +105,10 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
             endpoint = privacy.cloudEndpoint.ifBlank { service.endpoint },
             apiKey = settings.cloudApiKey(),
             session = CloudSession.decode(settings.cloudSession()),
-            lightModel = privacy.cloudModel.ifBlank { service.lightModel },
-            advancedModel = privacy.cloudVisionModel.ifBlank { service.advancedModel },
+            lightModel = service.configuredModel(privacy.cloudModel, advanced = false),
+            advancedModel = service.configuredModel(privacy.cloudVisionModel, advanced = true),
+            discoverLightModel = service.usesPresetModel(privacy.cloudModel),
+            discoverAdvancedModel = service.usesPresetModel(privacy.cloudVisionModel),
             allowImages = privacy.allowScreenshotToCloud,
             maxInputTokens = if (advanced) 32_000 else 8_000,
         )
