@@ -258,7 +258,11 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
 
     fun updateTeachGoal(value: String) {
         _state.update { state ->
-            state.copy(compilation = state.compilation?.copy(skill = state.compilation.skill.copy(goal = value)))
+            state.copy(
+                compilation = state.compilation?.copy(
+                    skill = graph.skillEditor.rewriteGoal(state.compilation.skill, value),
+                ),
+            )
         }
     }
 

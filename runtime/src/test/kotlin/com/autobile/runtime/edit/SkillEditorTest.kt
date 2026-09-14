@@ -18,7 +18,9 @@ import com.autobile.core.model.TriggerSpec
 import com.autobile.core.model.ValidationMode
 import com.autobile.core.model.ValidationSpec
 import com.autobile.core.model.ValueConstraints
+import com.autobile.core.model.ValueRef
 import com.autobile.core.model.ValueSemantics
+import com.autobile.core.model.VariableBinding
 import com.autobile.runtime.ScriptedProvider
 import com.autobile.runtime.routerWith
 import com.autobile.runtime.trigger.TriggerScheduler
@@ -28,6 +30,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 @RunWith(RobolectricTestRunner::class)
 class SkillEditorTest {
@@ -210,6 +214,64 @@ class SkillEditorTest {
 
         assertThat(preview).isInstanceOf(SkillEditPreview.Ready::class.java)
         assertThat((preview as SkillEditPreview.Ready).updated.trigger).isEqualTo(TriggerSpec.Time(8, 30))
+    }
+
+    @Test
+    fun `current time correction patches composite input instead of changing its schedule`() = runTest {
+        val preview = editor.preview(
+            skill = noteSkill(),
+            request = "26.09.12 14:56 말고 실행 시점의 현재 날짜 및 시간을 반영해",
+            localOnly = true,
+        ) as SkillEditPreview.Ready
+
+        assertThat(preview.updated.trigger).isEqualTo(TriggerSpec.Manual)
+        val action = preview.updated.steps.single().action as ActionSpec.InputText
+        assertThat(action.value).isEqualTo(ValueRef.Template("현재 날짜 및 시간\n\n{now}"))
+        val binding = preview.updated.variables.single().binding as VariableBinding.RelativeDate
+        assertThat(binding.offsetDays).isEqualTo(0)
+        assertThat(binding.pattern).isEqualTo("yy.MM.dd HH:mm")
+    }
+
+    @Test
+    fun `editing the review goal compiles current time intent into its input step`() {
+        val updated = editor.rewriteGoal(noteSkill(), "노트에 현재 날짜 및 시간을 입력한다")
+
+        assertThat(updated.goal).isEqualTo("노트에 현재 날짜 및 시간을 입력한다")
+        val action = updated.steps.single().action as ActionSpec.InputText
+        assertThat(action.value).isEqualTo(ValueRef.Template("현재 날짜 및 시간\n\n{now}"))
+    }
+
+    @Test
+    fun `saved automation edit compiles current time intent into its input step`() = runTest {
+        store.save(noteSkill())
+
+        val preview = editor.preview(
+            skillId = "skill",
+            request = "입력값은 현재 날짜 및 시간을 사용해",
+            localOnly = true,
+        ) as SkillEditPreview.Ready
+
+        val action = preview.updated.steps.single().action as ActionSpec.InputText
+        assertThat(action.value).isEqualTo(ValueRef.Template("현재 날짜 및 시간\n\n{now}"))
+        assertThat(preview.changedStepIds).containsExactly("input")
+    }
+
+    private fun noteSkill(): SemanticSkill {
+        val taughtAt = LocalDateTime.of(2026, 9, 12, 14, 56)
+        return skill().copy(
+            goal = "Enter text in a note",
+            createdAt = taughtAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+            steps = listOf(
+                SkillStep(
+                    id = "input",
+                    intent = StepIntent.ENTER_TEXT,
+                    target = TargetSemantics(intentLabel = "note body"),
+                    action = ActionSpec.InputText(
+                        ValueRef.Literal("현재 날짜 및 시간\n\n26.09.12 14:56"),
+                    ),
+                ),
+            ),
+        )
     }
 
     private fun skill() = SemanticSkill(

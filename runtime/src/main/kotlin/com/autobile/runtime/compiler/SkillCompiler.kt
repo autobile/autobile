@@ -437,6 +437,15 @@ class SkillCompiler(
      * "this field takes yesterday's date".
      */
     private fun valueRefFor(typed: String, variables: List<SkillVariable>): ValueRef {
+        variables.firstOrNull {
+            it.binding is VariableBinding.RelativeDate && it.exampleValue == typed
+        }?.let { return ValueRef.Variable(it.name) }
+        variables.firstOrNull { variable ->
+            variable.binding is VariableBinding.RelativeDate &&
+                variable.exampleValue?.let(typed::contains) == true
+        }?.let { variable ->
+            return ValueRef.Template(typed.replaceFirst(variable.exampleValue!!, "{${variable.name}}"))
+        }
         variables.firstOrNull { it.exampleValue == typed }?.let { return ValueRef.Variable(it.name) }
         return ValueRef.Literal(typed)
     }
@@ -455,27 +464,40 @@ class SkillCompiler(
         writtenOn: LocalDateTime,
         existing: List<SkillVariable>,
     ): List<SkillVariable> {
-        val known = existing.map { it.exampleValue }.toSet()
-        return events.mapNotNull { it.inputValue }
-            .filter { it.isNotBlank() && it !in known }
-            .distinct()
-            .mapNotNull { typed ->
-                TemporalText.recognise(typed, writtenOn)?.let { moment ->
-                    SkillVariable(
-                        name = if (moment.offsetDays == 0) "now" else "date",
-                        type = ValueType.DATE,
-                        binding = VariableBinding.RelativeDate(
-                            offsetDays = moment.offsetDays,
-                            pattern = moment.pattern,
-                        ),
-                        description = "the moment the automation runs",
-                        exampleValue = typed,
-                    )
-                }
-            }
+        val known = existing.filter { it.binding is VariableBinding.RelativeDate }
+            .mapNotNull { it.exampleValue }
+            .toMutableSet()
+        val names = existing.map { it.name }.toMutableSet()
+        val result = mutableListOf<SkillVariable>()
+        events.mapNotNull { it.inputValue }.filter { it.isNotBlank() }.distinct().forEach { typed ->
+            val located = TemporalText.locate(typed, writtenOn) ?: return@forEach
+            if (!known.add(located.value)) return@forEach
+            val moment = located.recognised
+            val base = if (moment.offsetDays == 0) "now" else "date"
+            val name = generateSequence(base) { previous ->
+                val suffix = previous.removePrefix(base).toIntOrNull()?.plus(1) ?: 2
+                "$base$suffix"
+            }.first(names::add)
+            result += SkillVariable(
+                name = name,
+                type = ValueType.DATE,
+                binding = VariableBinding.RelativeDate(
+                    offsetDays = moment.offsetDays,
+                    pattern = moment.pattern,
+                ),
+                description = "the moment the automation runs",
+                exampleValue = located.value,
+            )
+        }
+        return result
     }
 
     private fun detectDatePattern(value: String): String = when {
+        Regex("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}").matches(value) -> "yyyy-MM-dd HH:mm"
+        Regex("\\d{4}/\\d{2}/\\d{2} \\d{2}:\\d{2}").matches(value) -> "yyyy/MM/dd HH:mm"
+        Regex("\\d{4}\\.\\d{2}\\.\\d{2} \\d{2}:\\d{2}").matches(value) -> "yyyy.MM.dd HH:mm"
+        Regex("\\d{2}\\.\\d{2}\\.\\d{2} \\d{2}:\\d{2}").matches(value) -> "yy.MM.dd HH:mm"
+        Regex("\\d{2}-\\d{2}-\\d{2} \\d{2}:\\d{2}").matches(value) -> "yy-MM-dd HH:mm"
         Regex("\\d{4}-\\d{2}-\\d{2}").matches(value) -> "yyyy-MM-dd"
         Regex("\\d{4}/\\d{2}/\\d{2}").matches(value) -> "yyyy/MM/dd"
         Regex("\\d{4}\\.\\d{2}\\.\\d{2}").matches(value) -> "yyyy.MM.dd"

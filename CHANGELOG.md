@@ -2,6 +2,17 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.6.2] - 2026-09-15
+
+### Fixed
+
+- Compile a date or timestamp embedded in a larger text entry as a runtime value instead
+  of replaying the characters captured during teaching.
+- Apply current-date and current-time corrections to input steps from both the initial
+  review and the saved automation editor.
+- Prevent a timestamp mentioned in a current-time correction from being mistaken for a
+  schedule change.
+
 ## [0.6.1] - 2026-09-15
 
 ### Fixed
@@ -38,3 +49,4 @@ All notable changes to Autobile are documented here. Releases follow semantic ve
 [0.5.0]: https://github.com/autobile/autobile/releases/tag/v0.5.0
 [0.6.0]: https://github.com/autobile/autobile/releases/tag/v0.6.0
 [0.6.1]: https://github.com/autobile/autobile/releases/tag/v0.6.1
+[0.6.2]: https://github.com/autobile/autobile/releases/tag/v0.6.2

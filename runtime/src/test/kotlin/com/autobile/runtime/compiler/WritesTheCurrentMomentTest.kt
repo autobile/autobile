@@ -115,6 +115,13 @@ class WritesTheCurrentMomentTest {
     }
 
     @Test
+    fun `a timestamp inside a note changes while surrounding text stays literal`() = runTest {
+        val written = whatWouldBeTyped("현재 날짜 및 시간\n\n26.09.12 14:56")
+
+        assertThat(written).isEqualTo("현재 날짜 및 시간\n\n26.11.03 09:05")
+    }
+
+    @Test
     fun `the moment is stored as a binding, not as the characters typed`() = runTest {
         val result = compiler().compile(demonstration("26.09.12 14:56"), localOnly = true)
 

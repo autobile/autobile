@@ -4,17 +4,26 @@ import com.autobile.ai.router.AiRuntimeRouter
 import com.autobile.ai.task.AiTasks
 import com.autobile.ai.task.SkillEdit
 import com.autobile.ai.task.SkillEditField
+import com.autobile.core.common.TemporalText
 import com.autobile.core.common.TimeSource
 import com.autobile.core.data.SkillStore
+import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.InferenceRequirements
 import com.autobile.core.model.LocatorKind
 import com.autobile.core.model.PatchAuthor
 import com.autobile.core.model.SemanticSkill
 import com.autobile.core.model.SkillConstant
 import com.autobile.core.model.SkillVersionRecord
+import com.autobile.core.model.SkillVariable
 import com.autobile.core.model.StepIntent
 import com.autobile.core.model.TriggerSpec
+import com.autobile.core.model.ValueRef
+import com.autobile.core.model.ValueType
+import com.autobile.core.model.VariableBinding
 import com.autobile.runtime.trigger.TriggerScheduler
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 /** Applies a bounded, plain-language change to a saved automation. */
 class SkillEditor(
@@ -58,6 +67,15 @@ class SkillEditor(
 
     /** Handles obvious time changes without spending battery or exposing text to a model. */
     private fun parseDeterministic(request: String): SkillEdit? {
+        if (hasCurrentMomentIntent(request)) {
+            return SkillEdit(
+                field = SkillEditField.INPUT_TEXT,
+                newValue = request.trim(),
+                meaningChanged = false,
+                summary = "Use the current date and time when the automation runs",
+                confidence = 1f,
+            )
+        }
         val match = TIME_PATTERN.findAll(request).lastOrNull()
             ?: KOREAN_TIME_PATTERN.findAll(request).lastOrNull()
             ?: return null
@@ -102,6 +120,7 @@ class SkillEditor(
             )
             SkillEditField.DESTINATION -> patchDestination(skill, value)
             SkillEditField.VALUE_FIELD -> patchValueField(skill, value)
+            SkillEditField.INPUT_TEXT -> patchCurrentMoment(skill, value)
             SkillEditField.NAME -> skill.copy(name = value.take(MAX_NAME_LENGTH))
             SkillEditField.UNKNOWN -> null
         } ?: return SkillEditPreview.Rejected("That kind of change is not supported yet")
@@ -183,6 +202,83 @@ class SkillEditor(
         return skill.copy(steps = steps)
     }
 
+    /**
+     * Rewrites the editable review goal and any temporal input semantics it states.
+     * Arbitrary goal prose remains descriptive; the safe, deterministic current-time
+     * intent is also compiled into the input step so the review field is not cosmetic.
+     */
+    fun rewriteGoal(skill: SemanticSkill, goal: String): SemanticSkill {
+        val renamed = skill.copy(goal = goal)
+        return if (hasCurrentMomentIntent(goal)) patchCurrentMoment(renamed, goal) ?: renamed else renamed
+    }
+
+    private fun patchCurrentMoment(skill: SemanticSkill, request: String): SemanticSkill? {
+        if (!hasCurrentMomentIntent(request)) return null
+
+        val writtenOn = LocalDateTime.ofInstant(
+            Instant.ofEpochMilli(skill.createdAt.takeIf { it > 0 } ?: time.nowMillis()),
+            ZoneId.systemDefault(),
+        )
+        val variables = skill.variables.toMutableList()
+        var changed = false
+
+        fun normaliseVariable(name: String): Boolean {
+            val index = variables.indexOfFirst { it.name == name }
+            if (index < 0) return false
+            val binding = variables[index].binding as? VariableBinding.RelativeDate ?: return false
+            variables[index] = variables[index].copy(
+                binding = binding.copy(offsetDays = 0),
+                description = "the moment the automation runs",
+            )
+            return true
+        }
+
+        fun variableFor(located: TemporalText.Located): String {
+            variables.indexOfFirst {
+                val binding = it.binding as? VariableBinding.RelativeDate
+                binding?.pattern == located.recognised.pattern && binding.offsetDays == 0
+            }.takeIf { it >= 0 }?.let { return variables[it].name }
+
+            val base = "now"
+            val name = generateSequence(base) { previous ->
+                val suffix = previous.removePrefix(base).toIntOrNull()?.plus(1) ?: 2
+                "$base$suffix"
+            }.first { candidate -> variables.none { it.name == candidate } }
+            variables += SkillVariable(
+                name = name,
+                type = ValueType.DATE,
+                binding = VariableBinding.RelativeDate(offsetDays = 0, pattern = located.recognised.pattern),
+                description = "the moment the automation runs",
+                exampleValue = located.value,
+            )
+            return name
+        }
+
+        val steps = skill.steps.map { step ->
+            val input = step.action as? ActionSpec.InputText ?: return@map step
+            val updatedValue = when (val ref = input.value) {
+                is ValueRef.Literal -> {
+                    val located = TemporalText.locate(ref.value, writtenOn) ?: return@map step
+                    val name = variableFor(located)
+                    ValueRef.Template(ref.value.replaceRange(located.range, "{$name}"))
+                }
+                is ValueRef.Variable -> {
+                    if (!normaliseVariable(ref.name)) return@map step
+                    ref
+                }
+                is ValueRef.Template -> {
+                    val names = TEMPLATE_VARIABLE.findAll(ref.template).map { it.groupValues[1] }.toList()
+                    if (names.map(::normaliseVariable).none { it }) return@map step
+                    ref
+                }
+                is ValueRef.Constant -> return@map step
+            }
+            changed = true
+            step.copy(action = input.copy(value = updatedValue))
+        }
+        return if (changed) skill.copy(variables = variables, steps = steps) else null
+    }
+
     private fun SemanticSkill.summary(): String = buildString {
         append(name).append(": ").append(goal)
         append(". Trigger: ")
@@ -205,6 +301,16 @@ class SkillEditor(
         val TIME_PATTERN = Regex("(?:^|\\s)([01]?\\d|2[0-3]):([0-5]\\d)(?:\\s|$)")
         val KOREAN_TIME_PATTERN = Regex("(?:^|\\s)([01]?\\d|2[0-3])\\s*시(?:\\s*([0-5]?\\d)\\s*분)?")
         val DESTINATION_NAMES = listOf("destination", "channel", "recipient", "target", "room")
+        val TEMPLATE_VARIABLE = Regex("\\{([A-Za-z][A-Za-z0-9_]*)}")
+
+        fun hasCurrentMomentIntent(value: String): Boolean {
+            val normalised = value.lowercase()
+            val koreanMoment = listOf("현재", "지금", "오늘").any(normalised::contains) &&
+                listOf("날짜", "시간", "시각").any(normalised::contains)
+            val englishMoment = listOf("current", "now", "today").any(normalised::contains) &&
+                listOf("date", "time", "timestamp", "moment").any(normalised::contains)
+            return koreanMoment || englishMoment
+        }
     }
 }
 
