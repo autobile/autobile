@@ -115,6 +115,18 @@ class CloudDialectTest {
     }
 
     @Test
+    fun `obsolete subscription preset models migrate but custom models remain`() {
+        assertThat(CloudService.CHATGPT.configuredModel("gpt-5.4-mini", advanced = false))
+            .isEqualTo("gpt-5.6-luna")
+        assertThat(CloudService.CHATGPT.configuredModel("gpt-5.4", advanced = true))
+            .isEqualTo("gpt-6-astra")
+        assertThat(CloudService.CHATGPT.configuredModel("private-model", advanced = true))
+            .isEqualTo("private-model")
+        assertThat(CloudService.CHATGPT.usesPresetModel("gpt-5.4")).isTrue()
+        assertThat(CloudService.CHATGPT.usesPresetModel("private-model")).isFalse()
+    }
+
+    @Test
     fun `a service that wants a key says where to get one`() {
         CloudService.entries
             .filter { it != CloudService.CUSTOM && it.authMethod == CloudAuthMethod.API_KEY }
@@ -132,7 +144,7 @@ class CloudDialectTest {
 
     @Test
     fun `a subscription request is addressed and signed the way that surface expects`() {
-        assertThat(CloudDialect.CHATGPT.requestUrl("https://chatgpt.com/backend-api/codex", "gpt-5.4"))
+        assertThat(CloudDialect.CHATGPT.requestUrl("https://chatgpt.com/backend-api/codex", "gpt-6-astra"))
             .isEqualTo("https://chatgpt.com/backend-api/codex/responses")
 
         val headers = CloudDialect.CHATGPT.authHeaders(CloudCredential.Session("tok", "acct", "req-1"))
@@ -152,8 +164,21 @@ class CloudDialectTest {
     }
 
     @Test
+    fun `subscription model discovery excludes streaming-only headers`() {
+        val headers = CloudDialect.CHATGPT.modelCatalogHeaders(
+            CloudCredential.Session("tok", "acct", "req-1"),
+        )
+        assertThat(headers).containsEntry("Authorization", "Bearer tok")
+        assertThat(headers).containsEntry("chatgpt-account-id", "acct")
+        assertThat(headers).containsEntry("Accept", "application/json")
+        assertThat(headers).doesNotContainKey("OpenAI-Beta")
+        assertThat(headers).doesNotContainKey("session_id")
+        assertThat(headers).doesNotContainKey("x-client-request-id")
+    }
+
+    @Test
     fun `a subscription request omits the controls that surface rejects`() {
-        val body = CloudDialect.CHATGPT.requestBody("gpt-5.4", system, prompt, null, 0.2f, 256, true)
+        val body = CloudDialect.CHATGPT.requestBody("gpt-6-astra", system, prompt, null, 0.2f, 256, true)
 
         assertThat(body).contains("\"instructions\":\"$system\"")
         assertThat(body).contains("input_text")
@@ -173,14 +198,14 @@ class CloudDialectTest {
     @Test
     fun `a request with no system prompt still carries an instruction`() {
         // An empty instruction is refused rather than defaulted by the service.
-        val body = CloudDialect.CHATGPT.requestBody("gpt-5.4", null, prompt, null, 0.2f, 256, false)
+        val body = CloudDialect.CHATGPT.requestBody("gpt-6-astra", null, prompt, null, 0.2f, 256, false)
         assertThat(body).contains(CloudDialect.DEFAULT_INSTRUCTIONS)
         assertThat(body).doesNotContain("\"instructions\":\"\"")
     }
 
     @Test
     fun `a picture rides along as an input image`() {
-        val body = CloudDialect.CHATGPT.requestBody("gpt-5.4", null, prompt, "AAAA", 0.2f, 256, false)
+        val body = CloudDialect.CHATGPT.requestBody("gpt-6-astra", null, prompt, "AAAA", 0.2f, 256, false)
         assertThat(body).contains("input_image")
         assertThat(body).contains("\"detail\":\"auto\"")
         assertThat(body).contains("data:image/jpeg;base64,AAAA")
