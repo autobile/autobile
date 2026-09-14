@@ -140,8 +140,14 @@ class ExecutionResolver(
         val capture = if (allowVision) screenshot() else null
         val picture = (capture as? ScreenshotCapture.Success)?.bitmap
         if (picture == null) {
+            if (capture is ScreenshotCapture.SecureWindowBlocked) return checkNotNull(capture.blockedResolution())
+            val unresolved = unresolved(routed.result.error, target)
+            // A runtime outage is the reason this step cannot proceed even if pixels
+            // are unavailable too. Preserve it as deferrable instead of converting a
+            // temporary provider outage into a permanent-looking screen failure.
+            if (unresolved is Resolution.NeedsReasoning) return unresolved
             capture?.blockedResolution()?.let { return it }
-            return unresolved(routed.result.error, target)
+            return unresolved
         }
 
         // Still within the tree: the same elements, looked at rather than read. Cheap,
