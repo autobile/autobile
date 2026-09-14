@@ -44,6 +44,7 @@ import com.autobile.core.model.UiNode
 import com.autobile.core.model.ValidationMode
 import com.autobile.core.model.ValidationSpec
 import com.autobile.core.model.ValueSemantics
+import com.autobile.core.model.ValueRef
 import com.autobile.runtime.FakeScreen
 import com.autobile.runtime.ScriptedProvider
 import com.autobile.runtime.node
@@ -634,7 +635,7 @@ class SkillExecutorTest {
                 intentLabel = "note body",
                 locators = listOf(Locator(LocatorKind.RESOURCE_ID, "com.example.notes:id/body")),
             ),
-            action = ActionSpec.InputText(expected),
+            action = ActionSpec.InputText(ValueRef.Literal(expected)),
             validation = ValidationSpec(mode = ValidationMode.NONE),
         )
         val automation = skill(listOf(step))
