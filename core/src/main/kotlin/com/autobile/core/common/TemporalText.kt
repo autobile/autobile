@@ -49,6 +49,13 @@ object TemporalText {
         val offsetDays: Int,
     )
 
+    /** A moment found inside a larger piece of text, including its original span. */
+    data class Located(
+        val value: String,
+        val range: IntRange,
+        val recognised: Recognised,
+    )
+
     /**
      * Reads a typed value as a moment, relative to when it was typed.
      *
@@ -59,6 +66,27 @@ object TemporalText {
     fun recognise(typed: String, writtenOn: LocalDateTime): Recognised? {
         val value = typed.trim()
         val shape = shapes.firstOrNull { it.regex.matches(value) } ?: return null
+        return recognise(value, shape, writtenOn)
+    }
+
+    /**
+     * Finds a moment embedded in a note, message, or other composite input.
+     *
+     * The compiler records rich editors as one input event, so a heading followed by a
+     * timestamp must preserve the heading while only the timestamp becomes dynamic.
+     */
+    fun locate(typed: String, writtenOn: LocalDateTime): Located? {
+        for (shape in shapes) {
+            for (match in shape.regex.findAll(typed)) {
+                if (!hasSafeNumericBoundaries(typed, match.range)) continue
+                val recognised = recognise(match.value, shape, writtenOn) ?: continue
+                return Located(match.value, match.range, recognised)
+            }
+        }
+        return null
+    }
+
+    private fun recognise(value: String, shape: Shape, writtenOn: LocalDateTime): Recognised? {
         if (!shape.hasDate) return Recognised(shape.pattern, offsetDays = 0)
 
         val formatter = DateTimeFormatter.ofPattern(shape.pattern, Locale.ROOT)
@@ -75,6 +103,12 @@ object TemporalText {
         // itself — a deadline, a birthday — than one meant to move with the calendar.
         if (days !in -MAX_OFFSET_DAYS..MAX_OFFSET_DAYS) return null
         return Recognised(shape.pattern, offsetDays = days.toInt())
+    }
+
+    private fun hasSafeNumericBoundaries(value: String, range: IntRange): Boolean {
+        val before = value.getOrNull(range.first - 1)
+        val after = value.getOrNull(range.last + 1)
+        return before?.isDigit() != true && after?.isDigit() != true
     }
 
     private const val MAX_OFFSET_DAYS = 14L

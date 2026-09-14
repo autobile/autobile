@@ -58,4 +58,17 @@ class TemporalTextTest {
 
         assertThat(recognised!!.pattern).isEqualTo("yyyy-MM-dd HH:mm")
     }
+
+    @Test
+    fun `a date and time inside a note is located without consuming its heading`() {
+        val text = "현재 날짜 및 시간\n\n26.09.12 14:56"
+
+        val located = TemporalText.locate(text, taughtOn)
+
+        assertThat(located).isNotNull()
+        assertThat(located!!.value).isEqualTo("26.09.12 14:56")
+        assertThat(text.substring(located.range)).isEqualTo("26.09.12 14:56")
+        assertThat(located.recognised.pattern).isEqualTo("yy.MM.dd HH:mm")
+        assertThat(located.recognised.offsetDays).isEqualTo(0)
+    }
 }

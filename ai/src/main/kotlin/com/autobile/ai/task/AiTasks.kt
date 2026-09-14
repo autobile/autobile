@@ -447,7 +447,7 @@ object AiTasks {
     val skillEdit = ResponseSchema(
         name = "SkillEdit",
         fieldGuide = """
-            field: one of trigger_time, trigger_notification, destination, value_field, name, unknown
+            field: one of trigger_time, trigger_notification, destination, value_field, input_text, name, unknown
             newValue: the replacement value as the user stated it
             meaningChanged: true when this changes what the automation does, not just how
             summary: one sentence describing the change
@@ -625,6 +625,7 @@ enum class SkillEditField {
     TRIGGER_NOTIFICATION,
     DESTINATION,
     VALUE_FIELD,
+    INPUT_TEXT,
     NAME,
     UNKNOWN;
 
@@ -634,6 +635,7 @@ enum class SkillEditField {
             "trigger_notification" -> TRIGGER_NOTIFICATION
             "destination" -> DESTINATION
             "value_field" -> VALUE_FIELD
+            "input_text" -> INPUT_TEXT
             "name" -> NAME
             else -> UNKNOWN
         }
