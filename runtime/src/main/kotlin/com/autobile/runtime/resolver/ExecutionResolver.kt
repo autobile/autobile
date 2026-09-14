@@ -66,7 +66,20 @@ class ExecutionResolver(
          * applied after the other strategies have had their say.
          */
         requireEditable: Boolean = false,
+        /** Skip a node that already failed to reach the expected state. */
+        forceVision: Boolean = false,
     ): Resolution {
+        if (forceVision) {
+            return lookOrGiveUp(
+                target,
+                snapshot,
+                screenshot,
+                allowVision,
+                localOnly,
+                "The accessibility action did not reach the expected state",
+            )
+        }
+
         // What the step means constrains what can answer it. Taking a match that cannot
         // do the job, because its label happened to fit, is what a recorded macro does:
         // the run then dispatches text at a layout and is told the target does not accept

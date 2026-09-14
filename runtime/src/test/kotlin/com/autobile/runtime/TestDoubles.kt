@@ -148,6 +148,8 @@ class FakeScreen(
     /** Swapped in after the first successful action, to model a screen transition. */
     private val nextScreen: ScreenSnapshot? = null,
     private val screenshot: ScreenshotCapture = ScreenshotCapture.Unavailable("not needed"),
+    private val rejectNodeClicks: Boolean = false,
+    private val rejectFirstTextInput: Boolean = false,
 ) : ScreenObserver, ScreenActuator {
 
     val clicked = mutableListOf<String>()
@@ -156,6 +158,7 @@ class FakeScreen(
     val scrolled = mutableListOf<Direction>()
     var backPresses: Int = 0
         private set
+    private var textInputAttempts = 0
 
     override suspend fun observe(settleMs: Long): PerceptionResult =
         perception ?: PerceptionResult.Success(current)
@@ -167,6 +170,7 @@ class FakeScreen(
 
     override suspend fun click(node: UiNode): ActionResult {
         clicked += node.nodeId
+        if (rejectNodeClicks) return ActionResult.Failed("node rejected click")
         advance()
         return ActionResult.Performed("click")
     }
@@ -192,9 +196,19 @@ class FakeScreen(
     }
 
     override suspend fun inputText(node: UiNode, value: String, clearExisting: Boolean): ActionResult {
+        textInputAttempts++
+        if (rejectFirstTextInput && textInputAttempts == 1) {
+            return ActionResult.Failed("field rejected text")
+        }
         typed += node.nodeId to value
         advance()
         return ActionResult.Performed("input")
+    }
+
+    override suspend fun inputTextAtFocus(value: String, clearExisting: Boolean): ActionResult {
+        typed += "focused" to value
+        advance()
+        return ActionResult.Performed("focused input")
     }
 
     override fun pressBack(): ActionResult {

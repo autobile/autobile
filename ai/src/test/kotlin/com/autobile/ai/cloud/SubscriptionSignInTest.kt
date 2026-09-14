@@ -144,8 +144,30 @@ class SubscriptionSignInTest {
     }
 
     @Test
-    fun `a session with no known expiry is left alone`() {
-        assertThat(CloudSession("a", "r", expiresAt = 0L).needsRefresh()).isFalse()
+    fun `a legacy session with no known expiry is renewed before use`() {
+        assertThat(CloudSession("a", "r", expiresAt = 0L).needsRefresh()).isTrue()
+    }
+
+    @Test
+    fun `an exchange without a renewable grant is rejected`() {
+        assertThat(
+            ChatGptSignIn.parseTokenResponse("""{"access_token":"a","expires_in":3600}"""),
+        ).isNull()
+        assertThat(
+            ChatGptSignIn.parseTokenResponse("""{"access_token":"a","refresh_token":"r"}"""),
+        ).isNull()
+    }
+
+    @Test
+    fun `a refresh keeps the existing refresh token and records the lifetime`() {
+        val session = ChatGptSignIn.parseTokenResponse(
+            """{"access_token":"a","expires_in":3600}""",
+            existingRefreshToken = "r",
+            now = 1_000L,
+        )
+
+        assertThat(session?.refreshToken).isEqualTo("r")
+        assertThat(session?.expiresAt).isEqualTo(3_601_000L)
     }
 
     @Test

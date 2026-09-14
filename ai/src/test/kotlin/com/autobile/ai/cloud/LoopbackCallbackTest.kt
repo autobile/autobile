@@ -3,6 +3,7 @@ package com.autobile.ai.cloud
 import com.autobile.ai.cloud.oauth.LoopbackCallback
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -36,7 +37,11 @@ class LoopbackCallbackTest {
         val callback = LoopbackCallback(listOf(port))
         assertThat(callback.open().isSuccess).isTrue()
 
-        val waiting = launch(Dispatchers.IO) { callback.awaitCode("state") }
+        // Enter awaitCode before cancellation. A lazily scheduled coroutine cancelled
+        // before its body starts cannot close a resource it never observed.
+        val waiting = launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            callback.awaitCode("state")
+        }
         waitUntilBound()
         waiting.cancel()
         waiting.join()
@@ -62,15 +67,18 @@ class LoopbackCallbackTest {
     }
 
     @Test
-    fun `a reply from a different attempt is refused`() = runBlocking {
+    fun `a reply from a different attempt is ignored without consuming the listener`() = runBlocking {
         val callback = LoopbackCallback(listOf(port))
         assertThat(callback.open().isSuccess).isTrue()
 
         val result = async(Dispatchers.IO) { callback.awaitCode("expected") }
         waitUntilBound()
-        request("GET /auth/callback?code=granted&state=someone-elses HTTP/1.1")
+        val stalePage = request("GET /auth/callback?code=stale&state=someone-elses HTTP/1.1")
+        val acceptedPage = request("GET /auth/callback?code=granted&state=expected HTTP/1.1")
 
-        assertThat(result.await().isFailure).isTrue()
+        assertThat(stalePage).contains("Something went wrong")
+        assertThat(acceptedPage).contains("Signed in")
+        assertThat(result.await().getOrNull()).isEqualTo("granted")
     }
 
     @Test

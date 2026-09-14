@@ -29,6 +29,9 @@ interface ScreenActuator {
 
     suspend fun inputText(node: UiNode, value: String, clearExisting: Boolean): ActionResult
 
+    /** Types into the field that currently owns input focus after a visual tap. */
+    suspend fun inputTextAtFocus(value: String, clearExisting: Boolean): ActionResult
+
     fun pressBack(): ActionResult
 
     fun pressHome(): ActionResult

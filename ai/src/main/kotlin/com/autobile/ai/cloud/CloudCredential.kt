@@ -43,7 +43,7 @@ sealed interface CloudCredential {
 
         fun of(service: CloudService, apiKey: String, session: CloudSession): CloudCredential = when {
             service.authMethod == CloudAuthMethod.SIGN_IN ->
-                if (session.isEmpty) {
+                if (!session.canAuthorize) {
                     None
                 } else {
                     Session(session.accessToken, session.accountId, requestId())

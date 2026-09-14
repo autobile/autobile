@@ -66,7 +66,7 @@ class UiTreeReader(
             bounds = Bounds(rect.left, rect.top, rect.right, rect.bottom),
             clickable = node.isClickable,
             longClickable = node.isLongClickable,
-            editable = node.isEditable,
+            editable = node.acceptsTextInput(),
             scrollable = node.isScrollable,
             checkable = node.isCheckable,
             checked = node.isNodeChecked(),
@@ -95,7 +95,7 @@ class UiTreeReader(
         // Structural containers with no label and no behaviour carry no information for
         // either the resolver or a model, so they are traversed but not recorded.
         val informative = text != null || description != null || resourceId != null ||
-            node.isClickable || node.isEditable || node.isScrollable || node.isCheckable
+            node.isClickable || node.acceptsTextInput() || node.isScrollable || node.isCheckable
 
         if (informative) {
             out += UiNode(
@@ -109,7 +109,7 @@ class UiTreeReader(
                 bounds = Bounds(rect.left, rect.top, rect.right, rect.bottom),
                 clickable = node.isClickable,
                 longClickable = node.isLongClickable,
-                editable = node.isEditable,
+                editable = node.acceptsTextInput(),
                 scrollable = node.isScrollable,
                 checkable = node.isCheckable,
                 checked = node.isNodeChecked(),
@@ -150,6 +150,12 @@ class UiTreeReader(
         } else {
             @Suppress("DEPRECATION")
             isChecked
+        }
+
+    /** Some rich editors expose SET_TEXT/PASTE while reporting isEditable=false. */
+    private fun AccessibilityNodeInfo.acceptsTextInput(): Boolean =
+        isEditable || actionList.any {
+            it.id == AccessibilityNodeInfo.ACTION_SET_TEXT || it.id == AccessibilityNodeInfo.ACTION_PASTE
         }
 
     companion object {
