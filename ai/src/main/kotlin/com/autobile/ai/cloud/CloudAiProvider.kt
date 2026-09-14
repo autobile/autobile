@@ -14,6 +14,7 @@ import com.autobile.core.common.Logx
 import com.autobile.core.model.InferenceError
 import com.autobile.core.model.InferenceErrorKind
 import com.autobile.core.model.InferenceResult
+import com.autobile.ai.cloud.oauth.CloudSession
 import com.autobile.core.model.RuntimeTier
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,9 +34,11 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Network inference, used only when no local tier can answer.
  *
- * Speaks the Gemini `generateContent` REST shape. The endpoint, model and key are all
- * user-supplied so that the product is not bound to one vendor and so that a user can
- * point it at a deployment they control.
+ * The service, its endpoint, its models and the credential are all the user's choice,
+ * so the product is not bound to one vendor and can be pointed at a deployment someone
+ * runs themselves. What differs between services lives in [CloudDialect]; everything
+ * here — the privacy gates, the error mapping, the timeouts — is the same for all of
+ * them.
  *
  * Two tiers share this implementation. The light tier is a small, fast model used for
  * classification; the advanced tier is a larger model used for recovery planning and
@@ -44,6 +47,14 @@ import java.util.concurrent.atomic.AtomicLong
 class CloudAiProvider(
     override val tier: RuntimeTier,
     private val config: () -> CloudConfig,
+    /**
+     * Renews an expiring subscription session and stores the result.
+     *
+     * Passed in rather than performed here because renewal is only meaningful if it is
+     * persisted, and where settings live is not this class's concern. The default does
+     * nothing, which is correct for a key-based service.
+     */
+    private val renewSession: suspend (CloudSession) -> Unit = {},
 ) : ReasoningProvider, VisionProvider, StructuredInferenceProvider {
 
     override val id: String = if (tier == RuntimeTier.CLOUD_ADVANCED) "cloud-advanced" else "cloud-light"
@@ -111,7 +122,7 @@ class CloudAiProvider(
         maxOutputTokens: Int,
         forceJson: Boolean = false,
     ): InferenceResult<String> = withContext(Dispatchers.IO) {
-        val cfg = config()
+        val cfg = currentConfig()
         if (!cfg.isUsable) {
             return@withContext failure<String>(InferenceErrorKind.UNAVAILABLE, "Cloud access is off or unconfigured")
         }
@@ -132,7 +143,7 @@ class CloudAiProvider(
                 readTimeout = cfg.readTimeoutMs
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                cfg.service.dialect.authHeaders(cfg.apiKey).forEach(::setRequestProperty)
+                cfg.credential.let { cfg.service.dialect.authHeaders(it) }.forEach(::setRequestProperty)
             }
             val body = cfg.service.dialect.requestBody(
                 model = cfg.modelFor(tier),
@@ -179,6 +190,21 @@ class CloudAiProvider(
         }
     }
 
+    /**
+     * The configuration to send with, after renewing a session that is about to lapse.
+     *
+     * Done before the request rather than after a failure: a token that expires mid-run
+     * would surface as an authorisation error on a step the user was watching, and
+     * retrying it would mean repeating whatever the step had already done.
+     */
+    private suspend fun currentConfig(): CloudConfig {
+        val cfg = config()
+        if (cfg.session.isEmpty || !cfg.session.needsRefresh()) return cfg
+        runCatching { renewSession(cfg.session) }
+            .onFailure { Logx.w("Cloud session could not be renewed", it) }
+        return config()
+    }
+
     private fun encodeImage(bitmap: Bitmap): String {
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
@@ -221,6 +247,8 @@ data class CloudConfig(
     val service: CloudService = CloudService.GEMINI,
     val endpoint: String = DEFAULT_ENDPOINT,
     val apiKey: String = "",
+    /** A signed-in subscription, for services that are proved to that way. */
+    val session: CloudSession = CloudSession.NONE,
     val lightModel: String = DEFAULT_LIGHT_MODEL,
     val advancedModel: String = DEFAULT_ADVANCED_MODEL,
     val allowImages: Boolean = false,
@@ -228,7 +256,10 @@ data class CloudConfig(
     val connectTimeoutMs: Int = 10_000,
     val readTimeoutMs: Int = 45_000,
 ) {
-    val isUsable: Boolean get() = enabled && endpoint.isNotBlank() && apiKey.isNotBlank()
+    /** Whichever of a key or a session this service actually expects. */
+    val credential: CloudCredential get() = CloudCredential.of(service, apiKey, session)
+
+    val isUsable: Boolean get() = enabled && endpoint.isNotBlank() && credential.isPresent
 
     val endpointLabel: String
         get() = runCatching { URL(endpoint).host }.getOrNull() ?: endpoint

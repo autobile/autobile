@@ -5,6 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.autobile.ai.cloud.CloudService
+import com.autobile.ai.cloud.oauth.ChatGptSignIn
+import com.autobile.ai.cloud.oauth.CloudSession
+import com.autobile.ai.cloud.oauth.LoopbackCallback
+import com.autobile.ai.cloud.oauth.Pkce
+import com.autobile.ai.cloud.oauth.SignInFailed
 import com.autobile.ai.mlkit.DownloadState
 import com.autobile.ai.mlkit.ModelDownloadProgress
 import com.autobile.core.data.Metric
@@ -42,6 +47,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class AppViewModel(private val graph: AppGraph) : ViewModel() {
@@ -55,6 +61,9 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
         ),
     )
     val state: StateFlow<AppUiState> = _state.asStateFlow()
+
+    /** The sign-in in progress, so a second tap does not open a second browser tab. */
+    private var signIn: Job? = null
 
     init {
         viewModelScope.launch {
@@ -500,6 +509,70 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
         )
     }
 
+    /**
+     * Signs in to a subscription service in the system browser.
+     *
+     * The browser is used rather than an in-app view on purpose: a sign-in page shown
+     * inside the app asking for a password is indistinguishable, to the person typing,
+     * from one the app wrote itself. The browser shows the real address bar, the session
+     * is exchanged on this device, and nothing is proxied through anything of ours.
+     */
+    fun signInToCloud() {
+        if (signIn?.isActive == true) return
+        signIn = viewModelScope.launch {
+            val callback = LoopbackCallback()
+            val port = callback.open().getOrElse { failed(it); return@launch }
+            _state.update { it.copy(cloudSignInPending = true) }
+            val pkce = Pkce.generate()
+            val state = Pkce.state()
+            val redirect = ChatGptSignIn.redirectUri(port)
+            val opened = graph.appContext.openUrlExternally(ChatGptSignIn.authorizeUrl(redirect, pkce, state))
+            if (!opened) {
+                callback.close()
+                failed(SignInFailed(graph.appContext.getString(R.string.msg_cloud_no_browser)))
+                return@launch
+            }
+            val code = callback.awaitCode(state).getOrElse { failed(it); return@launch }
+            val session = ChatGptSignIn.exchange(code, pkce.verifier, redirect)
+                .getOrElse { failed(it); return@launch }
+            graph.settings.setCloudSession(CloudSession.encode(session), session.label)
+            _state.update {
+                it.copy(
+                    privacy = graph.settings.privacy(),
+                    cloudSignInPending = false,
+                    message = graph.appContext.getString(R.string.msg_cloud_signed_in),
+                )
+            }
+            refreshCapabilities()
+        }
+    }
+
+    fun cancelCloudSignIn() {
+        signIn?.cancel()
+        signIn = null
+        _state.update { it.copy(cloudSignInPending = false) }
+    }
+
+    fun signOutOfCloud() {
+        graph.settings.setCloudSession("", "")
+        _state.update {
+            it.copy(
+                privacy = graph.settings.privacy(),
+                message = graph.appContext.getString(R.string.msg_cloud_signed_out),
+            )
+        }
+        refreshCapabilities()
+    }
+
+    private fun failed(cause: Throwable) {
+        _state.update {
+            it.copy(
+                cloudSignInPending = false,
+                message = cause.message ?: graph.appContext.getString(R.string.msg_cloud_sign_in_failed),
+            )
+        }
+    }
+
     fun setCloudApiKey(value: String) {
         graph.settings.setCloudApiKey(value.trim())
         _state.update {
@@ -605,6 +678,14 @@ data class AppUiState(
     val touchIndicatorEnabled: Boolean = true,
     val nanoDownloadConsented: Boolean = false,
     val nanoDownload: ModelDownloadProgress? = null,
+    /**
+     * Whether a browser sign-in is still waiting to be finished.
+     *
+     * Shown because the sign-in happens in another app: without it, someone who opened
+     * the browser and came back sees the same button they already pressed and no sign
+     * that anything is in progress.
+     */
+    val cloudSignInPending: Boolean = false,
     /**
      * The name offered when teaching starts, when something has suggested one.
      *

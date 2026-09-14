@@ -335,6 +335,10 @@
     <string name="msg_repair_dismissed">복구를 무시했습니다</string>
     <string name="msg_repair_failed">복구를 적용하지 못했습니다</string>
     <string name="msg_cloud_credential_updated">클라우드 자격 증명을 업데이트했습니다</string>
+    <string name="msg_cloud_signed_in">로그인했습니다. 요청은 내 구독으로 청구됩니다.</string>
+    <string name="msg_cloud_signed_out">로그아웃했습니다</string>
+    <string name="msg_cloud_sign_in_failed">로그인을 마치지 못했습니다</string>
+    <string name="msg_cloud_no_browser">로그인에 사용할 브라우저가 없습니다</string>
     <string name="msg_generic_error">문제가 발생했습니다</string>
     <string name="default_automation_name">내 자동화</string>
     <string name="starter_skill_name">휴대폰 설정 열기</string>
@@ -415,6 +419,12 @@
     <string name="review_understood_by_rules">AI 없이 기록만으로 이해했습니다.</string>
     <string name="task_state_completed_unverified">완료, 목표는 확인 못 함</string>
     <string name="settings_cloud_service">어떤 서비스</string>
+    <string name="settings_cloud_sign_in">ChatGPT로 로그인</string>
+    <string name="settings_cloud_sign_in_detail">요청은 본인의 ChatGPT 요금제로 청구됩니다. 로그인은 브라우저에서 진행되며 이 휴대전화를 벗어나지 않습니다.</string>
+    <string name="settings_cloud_signed_in">로그인됨</string>
+    <string name="settings_cloud_sign_out">로그아웃</string>
+    <string name="settings_cloud_sign_in_waiting">브라우저에서 로그인을 마친 뒤 돌아오세요.</string>
+    <string name="settings_cloud_sign_in_cancel">로그인 취소</string>
     <string name="settings_cloud_get_key">%1$s 키 발급받기</string>
     <string name="settings_cloud_text_only">%1$s은(는) 텍스트만 읽습니다. 읽을 수 없는 화면을 그림으로 보내지는 않습니다.</string>
     <string name="settings_cloud_show_advanced">다른 엔드포인트 쓰기</string>

@@ -18,6 +18,8 @@ enum class CloudService(
     val credentialUrl: String,
     /** Whether this service can be sent a screenshot at all. */
     val supportsImages: Boolean = true,
+    /** Whether the user proves entitlement with a key or with a browser sign-in. */
+    val authMethod: CloudAuthMethod = CloudAuthMethod.API_KEY,
 ) {
     GEMINI(
         displayName = "Google Gemini",
@@ -35,6 +37,24 @@ enum class CloudService(
         lightModel = "gpt-5-mini",
         advancedModel = "gpt-5",
         credentialUrl = "https://platform.openai.com/api-keys",
+    ),
+
+    /**
+     * A ChatGPT subscription, signed in to rather than keyed.
+     *
+     * The person who signs in is the person billed, on their own plan, from their own
+     * device. Listed separately from [OPENAI] because the two are different purchases:
+     * one spends a monthly subscription, the other spends an API balance, and someone
+     * holding one does not necessarily hold the other.
+     */
+    CHATGPT(
+        displayName = "ChatGPT subscription",
+        dialect = CloudDialect.CHATGPT,
+        endpoint = "https://chatgpt.com/backend-api/codex",
+        lightModel = "gpt-5.4",
+        advancedModel = "gpt-5.4",
+        credentialUrl = "",
+        authMethod = CloudAuthMethod.SIGN_IN,
     ),
 
     CLAUDE(

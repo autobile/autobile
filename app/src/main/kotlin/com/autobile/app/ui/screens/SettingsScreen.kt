@@ -34,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.autobile.app.R
+import com.autobile.ai.cloud.CloudAuthMethod
 import com.autobile.ai.cloud.CloudService
 import com.autobile.app.ui.AppUiState
 import com.autobile.app.ui.AppViewModel
@@ -262,31 +263,41 @@ private fun CloudCredentials(state: AppUiState, viewModel: AppViewModel, context
             Spacer(Modifier.height(12.dp))
         }
 
-        if (service.credentialUrl.isNotBlank()) {
-            TextAction(
-                stringResource(R.string.settings_cloud_get_key, service.displayName),
-                { context.openUrl(service.credentialUrl) },
-                color = theme.live,
-            )
-            Spacer(Modifier.height(12.dp))
-        }
+        when (service.authMethod) {
+            CloudAuthMethod.SIGN_IN -> CloudSignIn(state, viewModel)
 
-        OutlinedTextField(
-            value = key,
-            onValueChange = { key = it; viewModel.setCloudApiKey(it) },
-            label = { Text(stringResource(R.string.settings_cloud_key), style = TypeScale.meta) },
-            placeholder = {
-                if (state.privacy.cloudApiKeyPresent) {
-                    Text(stringResource(R.string.settings_cloud_key_set), style = TypeScale.body, color = theme.muted)
+            CloudAuthMethod.API_KEY -> {
+                if (service.credentialUrl.isNotBlank()) {
+                    TextAction(
+                        stringResource(R.string.settings_cloud_get_key, service.displayName),
+                        { context.openUrl(service.credentialUrl) },
+                        color = theme.live,
+                    )
+                    Spacer(Modifier.height(12.dp))
                 }
-            },
-            textStyle = TypeScale.body,
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth(),
-            colors = fieldColors(),
-        )
+
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it; viewModel.setCloudApiKey(it) },
+                    label = { Text(stringResource(R.string.settings_cloud_key), style = TypeScale.meta) },
+                    placeholder = {
+                        if (state.privacy.cloudApiKeyPresent) {
+                            Text(
+                                stringResource(R.string.settings_cloud_key_set),
+                                style = TypeScale.body,
+                                color = theme.muted,
+                            )
+                        }
+                    },
+                    textStyle = TypeScale.body,
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = fieldColors(),
+                )
+            }
+        }
 
         Spacer(Modifier.height(12.dp))
         TextAction(
@@ -311,6 +322,38 @@ private fun CloudCredentials(state: AppUiState, viewModel: AppViewModel, context
                 colors = fieldColors(),
             )
         }
+    }
+}
+
+/**
+ * Connecting a subscription instead of pasting a key.
+ *
+ * The signed-out state says plainly whose account pays, because "sign in" next to a
+ * cloud switch could otherwise be read as signing in to Autobile. The signed-in state
+ * names the account, so someone with two of them can see which one is connected.
+ */
+@Composable
+private fun CloudSignIn(state: AppUiState, viewModel: AppViewModel) {
+    if (state.privacy.cloudSignedIn) {
+        Text(
+            state.privacy.cloudAccountLabel.ifBlank { stringResource(R.string.settings_cloud_signed_in) },
+            style = TypeScale.body,
+            color = theme.ink,
+        )
+        Spacer(Modifier.height(10.dp))
+        TextAction(stringResource(R.string.settings_cloud_sign_out), viewModel::signOutOfCloud, color = theme.muted)
+    } else if (state.cloudSignInPending) {
+        Statement(stringResource(R.string.settings_cloud_sign_in_waiting), color = theme.muted)
+        Spacer(Modifier.height(10.dp))
+        TextAction(
+            stringResource(R.string.settings_cloud_sign_in_cancel),
+            viewModel::cancelCloudSignIn,
+            color = theme.muted,
+        )
+    } else {
+        Statement(stringResource(R.string.settings_cloud_sign_in_detail), color = theme.muted)
+        Spacer(Modifier.height(12.dp))
+        PrimaryButton(stringResource(R.string.settings_cloud_sign_in), viewModel::signInToCloud)
     }
 }
 

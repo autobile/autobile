@@ -9,6 +9,8 @@ import android.view.inputmethod.InputMethodManager
 import com.autobile.ai.cloud.CloudAiProvider
 import com.autobile.ai.cloud.CloudConfig
 import com.autobile.ai.cloud.CloudService
+import com.autobile.ai.cloud.oauth.ChatGptSignIn
+import com.autobile.ai.cloud.oauth.CloudSession
 import com.autobile.ai.context.ContextMinimizer
 import com.autobile.ai.local.LocalModelProvider
 import com.autobile.ai.mlkit.MLKitGeminiNanoProvider
@@ -99,6 +101,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
             service = service,
             endpoint = privacy.cloudEndpoint.ifBlank { service.endpoint },
             apiKey = settings.cloudApiKey(),
+            session = CloudSession.decode(settings.cloudSession()),
             lightModel = privacy.cloudModel.ifBlank { service.lightModel },
             advancedModel = privacy.cloudVisionModel.ifBlank { service.advancedModel },
             allowImages = privacy.allowScreenshotToCloud,
@@ -106,12 +109,32 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         )
     }
 
+    /**
+     * Renews a signed-in session and writes it back.
+     *
+     * A failure leaves the stored session untouched. It may still work — a refresh can
+     * fail for a dropped connection as easily as for a revoked grant — and discarding
+     * it would sign the user out over a moment of bad signal.
+     */
+    private suspend fun renewCloudSession(session: CloudSession) {
+        val renewed = ChatGptSignIn.refresh(session).getOrNull() ?: return
+        settings.setCloudSession(CloudSession.encode(renewed), renewed.label)
+    }
+
     override val aiRouter = AiRuntimeRouter(
         listOf(
             deviceAi,
             localModel,
-            CloudAiProvider(com.autobile.core.model.RuntimeTier.CLOUD_LIGHT) { cloudConfig() },
-            CloudAiProvider(com.autobile.core.model.RuntimeTier.CLOUD_ADVANCED) { cloudConfig(advanced = true) },
+            CloudAiProvider(
+                com.autobile.core.model.RuntimeTier.CLOUD_LIGHT,
+                { cloudConfig() },
+                ::renewCloudSession,
+            ),
+            CloudAiProvider(
+                com.autobile.core.model.RuntimeTier.CLOUD_ADVANCED,
+                { cloudConfig(advanced = true) },
+                ::renewCloudSession,
+            ),
         ),
     )
 

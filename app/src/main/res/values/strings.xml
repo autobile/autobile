@@ -336,6 +336,10 @@
     <string name="msg_repair_dismissed">Repair dismissed</string>
     <string name="msg_repair_failed">Could not apply the repair</string>
     <string name="msg_cloud_credential_updated">Cloud credential updated</string>
+    <string name="msg_cloud_signed_in">Signed in. Requests go to your own subscription.</string>
+    <string name="msg_cloud_signed_out">Signed out</string>
+    <string name="msg_cloud_sign_in_failed">Sign-in did not complete</string>
+    <string name="msg_cloud_no_browser">No browser is available to sign in with</string>
     <string name="msg_generic_error">Something went wrong</string>
     <string name="default_automation_name">My automation</string>
     <string name="starter_skill_name">Open phone settings</string>
@@ -418,6 +422,12 @@
     <string name="review_understood_by_rules">Understood from the recording alone, with no AI.</string>
     <string name="task_state_completed_unverified">Done, goal unconfirmed</string>
     <string name="settings_cloud_service">Which service</string>
+    <string name="settings_cloud_sign_in">Sign in with ChatGPT</string>
+    <string name="settings_cloud_sign_in_detail">Requests are billed to your own ChatGPT plan. The sign-in happens in your browser and stays on this phone.</string>
+    <string name="settings_cloud_signed_in">Signed in</string>
+    <string name="settings_cloud_sign_out">Sign out</string>
+    <string name="settings_cloud_sign_in_waiting">Waiting for the browser. Finish signing in there and come back.</string>
+    <string name="settings_cloud_sign_in_cancel">Cancel sign-in</string>
     <string name="settings_cloud_get_key">Get a %1$s key</string>
     <string name="settings_cloud_text_only">%1$s reads text only. Screens it cannot read will not be sent as pictures.</string>
     <string name="settings_cloud_show_advanced">Use a different endpoint</string>
