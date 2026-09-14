@@ -142,7 +142,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
     private val perception = PerceptionEngine(context)
     private val runtimeWords = ResourceRuntimeVocabulary(appContext)
     private val controller = ScreenController(context)
-    private val resolver = ExecutionResolver(aiRouter, minimizer)
+    private val resolver = ExecutionResolver(aiRouter, minimizer) { settings.privacy().maskSensitiveFields }
     private val riskEngine = RiskEngine(policyStore, settings, runtimeWords)
     private val validation = ValidationEngine(aiRouter, minimizer, runtimeWords)
     private val healing = SelfHealingEngine(aiRouter, riskEngine, minimizer)
