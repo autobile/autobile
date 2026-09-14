@@ -19,6 +19,8 @@
     <string name="agent_overlay_working">Autobile is working</string>
     <string name="agent_overlay_step">%1$s · %2$s (%3$d/%4$d)</string>
     <string name="agent_overlay_adapting">Adapting: %1$s</string>
+    <string name="agent_overlay_thinking_device">Working it out on this phone…</string>
+    <string name="agent_overlay_thinking_cloud">Working it out in the cloud…</string>
 
     <!-- Live description of what the user just did, shown while recording. -->
     <string name="observed_click">Tapped</string>

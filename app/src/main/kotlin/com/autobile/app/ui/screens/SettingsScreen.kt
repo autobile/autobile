@@ -34,6 +34,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.autobile.app.R
+import com.autobile.ai.cloud.CloudAuthMethod
+import com.autobile.ai.cloud.CloudService
 import com.autobile.app.ui.AppUiState
 import com.autobile.app.ui.AppViewModel
 import com.autobile.app.ui.appLabel
@@ -45,6 +47,8 @@ import com.autobile.app.ui.design.Panel
 import com.autobile.app.ui.design.PrimaryButton
 import com.autobile.app.ui.design.ScreenTitle
 import com.autobile.app.ui.design.SectionHeading
+import com.autobile.app.ui.design.Choice
+import com.autobile.app.ui.design.ChoiceRow
 import com.autobile.app.ui.design.Space
 import com.autobile.app.ui.design.Statement
 import com.autobile.app.ui.design.StatusBarSpacer
@@ -123,12 +127,18 @@ fun SettingsScreen(state: AppUiState, viewModel: AppViewModel, context: Context)
             checked = state.privacy.cloudEnabled,
             onChange = viewModel::updateCloudEnabled,
         )
+        // Which service comes before what may be sent to it: the answer to the second
+        // question depends on the first, because not every service can read a picture.
+        if (state.privacy.cloudEnabled) {
+            CloudCredentials(state, viewModel, context)
+        }
         SettingSwitch(
             title = stringResource(R.string.settings_cloud_screenshots),
             detail = stringResource(R.string.settings_cloud_screenshots_detail),
             checked = state.privacy.allowScreenshotToCloud,
             onChange = viewModel::updateCloudScreenshots,
-            enabled = state.privacy.cloudEnabled,
+            enabled = state.privacy.cloudEnabled &&
+                CloudService.from(state.privacy.cloudServiceName).supportsImages,
         )
         SettingSwitch(
             title = stringResource(R.string.settings_masking),
@@ -136,9 +146,6 @@ fun SettingsScreen(state: AppUiState, viewModel: AppViewModel, context: Context)
             checked = state.privacy.maskSensitiveFields,
             onChange = viewModel::updateMasking,
         )
-        if (state.privacy.cloudEnabled) {
-            CloudCredentials(state, viewModel)
-        }
 
         SectionHeading(stringResource(R.string.settings_during_run), Modifier.padding(horizontal = Space.gutter))
         SettingSwitch(
@@ -229,38 +236,150 @@ private fun PermissionSetting(title: String, granted: Boolean, onOpen: () -> Uni
 }
 
 @Composable
-private fun CloudCredentials(state: AppUiState, viewModel: AppViewModel) {
-    var endpoint by remember { mutableStateOf(state.privacy.cloudEndpoint) }
-    var key by remember { mutableStateOf("") }
+private fun CloudCredentials(state: AppUiState, viewModel: AppViewModel, context: Context) {
+    val service = CloudService.from(state.privacy.cloudServiceName)
+    var endpoint by remember(service) { mutableStateOf(state.privacy.cloudEndpoint) }
+    var key by remember(service) { mutableStateOf("") }
+    var showAdvanced by remember { mutableStateOf(false) }
 
     Column(Modifier.padding(horizontal = Space.gutter, vertical = 16.dp)) {
-        OutlinedTextField(
-            value = endpoint,
-            onValueChange = { endpoint = it; viewModel.updateCloudEndpoint(it) },
-            label = { Text(stringResource(R.string.settings_cloud_endpoint), style = TypeScale.meta) },
-            textStyle = TypeScale.body,
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth(),
-            colors = fieldColors(),
-        )
+        Text(stringResource(R.string.settings_cloud_service), style = TypeScale.label, color = theme.ink)
+        Spacer(Modifier.height(10.dp))
+        // Choosing a service is choosing a name. The endpoint and model identifiers
+        // follow from it, and are only worth showing to someone who wants to change them.
+        ChoiceRow {
+            CloudService.entries.forEach { option ->
+                Choice(
+                    text = option.displayName,
+                    selected = option == service,
+                    onClick = { viewModel.updateCloudService(option.name) },
+                )
+            }
+        }
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = key,
-            onValueChange = { key = it; viewModel.setCloudApiKey(it) },
-            label = { Text(stringResource(R.string.settings_cloud_key), style = TypeScale.meta) },
-            placeholder = {
-                if (state.privacy.cloudApiKeyPresent) {
-                    Text(stringResource(R.string.settings_cloud_key_set), style = TypeScale.body, color = theme.muted)
+
+        if (!service.supportsImages) {
+            Statement(stringResource(R.string.settings_cloud_text_only, service.displayName), color = theme.muted)
+            Spacer(Modifier.height(12.dp))
+        }
+
+        when (service.authMethod) {
+            CloudAuthMethod.SIGN_IN -> CloudSignIn(state, viewModel)
+
+            CloudAuthMethod.API_KEY -> {
+                if (service.credentialUrl.isNotBlank()) {
+                    TextAction(
+                        stringResource(R.string.settings_cloud_get_key, service.displayName),
+                        { context.openUrl(service.credentialUrl) },
+                        color = theme.live,
+                    )
+                    Spacer(Modifier.height(12.dp))
                 }
+
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it; viewModel.setCloudApiKey(it) },
+                    label = { Text(stringResource(R.string.settings_cloud_key), style = TypeScale.meta) },
+                    placeholder = {
+                        if (state.privacy.cloudApiKeyPresent) {
+                            Text(
+                                stringResource(R.string.settings_cloud_key_set),
+                                style = TypeScale.body,
+                                color = theme.muted,
+                            )
+                        }
+                    },
+                    textStyle = TypeScale.body,
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = fieldColors(),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        TextAction(
+            stringResource(
+                if (showAdvanced) R.string.settings_cloud_hide_advanced else R.string.settings_cloud_show_advanced,
+            ),
+            { showAdvanced = !showAdvanced },
+            color = theme.muted,
+        )
+
+        if (showAdvanced) {
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = endpoint,
+                onValueChange = { endpoint = it; viewModel.updateCloudEndpoint(it) },
+                label = { Text(stringResource(R.string.settings_cloud_endpoint), style = TypeScale.meta) },
+                placeholder = { Text(service.endpoint, style = TypeScale.body, color = theme.muted) },
+                textStyle = TypeScale.body,
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+                colors = fieldColors(),
+            )
+        }
+    }
+}
+
+/**
+ * Connecting a subscription instead of pasting a key.
+ *
+ * The signed-out state says plainly whose account pays, because "sign in" next to a
+ * cloud switch could otherwise be read as signing in to Autobile. The signed-in state
+ * names the account, so someone with two of them can see which one is connected.
+ */
+@Composable
+private fun CloudSignIn(state: AppUiState, viewModel: AppViewModel) {
+    if (state.privacy.cloudSignedIn) {
+        Text(
+            state.privacy.cloudAccountLabel.ifBlank { stringResource(R.string.settings_cloud_signed_in) },
+            style = TypeScale.body,
+            color = theme.ink,
+        )
+        Spacer(Modifier.height(10.dp))
+        TextAction(stringResource(R.string.settings_cloud_sign_out), viewModel::signOutOfCloud, color = theme.muted)
+    } else if (state.cloudSignInPending) {
+        Statement(stringResource(R.string.settings_cloud_sign_in_waiting), color = theme.muted)
+        Spacer(Modifier.height(12.dp))
+        // The browser normally hands the sign-in back on its own. When it will not —
+        // some browsers refuse a local address, some pass the redirect to another app —
+        // this is the difference between finishing and being stuck with no explanation.
+        var pasted by remember { mutableStateOf("") }
+        OutlinedTextField(
+            value = pasted,
+            onValueChange = { pasted = it },
+            label = { Text(stringResource(R.string.settings_cloud_paste_label), style = TypeScale.meta) },
+            placeholder = {
+                Text(stringResource(R.string.settings_cloud_paste_hint), style = TypeScale.body, color = theme.muted)
             },
             textStyle = TypeScale.body,
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth(),
             colors = fieldColors(),
         )
+        Spacer(Modifier.height(10.dp))
+        Row {
+            TextAction(
+                stringResource(R.string.settings_cloud_paste_finish),
+                { viewModel.completePastedSignIn(pasted) },
+                color = if (pasted.isBlank()) theme.muted else theme.live,
+            )
+            Spacer(Modifier.width(16.dp))
+            TextAction(
+                stringResource(R.string.settings_cloud_sign_in_cancel),
+                viewModel::cancelCloudSignIn,
+                color = theme.muted,
+            )
+        }
+    } else {
+        Statement(stringResource(R.string.settings_cloud_sign_in_detail), color = theme.muted)
+        Spacer(Modifier.height(12.dp))
+        PrimaryButton(stringResource(R.string.settings_cloud_sign_in), viewModel::signInToCloud)
     }
 }
 
@@ -331,6 +450,12 @@ private fun MetricRow(label: String, value: String) {
         Text(value, style = TypeScale.figure, color = theme.ink)
     }
     Hairline(Modifier.padding(horizontal = Space.gutter))
+}
+
+private fun Context.openUrl(url: String) {
+    runCatching {
+        startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
 }
 
 private fun Context.openSettings(action: String) {

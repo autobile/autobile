@@ -8,6 +8,10 @@ import android.os.Build
 import android.view.inputmethod.InputMethodManager
 import com.autobile.ai.cloud.CloudAiProvider
 import com.autobile.ai.cloud.CloudConfig
+import com.autobile.ai.cloud.CloudService
+import com.autobile.ai.cloud.oauth.ChatGptSignIn
+import com.autobile.ai.cloud.oauth.CloudSession
+import com.autobile.ai.cloud.oauth.SignInFailed
 import com.autobile.ai.context.ContextMinimizer
 import com.autobile.ai.local.LocalModelProvider
 import com.autobile.ai.mlkit.MLKitGeminiNanoProvider
@@ -24,6 +28,8 @@ import com.autobile.core.data.SkillStore
 import com.autobile.core.data.TraceStore
 import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AutonomyLevel
+import com.autobile.core.model.Condition
+import com.autobile.core.model.ConditionKind
 import com.autobile.core.model.ExpectedState
 import com.autobile.core.model.PatchAuthor
 import com.autobile.core.model.ResolverKind
@@ -89,23 +95,56 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
 
     private fun cloudConfig(advanced: Boolean = false): CloudConfig {
         val privacy = settings.privacy()
+        // The chosen service supplies the endpoint and the model names; anything the
+        // user typed themselves wins over it, so a compatible deployment of their own
+        // still works without needing a preset of its own.
+        val service = CloudService.from(privacy.cloudServiceName)
         return CloudConfig(
             enabled = privacy.cloudEnabled,
-            endpoint = privacy.cloudEndpoint.ifBlank { CloudConfig.DEFAULT_ENDPOINT },
+            service = service,
+            endpoint = privacy.cloudEndpoint.ifBlank { service.endpoint },
             apiKey = settings.cloudApiKey(),
-            lightModel = privacy.cloudModel.ifBlank { CloudConfig.DEFAULT_LIGHT_MODEL },
-            advancedModel = privacy.cloudVisionModel.ifBlank { CloudConfig.DEFAULT_ADVANCED_MODEL },
+            session = CloudSession.decode(settings.cloudSession()),
+            lightModel = privacy.cloudModel.ifBlank { service.lightModel },
+            advancedModel = privacy.cloudVisionModel.ifBlank { service.advancedModel },
             allowImages = privacy.allowScreenshotToCloud,
             maxInputTokens = if (advanced) 32_000 else 8_000,
         )
+    }
+
+    /**
+     * Renews a signed-in session and writes it back.
+     *
+     * A failure leaves the stored session untouched. It may still work — a refresh can
+     * fail for a dropped connection as easily as for a revoked grant — and discarding
+     * it would sign the user out over a moment of bad signal.
+     */
+    private suspend fun renewCloudSession(session: CloudSession) {
+        ChatGptSignIn.refresh(session)
+            .onSuccess { settings.setCloudSession(CloudSession.encode(it), it.label) }
+            .onFailure { cause ->
+                // A grant the issuer has retired will never work again, so the session is
+                // cleared and the settings screen falls back to the sign-in button.
+                // Keeping it would leave an account that silently never answers, with no
+                // hint that signing in again is the fix.
+                if ((cause as? SignInFailed)?.grantIsDead == true) settings.setCloudSession("", "")
+            }
     }
 
     override val aiRouter = AiRuntimeRouter(
         listOf(
             deviceAi,
             localModel,
-            CloudAiProvider(com.autobile.core.model.RuntimeTier.CLOUD_LIGHT) { cloudConfig() },
-            CloudAiProvider(com.autobile.core.model.RuntimeTier.CLOUD_ADVANCED) { cloudConfig(advanced = true) },
+            CloudAiProvider(
+                com.autobile.core.model.RuntimeTier.CLOUD_LIGHT,
+                { cloudConfig() },
+                ::renewCloudSession,
+            ),
+            CloudAiProvider(
+                com.autobile.core.model.RuntimeTier.CLOUD_ADVANCED,
+                { cloudConfig(advanced = true) },
+                ::renewCloudSession,
+            ),
         ),
     )
 
@@ -113,7 +152,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
     private val perception = PerceptionEngine(context)
     private val runtimeWords = ResourceRuntimeVocabulary(appContext)
     private val controller = ScreenController(context)
-    private val resolver = ExecutionResolver(aiRouter, minimizer)
+    private val resolver = ExecutionResolver(aiRouter, minimizer) { settings.privacy().maskSensitiveFields }
     private val riskEngine = RiskEngine(policyStore, settings, runtimeWords)
     private val validation = ValidationEngine(aiRouter, minimizer, runtimeWords)
     private val healing = SelfHealingEngine(aiRouter, riskEngine, minimizer)
@@ -238,6 +277,16 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
                 goal = appContext.getString(R.string.starter_skill_goal),
                 description = appContext.getString(R.string.starter_skill_description),
                 trigger = TriggerSpec.Manual,
+                // The onboarding text promises this automation checks that the settings
+                // app actually appeared. Without a post-condition it checked nothing and
+                // reported so in words nobody outside the codebase would recognise.
+                postconditions = listOf(
+                    Condition(
+                        description = appContext.getString(R.string.starter_skill_postcondition),
+                        kind = ConditionKind.STRUCTURAL,
+                        packageName = "com.android.settings",
+                    ),
+                ),
                 steps = listOf(
                     SkillStep(
                         id = Ids.step(),

@@ -133,6 +133,23 @@ data class Bounds(
     fun contains(x: Int, y: Int): Boolean = x in left..right && y in top..bottom
 }
 
+/**
+ * The smallest rectangle containing all of these elements.
+ *
+ * Used to narrow a screenshot to the part of the screen a question is actually about.
+ * Empty when there is nothing to bound, which callers read as "the whole screen".
+ */
+fun List<UiNode>.boundingBox(): Bounds {
+    val boxes = map { it.bounds }.filterNot { it.isEmpty }
+    if (boxes.isEmpty()) return Bounds()
+    return Bounds(
+        left = boxes.minOf { it.left },
+        top = boxes.minOf { it.top },
+        right = boxes.maxOf { it.right },
+        bottom = boxes.maxOf { it.bottom },
+    )
+}
+
 /** Result of trying to observe the screen. */
 sealed interface PerceptionResult {
     data class Success(val snapshot: ScreenSnapshot) : PerceptionResult

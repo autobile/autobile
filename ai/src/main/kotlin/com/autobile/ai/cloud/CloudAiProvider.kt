@@ -14,6 +14,7 @@ import com.autobile.core.common.Logx
 import com.autobile.core.model.InferenceError
 import com.autobile.core.model.InferenceErrorKind
 import com.autobile.core.model.InferenceResult
+import com.autobile.ai.cloud.oauth.CloudSession
 import com.autobile.core.model.RuntimeTier
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,9 +34,11 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Network inference, used only when no local tier can answer.
  *
- * Speaks the Gemini `generateContent` REST shape. The endpoint, model and key are all
- * user-supplied so that the product is not bound to one vendor and so that a user can
- * point it at a deployment they control.
+ * The service, its endpoint, its models and the credential are all the user's choice,
+ * so the product is not bound to one vendor and can be pointed at a deployment someone
+ * runs themselves. What differs between services lives in [CloudDialect]; everything
+ * here — the privacy gates, the error mapping, the timeouts — is the same for all of
+ * them.
  *
  * Two tiers share this implementation. The light tier is a small, fast model used for
  * classification; the advanced tier is a larger model used for recovery planning and
@@ -44,6 +47,14 @@ import java.util.concurrent.atomic.AtomicLong
 class CloudAiProvider(
     override val tier: RuntimeTier,
     private val config: () -> CloudConfig,
+    /**
+     * Renews an expiring subscription session and stores the result.
+     *
+     * Passed in rather than performed here because renewal is only meaningful if it is
+     * persisted, and where settings live is not this class's concern. The default does
+     * nothing, which is correct for a key-based service.
+     */
+    private val renewSession: suspend (CloudSession) -> Unit = {},
 ) : ReasoningProvider, VisionProvider, StructuredInferenceProvider {
 
     override val id: String = if (tier == RuntimeTier.CLOUD_ADVANCED) "cloud-advanced" else "cloud-light"
@@ -55,7 +66,7 @@ class CloudAiProvider(
         if (!cfg.isUsable) return ProviderCapabilities.unavailable("Cloud access is off or unconfigured")
         return ProviderCapabilities(
             available = true,
-            supportsVision = cfg.allowImages,
+            supportsVision = cfg.allowImages && cfg.service.supportsImages,
             supportsSystemPrompt = true,
             maxInputTokens = cfg.maxInputTokens,
             modelName = cfg.modelFor(tier),
@@ -111,7 +122,7 @@ class CloudAiProvider(
         maxOutputTokens: Int,
         forceJson: Boolean = false,
     ): InferenceResult<String> = withContext(Dispatchers.IO) {
-        val cfg = config()
+        val cfg = currentConfig()
         if (!cfg.isUsable) {
             return@withContext failure<String>(InferenceErrorKind.UNAVAILABLE, "Cloud access is off or unconfigured")
         }
@@ -132,9 +143,17 @@ class CloudAiProvider(
                 readTimeout = cfg.readTimeoutMs
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                if (cfg.apiKey.isNotBlank()) setRequestProperty("x-goog-api-key", cfg.apiKey)
+                cfg.credential.let { cfg.service.dialect.authHeaders(it) }.forEach(::setRequestProperty)
             }
-            val body = buildRequestBody(systemInstruction, prompt, image, temperature, maxOutputTokens, forceJson)
+            val body = cfg.service.dialect.requestBody(
+                model = cfg.modelFor(tier),
+                systemInstruction = systemInstruction,
+                prompt = prompt,
+                imageBase64 = image?.let(::encodeImage),
+                temperature = temperature,
+                maxOutputTokens = maxOutputTokens,
+                forceJson = forceJson,
+            )
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
             val status = connection.responseCode
@@ -146,7 +165,7 @@ class CloudAiProvider(
             }
 
             val responseText = connection.inputStream.bufferedReader().use { it.readText() }
-            val text = extractText(responseText)
+            val text = cfg.service.dialect.extractText(responseText)
             consecutiveFailures.set(0)
             InferenceResult(
                 value = text,
@@ -171,68 +190,25 @@ class CloudAiProvider(
         }
     }
 
-    private fun buildRequestBody(
-        systemInstruction: String?,
-        prompt: String,
-        image: Bitmap?,
-        temperature: Float,
-        maxOutputTokens: Int,
-        forceJson: Boolean,
-    ): String {
-        val payload = buildJsonObject {
-            if (!systemInstruction.isNullOrBlank()) {
-                putJsonObject("systemInstruction") {
-                    putJsonArray("parts") {
-                        add(buildJsonObject { put("text", systemInstruction) })
-                    }
-                }
-            }
-            putJsonArray("contents") {
-                add(
-                    buildJsonObject {
-                        put("role", "user")
-                        putJsonArray("parts") {
-                            if (image != null) {
-                                add(
-                                    buildJsonObject {
-                                        putJsonObject("inline_data") {
-                                            put("mime_type", "image/jpeg")
-                                            put("data", encodeImage(image))
-                                        }
-                                    },
-                                )
-                            }
-                            add(buildJsonObject { put("text", prompt) })
-                        }
-                    },
-                )
-            }
-            putJsonObject("generationConfig") {
-                put("temperature", temperature)
-                put("maxOutputTokens", maxOutputTokens)
-                put("candidateCount", 1)
-                if (forceJson) put("responseMimeType", "application/json")
-            }
-        }
-        return payload.toString()
+    /**
+     * The configuration to send with, after renewing a session that is about to lapse.
+     *
+     * Done before the request rather than after a failure: a token that expires mid-run
+     * would surface as an authorisation error on a step the user was watching, and
+     * retrying it would mean repeating whatever the step had already done.
+     */
+    private suspend fun currentConfig(): CloudConfig {
+        val cfg = config()
+        if (cfg.session.isEmpty || !cfg.session.needsRefresh()) return cfg
+        runCatching { renewSession(cfg.session) }
+            .onFailure { Logx.w("Cloud session could not be renewed", it) }
+        return config()
     }
 
     private fun encodeImage(bitmap: Bitmap): String {
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
         return Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
-    }
-
-    private fun extractText(response: String): String? {
-        val root = runCatching { AutobileJson.parseToJsonElement(response) as? JsonObject }.getOrNull() ?: return null
-        val candidates = root["candidates"] as? JsonArray ?: return null
-        val first = candidates.firstOrNull() as? JsonObject ?: return null
-        val content = first["content"] as? JsonObject ?: return null
-        val parts = content["parts"] as? JsonArray ?: return null
-        val text = parts.mapNotNull { part ->
-            ((part as? JsonObject)?.get("text") as? JsonPrimitive)?.content
-        }.joinToString("")
-        return text.takeIf { it.isNotBlank() }
     }
 
     private fun mapHttpStatus(status: Int): InferenceErrorKind = when (status) {
@@ -267,8 +243,12 @@ class CloudAiProvider(
  */
 data class CloudConfig(
     val enabled: Boolean = false,
+    /** Which service this points at, which decides the wire format and the defaults. */
+    val service: CloudService = CloudService.GEMINI,
     val endpoint: String = DEFAULT_ENDPOINT,
     val apiKey: String = "",
+    /** A signed-in subscription, for services that are proved to that way. */
+    val session: CloudSession = CloudSession.NONE,
     val lightModel: String = DEFAULT_LIGHT_MODEL,
     val advancedModel: String = DEFAULT_ADVANCED_MODEL,
     val allowImages: Boolean = false,
@@ -276,7 +256,10 @@ data class CloudConfig(
     val connectTimeoutMs: Int = 10_000,
     val readTimeoutMs: Int = 45_000,
 ) {
-    val isUsable: Boolean get() = enabled && endpoint.isNotBlank() && apiKey.isNotBlank()
+    /** Whichever of a key or a session this service actually expects. */
+    val credential: CloudCredential get() = CloudCredential.of(service, apiKey, session)
+
+    val isUsable: Boolean get() = enabled && endpoint.isNotBlank() && credential.isPresent
 
     val endpointLabel: String
         get() = runCatching { URL(endpoint).host }.getOrNull() ?: endpoint
@@ -284,8 +267,10 @@ data class CloudConfig(
     fun modelFor(tier: RuntimeTier): String =
         if (tier == RuntimeTier.CLOUD_ADVANCED) advancedModel else lightModel
 
-    fun requestUrl(tier: RuntimeTier): String =
-        "${endpoint.trimEnd('/')}/models/${modelFor(tier)}:generateContent"
+    fun requestUrl(tier: RuntimeTier): String = service.dialect.requestUrl(endpoint, modelFor(tier))
+
+    /** True when this service can be sent a picture at all, before the user's choice. */
+    val serviceSupportsImages: Boolean get() = service.supportsImages
 
     companion object {
         const val DEFAULT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta"

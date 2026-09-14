@@ -41,8 +41,11 @@ class SettingsStore(context: Context) {
         cloudEnabled = prefs.getBoolean(KEY_CLOUD_ENABLED, false),
         allowScreenshotToCloud = prefs.getBoolean(KEY_CLOUD_SCREENSHOT, false),
         maskSensitiveFields = prefs.getBoolean(KEY_MASK_SENSITIVE, true),
+        cloudServiceName = prefs.getString(KEY_CLOUD_SERVICE, DEFAULT_CLOUD_SERVICE).orEmpty(),
         cloudEndpoint = prefs.getString(KEY_CLOUD_ENDPOINT, "").orEmpty(),
         cloudApiKeyPresent = !prefs.getString(KEY_CLOUD_API_KEY, "").isNullOrBlank(),
+        cloudAccountLabel = prefs.getString(KEY_CLOUD_ACCOUNT_LABEL, "").orEmpty(),
+        cloudSignedIn = !prefs.getString(KEY_CLOUD_SESSION, "").isNullOrBlank(),
         cloudModel = prefs.getString(KEY_CLOUD_MODEL, DEFAULT_CLOUD_MODEL).orEmpty(),
         cloudVisionModel = prefs.getString(KEY_CLOUD_VISION_MODEL, DEFAULT_CLOUD_MODEL).orEmpty(),
     )
@@ -51,6 +54,7 @@ class SettingsStore(context: Context) {
         putBoolean(KEY_CLOUD_ENABLED, settings.cloudEnabled)
         putBoolean(KEY_CLOUD_SCREENSHOT, settings.allowScreenshotToCloud)
         putBoolean(KEY_MASK_SENSITIVE, settings.maskSensitiveFields)
+        putString(KEY_CLOUD_SERVICE, settings.cloudServiceName)
         putString(KEY_CLOUD_ENDPOINT, settings.cloudEndpoint)
         putString(KEY_CLOUD_MODEL, settings.cloudModel)
         putString(KEY_CLOUD_VISION_MODEL, settings.cloudVisionModel)
@@ -63,6 +67,19 @@ class SettingsStore(context: Context) {
     fun cloudApiKey(): String = prefs.getString(KEY_CLOUD_API_KEY, "").orEmpty()
 
     fun setCloudApiKey(key: String) = prefs.edit { putString(KEY_CLOUD_API_KEY, key) }
+
+    /**
+     * The signed-in session, read the same way and for the same reason as the key.
+     *
+     * Stored as the opaque string the caller encoded, so this file stays free of any
+     * knowledge of what a session contains.
+     */
+    fun cloudSession(): String = prefs.getString(KEY_CLOUD_SESSION, "").orEmpty()
+
+    fun setCloudSession(encoded: String, accountLabel: String) = prefs.edit {
+        putString(KEY_CLOUD_SESSION, encoded)
+        putString(KEY_CLOUD_ACCOUNT_LABEL, accountLabel)
+    }
 
     fun killSwitch(): KillSwitchState = KillSwitchState(
         engaged = prefs.getBoolean(KEY_KILL_SWITCH, false),
@@ -107,12 +124,16 @@ class SettingsStore(context: Context) {
 
     companion object {
         const val DEFAULT_CLOUD_MODEL = "gemini-2.5-flash"
+        const val DEFAULT_CLOUD_SERVICE = "GEMINI"
 
+        private const val KEY_CLOUD_SERVICE = "cloud_service"
         private const val KEY_CLOUD_ENABLED = "cloud_enabled"
         private const val KEY_CLOUD_SCREENSHOT = "cloud_screenshot"
         private const val KEY_MASK_SENSITIVE = "mask_sensitive"
         private const val KEY_CLOUD_ENDPOINT = "cloud_endpoint"
         private const val KEY_CLOUD_API_KEY = "cloud_api_key"
+        private const val KEY_CLOUD_SESSION = "cloud_session"
+        private const val KEY_CLOUD_ACCOUNT_LABEL = "cloud_account_label"
         private const val KEY_CLOUD_MODEL = "cloud_model"
         private const val KEY_CLOUD_VISION_MODEL = "cloud_vision_model"
         private const val KEY_KILL_SWITCH = "kill_switch"

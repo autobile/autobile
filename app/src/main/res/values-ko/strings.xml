@@ -327,6 +327,7 @@
     <string name="msg_automation_deleted">자동화를 삭제했습니다</string>
     <string name="msg_automation_finished">자동화를 마쳤습니다</string>
     <string name="msg_first_run_complete">첫 자동화를 마쳤습니다</string>
+    <string name="msg_first_run_unverified">단계는 실행됐지만 결과를 확인하지 못했습니다</string>
     <string name="msg_version_unavailable">그 버전은 더 이상 남아 있지 않습니다</string>
     <string name="msg_version_restored">버전 %1$d(으)로 되돌렸습니다</string>
     <string name="msg_show_me_how">%1$s 방법을 보여주세요</string>
@@ -335,10 +336,16 @@
     <string name="msg_repair_dismissed">복구를 무시했습니다</string>
     <string name="msg_repair_failed">복구를 적용하지 못했습니다</string>
     <string name="msg_cloud_credential_updated">클라우드 자격 증명을 업데이트했습니다</string>
+    <string name="msg_cloud_signed_in">로그인했습니다. 요청은 내 구독으로 청구됩니다.</string>
+    <string name="msg_cloud_signed_out">로그아웃했습니다</string>
+    <string name="msg_cloud_sign_in_failed">로그인을 마치지 못했습니다</string>
+    <string name="msg_cloud_no_browser">로그인에 사용할 브라우저가 없습니다</string>
+    <string name="msg_cloud_sign_in_not_started">먼저 로그인을 시작한 뒤, 브라우저가 돌려준 값을 붙여넣으세요</string>
     <string name="msg_generic_error">문제가 발생했습니다</string>
     <string name="default_automation_name">내 자동화</string>
     <string name="starter_skill_name">휴대폰 설정 열기</string>
     <string name="starter_skill_goal">Android 설정 열기</string>
+    <string name="starter_skill_postcondition">설정 앱이 화면에 떠 있음</string>
     <string name="starter_skill_description">언제든 다시 실행해 볼 수 있는 안전한 첫 자동화입니다.</string>
     <string name="starter_skill_target">Android 설정</string>
     <string name="starter_skill_target_description">Android 설정 앱</string>
@@ -414,4 +421,19 @@
     <string name="review_understood_by">%1$s이(가) 이해했습니다.</string>
     <string name="review_understood_by_rules">AI 없이 기록만으로 이해했습니다.</string>
     <string name="task_state_completed_unverified">완료, 목표는 확인 못 함</string>
+    <string name="settings_cloud_service">어떤 서비스</string>
+    <string name="agent_thinking">%1$s(으)로 판단 중…</string>
+    <string name="settings_cloud_sign_in">ChatGPT로 로그인</string>
+    <string name="settings_cloud_sign_in_detail">요청은 본인의 ChatGPT 요금제로 청구됩니다. 로그인은 브라우저에서 진행되며 이 휴대전화를 벗어나지 않습니다.</string>
+    <string name="settings_cloud_signed_in">로그인됨</string>
+    <string name="settings_cloud_sign_out">로그아웃</string>
+    <string name="settings_cloud_sign_in_waiting">브라우저에서 로그인을 마친 뒤 돌아오세요.</string>
+    <string name="settings_cloud_sign_in_cancel">로그인 취소</string>
+    <string name="settings_cloud_paste_label">또는 여기에 붙여넣기</string>
+    <string name="settings_cloud_paste_hint">코드 또는 주소 전체</string>
+    <string name="settings_cloud_paste_finish">로그인 완료</string>
+    <string name="settings_cloud_get_key">%1$s 키 발급받기</string>
+    <string name="settings_cloud_text_only">%1$s은(는) 텍스트만 읽습니다. 읽을 수 없는 화면을 그림으로 보내지는 않습니다.</string>
+    <string name="settings_cloud_show_advanced">다른 엔드포인트 쓰기</string>
+    <string name="settings_cloud_hide_advanced">엔드포인트 설정 숨기기</string>
 </resources>

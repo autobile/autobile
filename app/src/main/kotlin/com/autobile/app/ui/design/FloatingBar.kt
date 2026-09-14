@@ -158,6 +158,8 @@ fun LiveBand(
     stepIndex: Int,
     totalSteps: Int,
     repairNote: String?,
+    /** What is being consulted right now, shown only while it is. */
+    thinkingNote: String?,
     stopLabel: String,
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
@@ -177,6 +179,13 @@ fun LiveBand(
                 Text(skillName, style = TypeScale.heading, color = theme.ink, maxLines = 1)
                 Spacer(Modifier.size(2.dp))
                 Text(step, style = TypeScale.body, color = theme.ink, maxLines = 2)
+                thinkingNote?.takeIf { it.isNotBlank() }?.let {
+                    Spacer(Modifier.size(4.dp))
+                    // A reasoning call can run for seconds while the step text does not
+                    // change. Saying which runtime is being asked is the difference
+                    // between a run that is working and one that looks stuck.
+                    Text(it, style = TypeScale.meta, color = theme.live, maxLines = 1)
+                }
                 Spacer(Modifier.size(8.dp))
                 Meter(
                     fraction = if (totalSteps <= 0) 0f else (stepIndex + 1f) / totalSteps,

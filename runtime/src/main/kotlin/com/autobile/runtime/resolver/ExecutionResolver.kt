@@ -11,6 +11,8 @@ import com.autobile.core.model.RuntimeTier
 import com.autobile.core.model.ScreenSnapshot
 import com.autobile.core.model.TargetSemantics
 import com.autobile.core.model.UiNode
+import com.autobile.core.model.boundingBox
+import com.autobile.runtime.perception.ScreenshotMasking
 
 /**
  * Finds the element a step is talking about.
@@ -34,6 +36,13 @@ import com.autobile.core.model.UiNode
 class ExecutionResolver(
     private val router: AiRuntimeRouter,
     private val minimizer: ContextMinimizer = ContextMinimizer(),
+    /**
+     * Whether a screenshot has sensitive regions painted out before it is sent.
+     *
+     * A setting rather than a constant because the user owns the decision, and a
+     * function rather than a value because they may change it between runs.
+     */
+    private val maskScreenshots: () -> Boolean = { true },
 ) {
 
     suspend fun resolve(
@@ -74,7 +83,14 @@ class ExecutionResolver(
 
         val candidates = minimizer.relevantNodes(snapshot, target.matchTerms()).filter(usable)
         if (candidates.isEmpty()) {
-            return lookOrGiveUp(target, screenshot, allowVision, localOnly, "No candidate elements on this screen")
+            return lookOrGiveUp(
+                target,
+                snapshot,
+                screenshot,
+                allowVision,
+                localOnly,
+                "No candidate elements on this screen",
+            )
         }
 
         val prompt = AiTasks.elementMatchPrompt(
@@ -122,8 +138,19 @@ class ExecutionResolver(
         // that name nothing a person would recognise, and choosing the best of them is
         // how a step ends up typing into a ScrollView. Looking at the screen is what
         // remains, and it is what the specification asks for at this rung.
-        return lookOrGiveUp(target, { picture }, allowVision, localOnly, visuallyUnresolved(visually, target))
+        return lookOrGiveUp(
+            target,
+            snapshot,
+            { picture },
+            allowVision,
+            localOnly,
+            visuallyUnresolved(visually, target),
+        )
     }
+
+    /** The screenshot as it is fit to leave the device. */
+    private fun prepared(screenshot: Bitmap, snapshot: ScreenSnapshot): Bitmap =
+        if (maskScreenshots()) ScreenshotMasking.mask(screenshot, snapshot) else screenshot
 
     private fun visuallyUnresolved(resolution: Resolution, target: TargetSemantics): String = when (resolution) {
         is Resolution.NotFound -> resolution.reason
@@ -141,6 +168,7 @@ class ExecutionResolver(
      */
     private suspend fun lookOrGiveUp(
         target: TargetSemantics,
+        snapshot: ScreenSnapshot,
         screenshot: suspend () -> Bitmap?,
         allowVision: Boolean,
         localOnly: Boolean,
@@ -148,7 +176,7 @@ class ExecutionResolver(
     ): Resolution {
         if (!allowVision) return Resolution.NotFound(reasonIfBlind)
         val picture = screenshot() ?: return Resolution.NotFound(reasonIfBlind)
-        return resolveByLooking(target, picture, localOnly)
+        return resolveByLooking(target, snapshot, picture, localOnly)
     }
 
     /**
@@ -191,6 +219,7 @@ class ExecutionResolver(
      */
     private suspend fun resolveByLooking(
         target: TargetSemantics,
+        snapshot: ScreenSnapshot,
         screenshot: Bitmap,
         localOnly: Boolean,
     ): Resolution {
@@ -202,7 +231,9 @@ class ExecutionResolver(
                 synonyms = target.synonyms,
             ),
             systemInstruction = AiTasks.SYSTEM_INSTRUCTION,
-            image = screenshot,
+            // Scaled but never cropped: the answer is a position within the picture, so
+            // removing part of it would move everything the answer refers to.
+            image = minimizer.cropForInference(prepared(screenshot, snapshot), null),
             requirements = InferenceRequirements(
                 needsVision = true,
                 minConfidence = INFERENCE_CONFIDENCE_THRESHOLD,
@@ -241,7 +272,9 @@ class ExecutionResolver(
             schema = AiTasks.elementMatch,
             prompt = prompt,
             systemInstruction = AiTasks.SYSTEM_INSTRUCTION,
-            image = minimizer.cropForInference(screenshot, null),
+            // Narrowed to the elements actually in question, so the rest of the screen
+            // is not sent merely because it happened to be on it.
+            image = minimizer.cropForInference(prepared(screenshot, snapshot), candidates.boundingBox()),
             requirements = InferenceRequirements(
                 needsVision = true,
                 minConfidence = INFERENCE_CONFIDENCE_THRESHOLD,

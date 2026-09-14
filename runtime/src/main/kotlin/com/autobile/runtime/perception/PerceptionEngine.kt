@@ -62,28 +62,49 @@ class PerceptionEngine(
     override suspend fun captureScreenshot(): ScreenshotCapture {
         val service = AccessibilityBridge.require()
             ?: return ScreenshotCapture.Unavailable("Accessibility access is not granted")
-
-        repeat(SCREENSHOT_ATTEMPTS) { attempt ->
-            when (val outcome = service.captureScreen()) {
-                is ScreenshotOutcome.Captured -> return ScreenshotCapture.Success(outcome.bitmap)
-                ScreenshotOutcome.SecureWindowBlocked ->
-                    return ScreenshotCapture.SecureWindowBlocked(service.foregroundPackage())
-
-                ScreenshotOutcome.Throttled -> delay(THROTTLE_BACKOFF_MS * (attempt + 1))
-                is ScreenshotOutcome.Failed -> {
-                    Logx.w("Screenshot failed: ${outcome.reason}")
-                    return ScreenshotCapture.Unavailable(outcome.reason)
-                }
-            }
-        }
-        return ScreenshotCapture.Unavailable("Screenshots are rate limited right now")
-    }
-
-    private companion object {
-        const val SCREENSHOT_ATTEMPTS = 3
-        const val THROTTLE_BACKOFF_MS = 400L
+        return captureWithBackoff(service::captureScreen, service::foregroundPackage)
     }
 }
+
+/**
+ * The capture policy, separated from where the capture comes from.
+ *
+ * Each way a screenshot can fail wants a different answer, and getting one wrong is
+ * invisible on a working device: a refusal retried forever stalls a run, and a rate
+ * limit treated as a refusal makes a perfectly good step fail for a reason that would
+ * have cleared in half a second. Kept apart from the accessibility service so those
+ * answers can be checked without one.
+ */
+internal suspend fun captureWithBackoff(
+    capture: suspend () -> ScreenshotOutcome,
+    foregroundPackage: () -> String,
+    attempts: Int = SCREENSHOT_ATTEMPTS,
+    backoffMs: Long = THROTTLE_BACKOFF_MS,
+): ScreenshotCapture {
+    repeat(attempts) { attempt ->
+        when (val outcome = capture()) {
+            is ScreenshotOutcome.Captured -> return ScreenshotCapture.Success(outcome.bitmap)
+
+            // The window holds protected content. A final answer, not a setback: retrying
+            // is an attempt to get around a protection the user's other app asked for.
+            ScreenshotOutcome.SecureWindowBlocked ->
+                return ScreenshotCapture.SecureWindowBlocked(foregroundPackage())
+
+            // The platform limits how often screens may be captured. Waiting longer each
+            // time is the whole remedy.
+            ScreenshotOutcome.Throttled -> delay(backoffMs * (attempt + 1))
+
+            is ScreenshotOutcome.Failed -> {
+                Logx.w("Screenshot failed: ${outcome.reason}")
+                return ScreenshotCapture.Unavailable(outcome.reason)
+            }
+        }
+    }
+    return ScreenshotCapture.Unavailable("Screenshots are rate limited right now")
+}
+
+private const val SCREENSHOT_ATTEMPTS = 3
+private const val THROTTLE_BACKOFF_MS = 400L
 
 sealed interface ScreenshotCapture {
     data class Success(val bitmap: Bitmap) : ScreenshotCapture

@@ -72,8 +72,26 @@ data class PrivacySettings(
     val cloudEnabled: Boolean = false,
     val allowScreenshotToCloud: Boolean = false,
     val maskSensitiveFields: Boolean = true,
+    /**
+     * Which cloud service is selected, by name.
+     *
+     * A name rather than a URL because that is the choice a person is making. The
+     * endpoint and models follow from it and stay overridable for anyone pointing at a
+     * compatible deployment of their own.
+     */
+    val cloudServiceName: String = "GEMINI",
     val cloudEndpoint: String = "",
     val cloudApiKeyPresent: Boolean = false,
+    /**
+     * Who is signed in, for a service that bills a subscription rather than a balance.
+     *
+     * A label only — "someone@example.com · pro" — never the token. The screen needs to
+     * show whether an account is connected and which one; it has no use for the
+     * credential itself, and keeping it out of observable state keeps it out of every
+     * log and crash report that state reaches.
+     */
+    val cloudAccountLabel: String = "",
+    val cloudSignedIn: Boolean = false,
     val cloudModel: String = "",
     val cloudVisionModel: String = "",
 )
