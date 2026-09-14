@@ -419,6 +419,7 @@
     <string name="review_understood_by_rules">AI 없이 기록만으로 이해했습니다.</string>
     <string name="task_state_completed_unverified">완료, 목표는 확인 못 함</string>
     <string name="settings_cloud_service">어떤 서비스</string>
+    <string name="agent_thinking">%1$s(으)로 판단 중…</string>
     <string name="settings_cloud_sign_in">ChatGPT로 로그인</string>
     <string name="settings_cloud_sign_in_detail">요청은 본인의 ChatGPT 요금제로 청구됩니다. 로그인은 브라우저에서 진행되며 이 휴대전화를 벗어나지 않습니다.</string>
     <string name="settings_cloud_signed_in">로그인됨</string>

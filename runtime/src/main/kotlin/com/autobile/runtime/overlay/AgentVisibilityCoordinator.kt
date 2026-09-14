@@ -117,6 +117,19 @@ class AgentVisibilityCoordinator(
             append('\n')
             append(context.getString(R.string.agent_overlay_step, skillName, step, stepIndex + 1, totalSteps))
             repairNote?.let { append('\n').append(context.getString(R.string.agent_overlay_adapting, it)) }
+            // Whether it left the phone is the part a person watching actually cares
+            // about, and the part they cannot otherwise see.
+            deliberating?.let {
+                append('\n').append(
+                    context.getString(
+                        if (it.isCloud) {
+                            R.string.agent_overlay_thinking_cloud
+                        } else {
+                            R.string.agent_overlay_thinking_device
+                        },
+                    ),
+                )
+            }
         }
     }
 }

@@ -422,6 +422,7 @@
     <string name="review_understood_by_rules">Understood from the recording alone, with no AI.</string>
     <string name="task_state_completed_unverified">Done, goal unconfirmed</string>
     <string name="settings_cloud_service">Which service</string>
+    <string name="agent_thinking">Working it out with %1$s…</string>
     <string name="settings_cloud_sign_in">Sign in with ChatGPT</string>
     <string name="settings_cloud_sign_in_detail">Requests are billed to your own ChatGPT plan. The sign-in happens in your browser and stays on this phone.</string>
     <string name="settings_cloud_signed_in">Signed in</string>

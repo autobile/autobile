@@ -56,6 +56,7 @@ import com.autobile.app.ui.AppScreen
 import com.autobile.app.ui.AppUiState
 import com.autobile.app.ui.AppViewModel
 import com.autobile.app.ui.AppViewModelFactory
+import com.autobile.app.ui.labelRes
 import com.autobile.app.ui.design.AutobileTheme
 import com.autobile.app.ui.design.BarDestination
 import com.autobile.app.ui.design.FloatingBar
@@ -295,6 +296,9 @@ private fun LiveOverlay(state: AppUiState, viewModel: AppViewModel) {
                     stepIndex = activity.stepIndex,
                     totalSteps = activity.totalSteps,
                     repairNote = activity.repairNote,
+                    thinkingNote = activity.deliberating?.let {
+                        stringResource(R.string.agent_thinking, stringResource(it.labelRes()))
+                    },
                     stopLabel = stringResource(R.string.action_stop),
                     onStop = viewModel::stopAgent,
                 )

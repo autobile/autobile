@@ -17,6 +17,8 @@
     <string name="agent_overlay_working">Autobile이 작업하는 중</string>
     <string name="agent_overlay_step">%1$s · %2$s (%3$d/%4$d)</string>
     <string name="agent_overlay_adapting">조정하는 중: %1$s</string>
+    <string name="agent_overlay_thinking_device">이 휴대전화에서 판단 중…</string>
+    <string name="agent_overlay_thinking_cloud">클라우드에서 판단 중…</string>
 
     <string name="observed_click">누름</string>
     <string name="observed_long_click">길게 누름</string>

@@ -41,6 +41,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -164,6 +165,13 @@ class AgentOrchestrator(
 
         val observer = RecordingObserver(task.id, skill, confirmation)
         val routingEvents = Collections.synchronizedList(mutableListOf<ExecutionEvent>())
+        // Only ever narrows or clears the current run's state; a stale callback arriving
+        // after the run ended finds Idle and leaves it alone.
+        val deliberating: (RuntimeTier?) -> Unit = { tier ->
+            _activity.update { current ->
+                if (current is AgentActivity.Running) current.copy(deliberating = tier) else current
+            }
+        }
         val resolvedCloudCalls = AtomicInteger(0)
         val registration = router.addListener(object : RoutingListener {
             override fun onTierSelected(
@@ -173,6 +181,7 @@ class AgentOrchestrator(
                 reason: EscalationReason?,
             ) {
                 if (label !in EXECUTION_ROUTING_LABELS) return
+                deliberating(tier)
                 val message = buildString {
                     append(label.replace('-', ' ')).append(" via ").append(tier.diagnosticName)
                     reason?.let { append(", ").append(it.diagnosticName) }
@@ -188,7 +197,9 @@ class AgentOrchestrator(
             }
 
             override fun onResolved(label: String, tier: RuntimeTier, confidence: Float, escalated: Boolean) {
-                if (label in EXECUTION_ROUTING_LABELS && tier.isCloud) resolvedCloudCalls.incrementAndGet()
+                if (label !in EXECUTION_ROUTING_LABELS) return
+                deliberating(null)
+                if (tier.isCloud) resolvedCloudCalls.incrementAndGet()
             }
 
             /**
@@ -202,6 +213,7 @@ class AgentOrchestrator(
              */
             override fun onExhausted(label: String, attempts: List<RoutingAttempt>) {
                 if (label !in EXECUTION_ROUTING_LABELS) return
+                deliberating(null)
                 routingEvents += ExecutionEvent(
                     id = Ids.event(),
                     taskId = task.id,
@@ -530,6 +542,15 @@ sealed interface AgentActivity {
         val totalSteps: Int,
         val touchTarget: com.autobile.core.model.Bounds? = null,
         val repairNote: String? = null,
+        /**
+         * Which runtime is being consulted right now, while it is being consulted.
+         *
+         * A reasoning call takes seconds — longer over a network — and during them the
+         * step description does not change. Without this the run looks stopped at
+         * exactly the moment it is doing the most work, which is when someone reaches
+         * for the stop button.
+         */
+        val deliberating: RuntimeTier? = null,
         /**
          * Whether the user started this run and is waiting on it.
          *
