@@ -49,11 +49,7 @@ jobs:
           name: minified-apk
           path: startup-apk
       - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0660", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+        run: sudo chmod 666 /dev/kvm
       - name: Install and launch minified app
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
@@ -61,10 +57,9 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none
           script: |
-            set -euo pipefail
-            trap 'adb logcat -d -v threadtime "*:E" | tail -300' ERR
+            set -eu
             apk="$(find startup-apk -type f -name '*.apk' -print -quit)"
             test -n "$apk"
             keytool -genkeypair -noprompt \
@@ -79,12 +74,22 @@ jobs:
               "$apk"
             adb install "$apk"
             adb logcat -c
-            launch="$(adb shell am start -W -n com.autobile/com.autobile.app.MainActivity)"
+            launch="$(adb shell am start -W -n com.autobile/com.autobile.app.MainActivity || true)"
             printf '%s\n' "$launch"
-            grep -Fq 'Status: ok' <<< "$launch"
+            if ! printf '%s\n' "$launch" | grep -Fq 'Status: ok'; then
+              adb logcat -d -v threadtime '*:E' | tail -300
+              exit 1
+            fi
             sleep 3
-            test -n "$(adb shell pidof com.autobile)"
-            adb shell dumpsys activity activities | grep -F 'mResumedActivity' | grep -F 'com.autobile'
+            if test -z "$(adb shell pidof com.autobile)"; then
+              adb logcat -d -v threadtime '*:E' | tail -300
+              exit 1
+            fi
+            resumed="$(adb shell dumpsys activity activities | grep -F 'mResumedActivity' || true)"
+            if ! printf '%s\n' "$resumed" | grep -Fq 'com.autobile'; then
+              adb logcat -d -v threadtime '*:E' | tail -300
+              exit 1
+            fi
 
   verify:
     if: always()
