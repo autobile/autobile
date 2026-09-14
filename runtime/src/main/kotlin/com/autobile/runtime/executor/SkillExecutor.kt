@@ -316,6 +316,7 @@ class SkillExecutor(
 
         var attempt = 0
         var awaitingReasoning = false
+        var lastFailureReason: String? = null
         var openedTargetApp = false
         var forceVision = false
         val attemptedMoves = mutableListOf<String>()
@@ -378,22 +379,25 @@ class SkillExecutor(
             awaitingReasoning = resolution is Resolution.NeedsReasoning
 
             if (resolution is Resolution.VisionBlocked) {
-                observer.onEvent(
-                    event(
-                        task.id,
-                        ExecutionEventType.STEP_FAILED,
-                        step.id,
-                        index,
-                        resolution.reason,
-                        success = false,
-                    ),
-                )
-                return StepOutcome(
-                    result = failedStep(step, index, startedAt, resolution.reason, step.validation.mode),
-                    cloudCalls = cloudCalls,
-                    deviceAiCalls = deviceAiCalls,
-                    blocked = resolution.secureWindow,
-                )
+                lastFailureReason = resolution.reason
+                if (resolution.secureWindow) {
+                    observer.onEvent(
+                        event(
+                            task.id,
+                            ExecutionEventType.STEP_FAILED,
+                            step.id,
+                            index,
+                            resolution.reason,
+                            success = false,
+                        ),
+                    )
+                    return StepOutcome(
+                        result = failedStep(step, index, startedAt, resolution.reason, step.validation.mode),
+                        cloudCalls = cloudCalls,
+                        deviceAiCalls = deviceAiCalls,
+                        blocked = true,
+                    )
+                }
             }
 
             if (resolution is Resolution.FoundPoint) {
@@ -613,7 +617,7 @@ class SkillExecutor(
         val message = if (awaitingReasoning) {
             words.awaitingRuntime(step.describeForUser())
         } else {
-            words.couldNotComplete(step.describeForUser())
+            lastFailureReason ?: words.couldNotComplete(step.describeForUser())
         }
         return StepOutcome(
             result = failedStep(step, index, startedAt, message, step.validation.mode),

@@ -57,9 +57,7 @@ class ExecutionResolver(
          * for a picture of the screen, and paying for one on every step would tax the
          * fast path to serve the rare one.
          */
-        screenshot: suspend () -> ScreenshotCapture = {
-            ScreenshotCapture.Unavailable("Screenshot capture was not requested")
-        },
+        screenshot: suspend () -> ScreenshotCapture? = { null },
         allowInference: Boolean = true,
         allowVision: Boolean = true,
         localOnly: Boolean = false,
@@ -187,13 +185,14 @@ class ExecutionResolver(
     private suspend fun lookOrGiveUp(
         target: TargetSemantics,
         snapshot: ScreenSnapshot,
-        screenshot: suspend () -> ScreenshotCapture,
+        screenshot: suspend () -> ScreenshotCapture?,
         allowVision: Boolean,
         localOnly: Boolean,
         reasonIfBlind: String,
     ): Resolution {
         if (!allowVision) return Resolution.NotFound(reasonIfBlind)
         return when (val capture = screenshot()) {
+            null -> Resolution.NotFound(reasonIfBlind)
             is ScreenshotCapture.Success -> resolveByLooking(target, snapshot, capture.bitmap, localOnly)
             is ScreenshotCapture.SecureWindowBlocked -> Resolution.VisionBlocked(
                 "Screen capture is blocked for ${capture.packageName.ifBlank { "this protected app" }}",
