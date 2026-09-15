@@ -134,6 +134,7 @@ fun ExecutionEventType.labelRes(): Int = when (this) {
     ExecutionEventType.SKILL_MATCHED -> R.string.event_skill_matched
     ExecutionEventType.PRECONDITION_CHECK -> R.string.event_precondition
     ExecutionEventType.STEP_STARTED -> R.string.event_step_started
+    ExecutionEventType.SCREEN_CAPTURED -> R.string.event_screen_captured
     ExecutionEventType.RESOLVER_SELECTED -> R.string.event_resolver_selected
     ExecutionEventType.AI_RUNTIME_SELECTED -> R.string.event_runtime_selected
     ExecutionEventType.ACTION_EXECUTED -> R.string.event_action_executed

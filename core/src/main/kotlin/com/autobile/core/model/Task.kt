@@ -126,6 +126,8 @@ enum class ExecutionEventType {
     SKILL_MATCHED,
     PRECONDITION_CHECK,
     STEP_STARTED,
+    /** A visual fallback attempted to capture the current screen. */
+    SCREEN_CAPTURED,
     RESOLVER_SELECTED,
     AI_RUNTIME_SELECTED,
     ACTION_EXECUTED,

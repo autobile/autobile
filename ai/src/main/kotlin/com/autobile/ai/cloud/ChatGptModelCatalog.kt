@@ -6,9 +6,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /** A small, fail-closed view of the subscription model catalog. */
-internal data class ChatGptModelCatalog(val models: List<String>) {
-    fun select(requested: String): String =
-        requested.takeIf(models::contains) ?: models.firstOrNull().orEmpty()
+internal data class ChatGptModelCatalog(val models: List<Model>) {
+    data class Model(val slug: String, val acceptsImages: Boolean?)
+
+    fun select(requested: String, needsVision: Boolean = false): String {
+        val eligible = if (needsVision) models.filter { it.acceptsImages != false } else models
+        return eligible.firstOrNull { it.slug == requested }?.slug ?: eligible.firstOrNull()?.slug.orEmpty()
+    }
 
     companion object {
         fun parse(body: String): ChatGptModelCatalog? {
@@ -19,13 +23,25 @@ internal data class ChatGptModelCatalog(val models: List<String>) {
                     val model = item as? JsonObject ?: return@mapNotNull null
                     val supported = (model["supported_in_api"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
                         ?: true
-                    (model["slug"] as? JsonPrimitive)?.content?.takeIf { supported && it.isNotBlank() }
+                    val slug = (model["slug"] as? JsonPrimitive)?.content
+                        ?.takeIf { supported && it.isNotBlank() }
+                        ?: return@mapNotNull null
+                    Model(slug, model.acceptsImages())
                 }
-                ?.distinct()
+                ?.distinctBy { it.slug }
                 .orEmpty()
             return models.takeIf { it.isNotEmpty() }?.let(::ChatGptModelCatalog)
         }
     }
+}
+
+/** Catalog revisions have used both a boolean and a modality list. Unknown stays eligible. */
+private fun JsonObject.acceptsImages(): Boolean? {
+    (get("supports_image_input") as? JsonPrimitive)?.content?.toBooleanStrictOrNull()?.let { return it }
+    val modalities = (get("input_modalities") as? JsonArray)
+        ?: (get("supported_inputs") as? JsonArray)
+        ?: return null
+    return modalities.any { (it as? JsonPrimitive)?.content?.equals("image", ignoreCase = true) == true }
 }
 
 /** Maps protocol errors without claiming every malformed request lacks a modality. */

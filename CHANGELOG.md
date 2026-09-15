@@ -2,6 +2,27 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.7.1] - 2026-09-15
+
+### Fixed
+
+- Continue an image-based recovery through an explicitly enabled cloud vision tier when
+  the on-device runtime reports a generic policy restriction while another app is in
+  front.
+- Report screenshot consent as a policy requirement instead of claiming the selected
+  cloud model lacks vision.
+- Select an image-capable ChatGPT subscription model from account catalog metadata and
+  fail closed when every advertised model is text-only.
+- Show screen understanding as available only when screenshot capture and an actual
+  vision runtime are both available.
+- Clear screenshot-upload consent when cloud access is disabled so Settings cannot show
+  an enabled but ineffective combination.
+
+### Added
+
+- Record every visual fallback's fresh screenshot capture and dimensions in execution
+  history without retaining or logging image content.
+
 ## [0.7.0] - 2026-09-15
 
 ### Added

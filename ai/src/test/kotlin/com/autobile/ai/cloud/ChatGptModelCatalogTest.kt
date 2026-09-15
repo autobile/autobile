@@ -15,9 +15,33 @@ class ChatGptModelCatalogTest {
             ]}""",
         )
 
-        assertThat(catalog?.models).containsExactly("gpt-current", "gpt-fallback").inOrder()
+        assertThat(catalog?.models?.map { it.slug }).containsExactly("gpt-current", "gpt-fallback").inOrder()
         assertThat(catalog?.select("gpt-fallback")).isEqualTo("gpt-fallback")
         assertThat(catalog?.select("retired-model")).isEqualTo("gpt-current")
+    }
+
+    @Test
+    fun `vision selection avoids a model that explicitly rejects images`() {
+        val catalog = ChatGptModelCatalog.parse(
+            """{"models":[
+                {"slug":"text-only","supported_in_api":true,"input_modalities":["text"]},
+                {"slug":"vision","supported_in_api":true,"input_modalities":["text","image"]}
+            ]}""",
+        )
+
+        assertThat(catalog?.select("text-only", needsVision = false)).isEqualTo("text-only")
+        assertThat(catalog?.select("text-only", needsVision = true)).isEqualTo("vision")
+    }
+
+    @Test
+    fun `vision selection fails closed when every advertised model is text only`() {
+        val catalog = ChatGptModelCatalog.parse(
+            """{"models":[
+                {"slug":"text-only","supported_in_api":true,"supports_image_input":false}
+            ]}""",
+        )
+
+        assertThat(catalog?.select("text-only", needsVision = true)).isEmpty()
     }
 
     @Test

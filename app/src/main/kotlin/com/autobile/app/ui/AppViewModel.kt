@@ -502,7 +502,15 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
         graph.orchestrator.cancelCurrentRun()
     }
 
-    fun updateCloudEnabled(enabled: Boolean) = updatePrivacy { it.copy(cloudEnabled = enabled) }
+    fun updateCloudEnabled(enabled: Boolean) = updatePrivacy {
+        it.copy(
+            cloudEnabled = enabled,
+            // A retained checked switch looked like screenshots were still usable after
+            // cloud access had been disabled. Revoking cloud now revokes its separate
+            // image consent too, so Settings always describes the effective policy.
+            allowScreenshotToCloud = if (enabled) it.allowScreenshotToCloud else false,
+        )
+    }
     fun updateCloudScreenshots(enabled: Boolean) = updatePrivacy { it.copy(allowScreenshotToCloud = enabled) }
     fun updateRuntimePreference(preference: RuntimePreference) = updatePrivacy {
         it.copy(runtimePreference = preference)

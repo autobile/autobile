@@ -282,6 +282,7 @@
     <string name="event_skill_matched">Automation matched</string>
     <string name="event_precondition">Precondition checked</string>
     <string name="event_step_started">Step started</string>
+    <string name="event_screen_captured">Screen observed</string>
     <string name="event_resolver_selected">Element found</string>
     <string name="event_runtime_selected">Runtime chosen</string>
     <string name="event_action_executed">Action performed</string>
