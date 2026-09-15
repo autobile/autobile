@@ -26,6 +26,7 @@ import com.autobile.runtime.routerWith
 import com.autobile.runtime.trigger.TriggerScheduler
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,16 +38,26 @@ import java.time.ZoneId
 class SkillEditorTest {
     private lateinit var editor: SkillEditor
     private lateinit var store: SkillStore
+    private lateinit var database: AutobileDatabase
+    private lateinit var context: Context
 
     @Before
     fun setUp() {
-        val context: Context = ApplicationProvider.getApplicationContext()
-        store = SkillStore(AutobileDatabase(context))
+        context = ApplicationProvider.getApplicationContext()
+        context.deleteDatabase(AutobileDatabase.DATABASE_NAME)
+        database = AutobileDatabase(context)
+        store = SkillStore(database)
         editor = SkillEditor(
             router = routerWith(ScriptedProvider()),
             skillStore = store,
             scheduler = TriggerScheduler(context),
         )
+    }
+
+    @After
+    fun tearDown() {
+        database.close()
+        context.deleteDatabase(AutobileDatabase.DATABASE_NAME)
     }
 
     @Test
