@@ -138,6 +138,68 @@ object AiTasks {
         append("If the screen does not offer this action, answer with found false.")
     }
 
+    /** Chooses one bounded action from a fresh screenshot for a visual-only task. */
+    val visualTaskDecision = ResponseSchema(
+        name = "VisualTaskDecision",
+        fieldGuide = """
+            status: one of act, complete, blocked
+            action: one of tap, long_press, swipe, wait, none
+            x: start/tap horizontal position from 0 to 1
+            y: start/tap vertical position from 0 to 1
+            endX: swipe end horizontal position from 0 to 1
+            endY: swipe end vertical position from 0 to 1
+            durationMs: gesture duration from 50 to 2000
+            confidence: number between 0 and 1
+            safeToAct: true only when the action is in-game and cannot purchase, open an ad, delete, message, or leave the app
+            reason: short visible evidence for this decision
+        """.trimIndent(),
+        example = """{"status":"act","action":"tap","x":0.72,"y":0.64,"endX":0.72,"endY":0.64,"durationMs":100,"confidence":0.86,"safeToAct":true,"reason":"matching tile advances the board"}""",
+        parser = { json ->
+            VisualTaskDecision(
+                status = VisualTaskStatus.parse(json.stringOr("status")),
+                action = VisualTaskAction.parse(json.stringOr("action")),
+                x = json.floatOr("x", -1f),
+                y = json.floatOr("y", -1f),
+                endX = json.floatOr("endX", -1f),
+                endY = json.floatOr("endY", -1f),
+                durationMs = json.intOr("durationMs", 100).toLong(),
+                confidence = json.floatOr("confidence", 0f),
+                safeToAct = json.boolOr("safeToAct"),
+                reason = json.stringOr("reason"),
+            )
+        },
+        validator = { decision ->
+            when {
+                decision.confidence !in 0f..1f -> "confidence out of range"
+                decision.status == VisualTaskStatus.ACT && decision.action == VisualTaskAction.NONE ->
+                    "an action is required"
+                decision.status == VisualTaskStatus.ACT && decision.action.requiresStart &&
+                    (decision.x !in 0f..1f || decision.y !in 0f..1f) -> "start coordinates out of range"
+                decision.status == VisualTaskStatus.ACT && decision.action == VisualTaskAction.SWIPE &&
+                    (decision.endX !in 0f..1f || decision.endY !in 0f..1f) -> "end coordinates out of range"
+                else -> null
+            }
+        },
+    )
+
+    fun visualTaskPrompt(
+        objective: String,
+        completionCriteria: String,
+        screenDescription: String,
+        actionNumber: Int,
+        recentActions: List<String>,
+    ): String = buildString {
+        append("Control the visible app to complete this task. Choose exactly one next action from the current screenshot.\n")
+        append("Objective: ").append(objective).append('\n')
+        append("Completion criteria: ").append(completionCriteria).append('\n')
+        append("Action number: ").append(actionNumber).append('\n')
+        if (screenDescription.isNotBlank()) append("Visible semantics: ").append(screenDescription).append('\n')
+        if (recentActions.isNotEmpty()) append("Recent actions: ").append(recentActions.takeLast(6).joinToString(" | ")).append('\n')
+        append("Use complete only when the screenshot visibly proves every completion criterion. Progress is not completion. ")
+        append("Never choose Android Home, Back, Recents, status/navigation bars, ads, purchases, or leaving the app. ")
+        append("Set safeToAct false and use blocked when no safe progress action exists. For swipe, provide exact start and end points.")
+    }
+
     // -- Screen classification ------------------------------------------------
 
     /** Decides whether the current screen is the one a step expected to reach. */
@@ -461,6 +523,11 @@ object AiTasks {
             field: one of trigger_time, trigger_notification, destination, value_field, input_text, name, behavior, unknown
             Use behavior for a request that adds, removes, or changes what execution steps do.
             newValue: the replacement value as the user stated it
+            behaviorMode: for behavior only, one of visual_until_complete, stay_in_app, unsupported
+            objective: for visual_until_complete, the language-independent task objective
+            completionCriteria: for visual_until_complete, visible evidence that proves the objective is fully complete
+            preserveExit: true when recorded exit steps must run only after completion; false when they must be removed
+            exitStepIds: for behavior only, IDs of recorded steps that leave the controlled app
             meaningChanged: true when this changes what the automation does, not just how
             summary: one sentence describing the change
             confidence: number between 0 and 1
@@ -473,6 +540,11 @@ object AiTasks {
                 meaningChanged = json.boolOr("meaningChanged"),
                 summary = json.stringOr("summary"),
                 confidence = json.floatOr("confidence", 0f),
+                behaviorMode = BehaviorEditMode.parse(json.stringOr("behaviorMode")),
+                objective = json.stringOr("objective"),
+                completionCriteria = json.stringOr("completionCriteria"),
+                preserveExit = json.boolOr("preserveExit"),
+                exitStepIds = json.stringList("exitStepIds"),
             )
         },
     )
@@ -521,6 +593,51 @@ data class PointMatch(
     val confidence: Float,
     val reason: String,
 )
+
+data class VisualTaskDecision(
+    val status: VisualTaskStatus,
+    val action: VisualTaskAction,
+    val x: Float,
+    val y: Float,
+    val endX: Float,
+    val endY: Float,
+    val durationMs: Long,
+    val confidence: Float,
+    val safeToAct: Boolean,
+    val reason: String,
+)
+
+enum class VisualTaskStatus {
+    ACT,
+    COMPLETE,
+    BLOCKED;
+
+    companion object {
+        fun parse(value: String): VisualTaskStatus = when (value.trim().lowercase()) {
+            "act" -> ACT
+            "complete" -> COMPLETE
+            else -> BLOCKED
+        }
+    }
+}
+
+enum class VisualTaskAction(val requiresStart: Boolean) {
+    TAP(true),
+    LONG_PRESS(true),
+    SWIPE(true),
+    WAIT(false),
+    NONE(false);
+
+    companion object {
+        fun parse(value: String): VisualTaskAction = when (value.trim().lowercase()) {
+            "tap", "click" -> TAP
+            "long_press", "long-press" -> LONG_PRESS
+            "swipe", "drag" -> SWIPE
+            "wait" -> WAIT
+            else -> NONE
+        }
+    }
+}
 
 data class ElementMatch(val index: Int, val confidence: Float, val reason: String) {
     val found: Boolean get() = index >= 0
@@ -630,7 +747,26 @@ data class SkillEdit(
     val meaningChanged: Boolean,
     val summary: String,
     val confidence: Float,
+    val behaviorMode: BehaviorEditMode = BehaviorEditMode.UNSUPPORTED,
+    val objective: String = "",
+    val completionCriteria: String = "",
+    val preserveExit: Boolean = false,
+    val exitStepIds: List<String> = emptyList(),
 )
+
+enum class BehaviorEditMode {
+    VISUAL_UNTIL_COMPLETE,
+    STAY_IN_APP,
+    UNSUPPORTED;
+
+    companion object {
+        fun parse(value: String): BehaviorEditMode = when (value.trim().lowercase()) {
+            "visual_until_complete" -> VISUAL_UNTIL_COMPLETE
+            "stay_in_app" -> STAY_IN_APP
+            else -> UNSUPPORTED
+        }
+    }
+}
 
 enum class SkillEditField {
     TRIGGER_TIME,

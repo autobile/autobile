@@ -117,6 +117,29 @@ class ScreenController(private val context: Context) : ScreenActuator {
         return gesture(path, durationMs, "swipe ${direction.name.lowercase()}")
     }
 
+    override suspend fun swipeRatio(
+        startXRatio: Float,
+        startYRatio: Float,
+        endXRatio: Float,
+        endYRatio: Float,
+        durationMs: Long,
+    ): ActionResult {
+        val metrics = context.resources.displayMetrics
+        val width = metrics.widthPixels.toFloat()
+        val height = metrics.heightPixels.toFloat()
+        val path = Path().apply {
+            moveTo(
+                (width * startXRatio.coerceIn(0.04f, 0.96f)),
+                (height * startYRatio.coerceIn(0.06f, 0.92f)),
+            )
+            lineTo(
+                (width * endXRatio.coerceIn(0.04f, 0.96f)),
+                (height * endYRatio.coerceIn(0.06f, 0.92f)),
+            )
+        }
+        return gesture(path, durationMs.coerceIn(50L, 2_000L), "visual swipe")
+    }
+
     /**
      * Scrolls a scrollable container, preferring the node's own scroll action.
      *

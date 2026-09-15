@@ -243,7 +243,11 @@ class CloudAiProvider(
             ?: discoverChatGptModels(cfg)?.also {
                 chatGptCatalog = CachedChatGptCatalog(cacheKey, it)
             }
-        return catalog?.select(requested, needsVision) ?: requested
+        return catalog?.select(
+            requested,
+            needsVision,
+            preferAdvanced = tier == RuntimeTier.CLOUD_ADVANCED,
+        ) ?: requested
     }
 
     private fun discoverChatGptModels(cfg: CloudConfig): ChatGptModelCatalog? {
@@ -282,7 +286,7 @@ class CloudAiProvider(
 
     private companion object {
         const val JPEG_QUALITY = 80
-        const val CLIENT_VERSION = "0.6.1"
+        const val CLIENT_VERSION = "0.8.0"
     }
 
     private data class CachedChatGptCatalog(

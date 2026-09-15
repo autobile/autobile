@@ -171,6 +171,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         router = aiRouter,
         skillStore = skillStore,
         minimizer = minimizer,
+        maskScreenshots = { settings.privacy().maskSensitiveFields },
         words = runtimeWords,
         ownPackage = appContext.packageName,
     )

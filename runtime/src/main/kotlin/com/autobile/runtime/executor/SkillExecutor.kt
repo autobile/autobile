@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import com.autobile.ai.context.ContextMinimizer
 import com.autobile.ai.router.AiRuntimeRouter
 import com.autobile.ai.task.AiTasks
+import com.autobile.ai.task.VisualTaskAction
+import com.autobile.ai.task.VisualTaskStatus
 import com.autobile.core.common.Ids
 import com.autobile.core.common.Logx
 import com.autobile.core.common.TimeSource
@@ -34,6 +36,7 @@ import com.autobile.runtime.control.ActionResult
 import com.autobile.runtime.control.ScreenActuator
 import com.autobile.runtime.perception.ScreenObserver
 import com.autobile.runtime.perception.ScreenshotCapture
+import com.autobile.runtime.perception.ScreenshotMasking
 import com.autobile.runtime.perception.VisualChangeDetector
 import com.autobile.runtime.recovery.RecoveryMove
 import com.autobile.runtime.recovery.SelfHealingEngine
@@ -65,6 +68,7 @@ class SkillExecutor(
     private val router: AiRuntimeRouter,
     private val skillStore: SkillStore,
     private val minimizer: ContextMinimizer = ContextMinimizer(),
+    private val maskScreenshots: () -> Boolean = { false },
     private val time: TimeSource = TimeSource.System,
     private val words: RuntimeVocabulary = EnglishRuntimeVocabulary,
     /**
@@ -281,6 +285,10 @@ class SkillExecutor(
         var deviceAiCalls = 0
         var snapshot = initialSnapshot
         var recovered = false
+
+        (step.action as? ActionSpec.VisualTask)?.let { visualTask ->
+            return runVisualTask(skill, step, visualTask, index, snapshot, task, observer, localOnly, startedAt)
+        }
 
         // Steps that do not act on an element bypass resolution entirely.
         step.action.asContextFreeAction()?.let { action ->
@@ -1019,7 +1027,7 @@ class SkillExecutor(
             }
         }
 
-        is ActionSpec.ReadValue, is ActionSpec.Wait, is ActionSpec.Back,
+        is ActionSpec.VisualTask, is ActionSpec.ReadValue, is ActionSpec.Wait, is ActionSpec.Back,
         is ActionSpec.Home, is ActionSpec.LaunchApp,
         -> ActionResult.Failed(words.actionNeedsAnElement())
     }
@@ -1039,6 +1047,251 @@ class SkillExecutor(
 
             else -> ActionResult.Failed(words.unsupportedAction())
         }
+
+    /**
+     * Runs a genuine visual control loop for interfaces whose next action is not known
+     * when the skill is compiled. Every iteration captures fresh pixels, asks for one
+     * bounded gesture, performs it, and observes again. Completion must be independently
+     * returned on two stable observations; a changed frame or successful gesture alone
+     * can never finish the task.
+     */
+    private suspend fun runVisualTask(
+        skill: SemanticSkill,
+        step: SkillStep,
+        action: ActionSpec.VisualTask,
+        index: Int,
+        initialSnapshot: ScreenSnapshot,
+        task: AgentTask,
+        observer: ExecutionObserver,
+        localOnly: Boolean,
+        startedAt: Long,
+    ): StepOutcome {
+        val requiredPackage = step.interactionPackage(skill)
+            ?: step.expectedState.requiredPackage
+            ?: return failedOutcome(step, index, startedAt, "Visual task has no target app", 0, 0)
+        var snapshot = initialSnapshot
+        var cloudCalls = 0
+        var deviceAiCalls = 0
+        var completionConfirmations = 0
+        var lastTier = RuntimeTier.DETERMINISTIC
+        val recentActions = mutableListOf<String>()
+
+        if (snapshot.packageName != requiredPackage) {
+            val launched = controller.launchApp(requiredPackage)
+            observer.onEvent(event(task.id, ExecutionEventType.ACTION_EXECUTED, step.id, index, launched.describe, launched.succeeded))
+            if (!launched.succeeded) {
+                return failedOutcome(step, index, startedAt, launched.describe, cloudCalls, deviceAiCalls)
+            }
+            snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)?.snapshot
+                ?: snapshot
+        }
+
+        repeat(action.maxActions.coerceIn(1, MAX_VISUAL_TASK_ACTIONS)) { actionIndex ->
+            if (observer.isCancelled()) {
+                return failedOutcome(step, index, startedAt, words.stopped(), cloudCalls, deviceAiCalls)
+            }
+            if (snapshot.packageName != requiredPackage) {
+                return failedOutcome(
+                    step,
+                    index,
+                    startedAt,
+                    words.wrongApp(requiredPackage, snapshot.packageName),
+                    cloudCalls,
+                    deviceAiCalls,
+                )
+            }
+
+            val capture = perception.captureScreenshot()
+            when (capture) {
+                is ScreenshotCapture.SecureWindowBlocked -> return StepOutcome(
+                    failedStep(step, index, startedAt, words.screenProtected(), step.validation.mode),
+                    cloudCalls,
+                    deviceAiCalls,
+                    blocked = true,
+                )
+                is ScreenshotCapture.Unavailable -> return StepOutcome(
+                    failedStep(step, index, startedAt, capture.reason, step.validation.mode),
+                    cloudCalls,
+                    deviceAiCalls,
+                    awaitingReasoning = true,
+                )
+                is ScreenshotCapture.Success -> observer.onEvent(
+                    event(
+                        task.id,
+                        ExecutionEventType.SCREEN_CAPTURED,
+                        step.id,
+                        index,
+                        "fresh screenshot captured (${capture.bitmap.width}x${capture.bitmap.height})",
+                        success = true,
+                        resolver = ResolverKind.VISION,
+                    ),
+                )
+            }
+            val bitmap = capture.bitmap
+            val routed = router.infer(
+                label = "visual-task-action",
+                schema = AiTasks.visualTaskDecision,
+                prompt = AiTasks.visualTaskPrompt(
+                    action.objective,
+                    action.completionCriteria,
+                    minimizer.describeScreen(snapshot),
+                    actionIndex + 1,
+                    recentActions,
+                ),
+                systemInstruction = AiTasks.SYSTEM_INSTRUCTION,
+                image = minimizer.cropForInference(
+                    if (maskScreenshots()) ScreenshotMasking.mask(bitmap, snapshot) else bitmap,
+                    null,
+                ),
+                requirements = InferenceRequirements(
+                    needsVision = true,
+                    minConfidence = VISUAL_TASK_CONFIDENCE,
+                    localOnly = localOnly || !step.fallback.allowCloudAi,
+                ),
+            )
+            if (routed.usedCloud) cloudCalls++
+            if (routed.tier == RuntimeTier.DEVICE_AI) deviceAiCalls++
+            lastTier = routed.tier
+            val decision = routed.value ?: return StepOutcome(
+                failedStep(
+                    step,
+                    index,
+                    startedAt,
+                    routed.result.error?.message ?: "No image-capable runtime could inspect the game",
+                    step.validation.mode,
+                ),
+                cloudCalls,
+                deviceAiCalls,
+                awaitingReasoning = true,
+            )
+            observer.onEvent(
+                event(
+                    task.id,
+                    ExecutionEventType.RESOLVER_SELECTED,
+                    step.id,
+                    index,
+                    "visual agent via ${routed.tier.diagnosticName}: ${decision.reason}",
+                    tier = routed.tier,
+                    resolver = ResolverKind.VISION,
+                ),
+            )
+
+            when (decision.status) {
+                VisualTaskStatus.COMPLETE -> {
+                    completionConfirmations++
+                    observer.onEvent(
+                        event(
+                            task.id,
+                            ExecutionEventType.VALIDATION_RESULT,
+                            step.id,
+                            index,
+                            "visual completion confirmation $completionConfirmations/$REQUIRED_COMPLETION_CONFIRMATIONS",
+                            success = completionConfirmations >= REQUIRED_COMPLETION_CONFIRMATIONS,
+                        ),
+                    )
+                    if (completionConfirmations >= REQUIRED_COMPLETION_CONFIRMATIONS) {
+                        val validation = ValidationOutcome(
+                            step.validation.mode,
+                            passed = true,
+                            reason = "visual task completion confirmed on two fresh observations",
+                            observed = decision.reason,
+                            confidence = decision.confidence,
+                        )
+                        return StepOutcome(
+                            StepResult(
+                                step.id,
+                                index,
+                                step.intent,
+                                step.target.intentLabel,
+                                ResolverKind.VISION,
+                                lastTier,
+                                success = true,
+                                validation = validation,
+                                startedAt = startedAt,
+                                finishedAt = time.nowMillis(),
+                                recovered = actionIndex > 0,
+                                message = validation.reason,
+                            ),
+                            cloudCalls,
+                            deviceAiCalls,
+                        )
+                    }
+                    delay(VISUAL_COMPLETION_RECHECK_MS)
+                    snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)?.snapshot
+                        ?: snapshot
+                }
+
+                VisualTaskStatus.BLOCKED -> return failedOutcome(
+                    step,
+                    index,
+                    startedAt,
+                    decision.reason.ifBlank { "Visual agent found no safe progress action" },
+                    cloudCalls,
+                    deviceAiCalls,
+                )
+
+                VisualTaskStatus.ACT -> {
+                    completionConfirmations = 0
+                    if (!decision.safeToAct) {
+                        return failedOutcome(
+                            step,
+                            index,
+                            startedAt,
+                            decision.reason.ifBlank { "Visual action was not proven safe" },
+                            cloudCalls,
+                            deviceAiCalls,
+                        )
+                    }
+                    if (!decision.isInsideAppContent()) {
+                        return failedOutcome(step, index, startedAt, "Visual action targeted a system edge", cloudCalls, deviceAiCalls)
+                    }
+                    val performed = when (decision.action) {
+                        VisualTaskAction.TAP -> controller.tapRatio(decision.x, decision.y)
+                        VisualTaskAction.LONG_PRESS -> controller.longPressRatio(
+                            decision.x,
+                            decision.y,
+                            decision.durationMs.coerceIn(200L, 2_000L),
+                        )
+                        VisualTaskAction.SWIPE -> controller.swipeRatio(
+                            decision.x,
+                            decision.y,
+                            decision.endX,
+                            decision.endY,
+                            decision.durationMs.coerceIn(50L, 2_000L),
+                        )
+                        VisualTaskAction.WAIT -> {
+                            delay(decision.durationMs.coerceIn(100L, 2_000L))
+                            ActionResult.Performed("visual wait")
+                        }
+                        VisualTaskAction.NONE -> ActionResult.Failed("Visual agent returned no action")
+                    }
+                    observer.onEvent(
+                        event(task.id, ExecutionEventType.ACTION_EXECUTED, step.id, index, performed.describe, performed.succeeded),
+                    )
+                    if (!performed.succeeded) {
+                        return failedOutcome(step, index, startedAt, performed.describe, cloudCalls, deviceAiCalls)
+                    }
+                    recentActions += "${decision.action.name.lowercase()}: ${decision.reason}"
+                    snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)?.snapshot
+                        ?: snapshot
+                }
+            }
+        }
+        return failedOutcome(
+            step,
+            index,
+            startedAt,
+            "Visual task reached its ${action.maxActions.coerceIn(1, MAX_VISUAL_TASK_ACTIONS)}-action limit without confirmed completion",
+            cloudCalls,
+            deviceAiCalls,
+        )
+    }
+
+    private fun com.autobile.ai.task.VisualTaskDecision.isInsideAppContent(): Boolean {
+        if (action == VisualTaskAction.WAIT) return true
+        fun pointIsSafe(x: Float, y: Float) = x in 0.04f..0.96f && y in 0.06f..0.92f
+        return pointIsSafe(x, y) && (action != VisualTaskAction.SWIPE || pointIsSafe(endX, endY))
+    }
 
     /** Checks the skill's preconditions, returning the reason it cannot start. */
     private suspend fun preconditionFailure(skill: SemanticSkill, localOnly: Boolean): String? {
@@ -1118,6 +1371,10 @@ class SkillExecutor(
         const val APP_LAUNCH_SETTLE_MS = 1_200L
         const val ROW_TOLERANCE_PX = 40
         const val COLUMN_TOLERANCE_PX = 160
+        const val MAX_VISUAL_TASK_ACTIONS = 128
+        const val REQUIRED_COMPLETION_CONFIRMATIONS = 2
+        const val VISUAL_COMPLETION_RECHECK_MS = 700L
+        const val VISUAL_TASK_CONFIDENCE = 0.65f
     }
 }
 

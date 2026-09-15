@@ -9,9 +9,15 @@ import kotlinx.serialization.json.JsonPrimitive
 internal data class ChatGptModelCatalog(val models: List<Model>) {
     data class Model(val slug: String, val acceptsImages: Boolean?)
 
-    fun select(requested: String, needsVision: Boolean = false): String {
-        val eligible = if (needsVision) models.filter { it.acceptsImages != false } else models
-        return eligible.firstOrNull { it.slug == requested }?.slug ?: eligible.firstOrNull()?.slug.orEmpty()
+    fun select(requested: String, needsVision: Boolean = false, preferAdvanced: Boolean = false): String {
+        val eligible = if (needsVision) {
+            val explicitlyVisual = models.filter { it.acceptsImages == true }
+            explicitlyVisual.ifEmpty { models.filter { it.acceptsImages != false } }
+        } else {
+            models
+        }
+        eligible.firstOrNull { it.slug == requested }?.let { return it.slug }
+        return (if (preferAdvanced) eligible.lastOrNull() else eligible.firstOrNull())?.slug.orEmpty()
     }
 
     companion object {

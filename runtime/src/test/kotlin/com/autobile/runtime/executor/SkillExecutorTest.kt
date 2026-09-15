@@ -9,6 +9,9 @@ import com.autobile.ai.task.OutcomeCheck
 import com.autobile.ai.task.PointMatch
 import com.autobile.ai.task.RecoveryAction
 import com.autobile.ai.task.RecoveryProposal
+import com.autobile.ai.task.VisualTaskAction
+import com.autobile.ai.task.VisualTaskDecision
+import com.autobile.ai.task.VisualTaskStatus
 import com.autobile.core.data.AppPolicyStore
 import com.autobile.core.data.AutobileDatabase
 import com.autobile.core.data.SettingsStore
@@ -772,5 +775,77 @@ class SkillExecutorTest {
 
         assertThat(provider.requestedLabels.filter { it == "point-match" }).hasSize(2)
         assertThat(screen.gestures).containsExactly("tap", "tap")
+    }
+
+    @Test
+    fun `visual task observes chooses gestures and requires repeated completion evidence`() = runTest {
+        val frame = ScreenshotCapture.Success(Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888))
+        val screen = FakeScreen(
+            current = screen(packageName = "com.example.game", windowTitle = "Game"),
+            screenshot = frame,
+            nextScreenshot = frame,
+        )
+        val provider = ScriptedProvider().answerSequence(
+            "visual-task-action",
+            VisualTaskDecision(
+                VisualTaskStatus.ACT,
+                VisualTaskAction.SWIPE,
+                0.25f,
+                0.6f,
+                0.75f,
+                0.6f,
+                300,
+                0.9f,
+                true,
+                "move the piece toward its target",
+            ),
+            VisualTaskDecision(
+                VisualTaskStatus.COMPLETE,
+                VisualTaskAction.NONE,
+                -1f,
+                -1f,
+                -1f,
+                -1f,
+                100,
+                0.9f,
+                true,
+                "victory screen visible",
+            ),
+            VisualTaskDecision(
+                VisualTaskStatus.COMPLETE,
+                VisualTaskAction.NONE,
+                -1f,
+                -1f,
+                -1f,
+                -1f,
+                100,
+                0.92f,
+                true,
+                "victory screen remains visible",
+            ),
+        )
+        val step = SkillStep(
+            id = "play",
+            intent = StepIntent.SELECT_ITEM,
+            target = TargetSemantics(intentLabel = "Finish game"),
+            action = ActionSpec.VisualTask(
+                objective = "Finish the current game",
+                completionCriteria = "Victory screen is visible",
+                maxActions = 8,
+            ),
+            expectedState = ExpectedState(requiredPackage = "com.example.game"),
+            validation = ValidationSpec(mode = ValidationMode.SEMANTIC, goalCritical = true),
+            fallback = FallbackPolicy(allowVision = true, allowCloudAi = true),
+        )
+        val automation = skill(listOf(step)).copy(
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
+        )
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(screen.gestures).containsExactly("swipe_ratio")
+        assertThat(provider.requestedLabels.filter { it == "visual-task-action" }).hasSize(3)
+        assertThat(outcome.stepResults.single().validation.reason).contains("two fresh observations")
     }
 }
