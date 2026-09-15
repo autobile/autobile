@@ -128,6 +128,8 @@ object AiTasks {
         }
         append("\nAnswer with the point to touch, as fractions of the screen width and height ")
         append("measured from the top-left corner. Aim for the centre of the control.\n")
+        append("Never select Android status/navigation controls, Home, Back, Recents, or an app-exit control ")
+        append("unless the requested action explicitly names that control.\n")
         if (avoidedPoints.isNotEmpty()) {
             append("These points were already tried without reaching the expected state: ")
             append(avoidedPoints.joinToString { (x, y) -> "(${"%.2f".format(x)}, ${"%.2f".format(y)})" })
@@ -456,7 +458,8 @@ object AiTasks {
     val skillEdit = ResponseSchema(
         name = "SkillEdit",
         fieldGuide = """
-            field: one of trigger_time, trigger_notification, destination, value_field, input_text, name, unknown
+            field: one of trigger_time, trigger_notification, destination, value_field, input_text, name, behavior, unknown
+            Use behavior for a request that adds, removes, or changes what execution steps do.
             newValue: the replacement value as the user stated it
             meaningChanged: true when this changes what the automation does, not just how
             summary: one sentence describing the change
@@ -636,6 +639,7 @@ enum class SkillEditField {
     VALUE_FIELD,
     INPUT_TEXT,
     NAME,
+    BEHAVIOR,
     UNKNOWN;
 
     companion object {
@@ -646,6 +650,7 @@ enum class SkillEditField {
             "value_field" -> VALUE_FIELD
             "input_text" -> INPUT_TEXT
             "name" -> NAME
+            "behavior" -> BEHAVIOR
             else -> UNKNOWN
         }
     }

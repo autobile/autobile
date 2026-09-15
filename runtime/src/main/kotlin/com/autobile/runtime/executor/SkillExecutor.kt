@@ -14,6 +14,7 @@ import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AgentTask
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.ExecutionEventType
+import com.autobile.core.model.ExpectedState
 import com.autobile.core.model.InferenceRequirements
 import com.autobile.core.model.OutcomeStatus
 import com.autobile.core.model.PerceptionResult
@@ -294,7 +295,7 @@ class SkillExecutor(
             } else {
                 snapshot
             }
-            val validated = validateAfter(step, afterAction, null, localOnly, observer, task, index)
+            val validated = validateAfter(skill, step, afterAction, null, localOnly, observer, task, index)
             return StepOutcome(
                 result = StepResult(
                     stepId = step.id,
@@ -333,8 +334,11 @@ class SkillExecutor(
             // But being here is normal, not a fault: every run started from the app
             // begins with Autobile in front. The answer is to open the app this step was
             // taught in, and only give up if there is nothing to open or it did not take.
-            if (snapshot.packageName == ownPackage) {
-                val targetApp = step.appToOpen(skill)
+            val interactionPackage = step.interactionPackage(skill)
+            if (snapshot.packageName == ownPackage ||
+                (interactionPackage != null && snapshot.packageName != interactionPackage && recovered)
+            ) {
+                val targetApp = interactionPackage ?: step.appToOpen(skill)
                 if (openedTargetApp || targetApp == null) {
                     return failedOutcome(step, index, startedAt, words.ownScreenInFront(), cloudCalls, deviceAiCalls)
                 }
@@ -462,6 +466,7 @@ class SkillExecutor(
                     } else {
                         snapshot
                     }
+                    val stayedInTargetApp = step.remainsInExpectedApp(afterTyping, skill)
                     val wrote = confirmTextLanded(step, afterTyping, context)
                     val afterCapture = perception.captureScreenshot()
                     if (afterCapture is ScreenshotCapture.SecureWindowBlocked) {
@@ -475,6 +480,7 @@ class SkillExecutor(
                     }
                     val afterPixels = (afterCapture as? ScreenshotCapture.Success)?.bitmap
                     val validated = validateAfterVisual(
+                        skill,
                         step,
                         afterTyping,
                         afterPixels,
@@ -500,7 +506,7 @@ class SkillExecutor(
                         afterTyping.nodes.isEmpty() -> pixelsChanged || (validated.evaluated && validated.passed)
                         else -> true
                     }
-                    if (typed && wrote && validated.passed && visuallyConfirmed) {
+                    if (typed && wrote && stayedInTargetApp && validated.passed && visuallyConfirmed) {
                         return StepOutcome(
                             result = StepResult(
                                 stepId = step.id,
@@ -584,7 +590,7 @@ class SkillExecutor(
                     snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)
                         ?.snapshot ?: snapshot
                     val wrote = confirmTextLanded(step, snapshot, context)
-                    val validated = validateAfter(step, snapshot, extracted, localOnly, observer, task, index)
+                    val validated = validateAfter(skill, step, snapshot, extracted, localOnly, observer, task, index)
                     if (wrote && validated.passed) {
                         if (recovered) {
                             persistRepair(skill, step, resolution, navigationSteps, observer)
@@ -679,6 +685,27 @@ class SkillExecutor(
     ).plus(skill.runtimeRequirements.requiredPackages.asSequence())
         .filterNotNull()
         .firstOrNull { it.isNotBlank() && it != ownPackage }
+
+    /** The package containing the element this step is meant to manipulate. */
+    private fun SkillStep.interactionPackage(skill: SemanticSkill): String? = sequenceOf(
+        target.screen?.packageName,
+        target.locators.firstNotNullOfOrNull { it.packageName },
+    ).plus(skill.runtimeRequirements.requiredPackages.asSequence())
+        .filterNotNull()
+        .firstOrNull { it != ownPackage }
+
+    private fun SkillStep.remainsInExpectedApp(snapshot: ScreenSnapshot, skill: SemanticSkill): Boolean {
+        val required = expectedState.requiredPackage
+            ?: expectedState.screen?.packageName
+            ?: interactionPackage(skill)
+        return required == null || snapshot.packageName == required
+    }
+
+    private fun SkillStep.expectedForValidation(skill: SemanticSkill): ExpectedState {
+        if (expectedState.requiredPackage != null || expectedState.screen?.packageName != null) return expectedState
+        val required = interactionPackage(skill) ?: return expectedState
+        return expectedState.copy(requiredPackage = required)
+    }
 
     private fun requiresEditable(step: SkillStep): Boolean = step.action is ActionSpec.InputText
 
@@ -811,6 +838,7 @@ class SkillExecutor(
     }
 
     private suspend fun validateAfter(
+        skill: SemanticSkill,
         step: SkillStep,
         snapshot: ScreenSnapshot,
         extracted: String?,
@@ -821,7 +849,7 @@ class SkillExecutor(
     ): ValidationOutcome {
         val outcome = validation.validate(
             spec = step.validation,
-            expected = step.expectedState,
+            expected = step.expectedForValidation(skill),
             snapshot = snapshot,
             extractedValue = extracted,
             localOnly = localOnly,
@@ -841,6 +869,7 @@ class SkillExecutor(
 
     /** Validates against pixels when a visual action has no usable tree after it. */
     private suspend fun validateAfterVisual(
+        skill: SemanticSkill,
         step: SkillStep,
         snapshot: ScreenSnapshot,
         screenshot: Bitmap?,
@@ -857,13 +886,19 @@ class SkillExecutor(
         } else {
             validation.validate(
                 spec = step.validation,
-                expected = step.expectedState,
+                expected = step.expectedForValidation(skill),
                 snapshot = snapshot,
                 localOnly = localOnly,
             )
         }
         val outcome = if (pixelsArePrimary || (structural?.passed == false && screenshot != null)) {
-            validation.validateVisual(step.validation, step.expectedState, snapshot, checkNotNull(screenshot), localOnly)
+            validation.validateVisual(
+                step.validation,
+                step.expectedForValidation(skill),
+                snapshot,
+                checkNotNull(screenshot),
+                localOnly,
+            )
         } else {
             checkNotNull(structural)
         }

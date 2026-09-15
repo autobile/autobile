@@ -2,6 +2,23 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.7.2] - 2026-09-15
+
+### Fixed
+
+- Apply supported plain-language behavior corrections to executable steps instead of
+  changing only descriptive text, and reject edits that cannot safely change behavior.
+- Show the active head version immediately after a direct edit or accepted repair.
+- Refresh the selected automation and version history in the same state update that
+  commits a direct edit or accepted recovery proposal.
+- Reject visual targets inside system status/navigation edges, including the Android
+  Home control shown over full-screen games.
+- Tell visual grounding not to select Home, Back, Recents, or app-exit controls unless
+  the requested action explicitly names them.
+- Require semantic and visual validation to remain in the declared app before accepting
+  a step or persisting a recovery.
+- Relaunch the intended app before retrying a recovery that unexpectedly left it.
+
 ## [0.7.1] - 2026-09-15
 
 ### Fixed

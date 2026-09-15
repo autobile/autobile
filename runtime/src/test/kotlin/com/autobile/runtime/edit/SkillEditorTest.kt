@@ -256,6 +256,55 @@ class SkillEditorTest {
         assertThat(preview.changedStepIds).containsExactly("input")
     }
 
+    @Test
+    fun `stay in game correction removes exit steps and records the active version immediately`() = runTest {
+        val game = skill().copy(
+            goal = "Start and exit game",
+            steps = listOf(
+                SkillStep(
+                    id = "launch",
+                    intent = StepIntent.LAUNCH_APP,
+                    target = TargetSemantics(intentLabel = "Puzzle game"),
+                    action = ActionSpec.LaunchApp("com.example.game"),
+                ),
+                SkillStep(
+                    id = "play",
+                    intent = StepIntent.SELECT_ITEM,
+                    target = TargetSemantics(intentLabel = "New game"),
+                    action = ActionSpec.Click,
+                ),
+                SkillStep(
+                    id = "exit",
+                    intent = StepIntent.GO_HOME,
+                    target = TargetSemantics(intentLabel = "Exit game", description = "leave the game"),
+                    action = ActionSpec.Home,
+                ),
+            ),
+        )
+        store.save(game)
+
+        val preview = editor.buildPreview(
+            game,
+            edit(SkillEditField.BEHAVIOR, "게임에서 나가지 말고 계속 플레이해", meaningChanged = true),
+        ) as SkillEditPreview.Ready
+        val applied = editor.apply(preview) as SkillEditApplyResult.Applied
+
+        assertThat(applied.skill.steps.map { it.id }).containsExactly("launch", "play").inOrder()
+        assertThat(applied.skill.postconditions.single().packageName).isEqualTo("com.example.game")
+        assertThat(preview.changedStepIds).contains("exit")
+        assertThat(store.versions("skill").map { it.version }).containsExactly(4, 3).inOrder()
+    }
+
+    @Test
+    fun `unsupported behavior edit is rejected instead of pretending to apply`() {
+        val preview = editor.buildPreview(
+            skill(),
+            edit(SkillEditField.BEHAVIOR, "완전히 다른 게임을 새로 만들어"),
+        )
+
+        assertThat(preview).isInstanceOf(SkillEditPreview.Rejected::class.java)
+    }
+
     private fun noteSkill(): SemanticSkill {
         val taughtAt = LocalDateTime.of(2026, 9, 12, 14, 56)
         return skill().copy(

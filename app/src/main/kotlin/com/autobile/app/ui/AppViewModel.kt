@@ -461,10 +461,11 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
     fun applyEdit(preview: SkillEditPreview.Ready) = launchAction {
         when (val result = graph.skillEditor.apply(preview)) {
             is SkillEditApplyResult.Applied -> {
-                _state.update {
-                    it.copy(editPreview = null, message = graph.appContext.getString(R.string.msg_change_applied))
-                }
-                selectSkill(result.skill.id)
+                refreshAppliedSkill(
+                    result.skill,
+                    graph.appContext.getString(R.string.msg_change_applied),
+                    clearEditPreview = true,
+                )
             }
             is SkillEditApplyResult.Rejected -> _state.update {
                 it.copy(editPreview = null, message = result.reason)
@@ -475,7 +476,12 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
     fun reviewPatch(candidate: SkillPatchCandidate, accept: Boolean) = launchAction {
         if (accept) {
             graph.acceptPatch(candidate).fold(
-                onSuccess = { showMessage(graph.appContext.getString(R.string.msg_repair_applied, it.version)) },
+                onSuccess = {
+                    refreshAppliedSkill(
+                        it,
+                        graph.appContext.getString(R.string.msg_repair_applied, it.version),
+                    )
+                },
                 onFailure = { showMessage(it.message ?: graph.appContext.getString(R.string.msg_repair_failed)) },
             )
         } else {
@@ -483,6 +489,26 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
             showMessageRes(R.string.msg_repair_dismissed)
         }
         _state.update { it.copy(patches = graph.skillStore.pendingPatches()) }
+    }
+
+    /** Publishes a committed version to the current detail screen in the same state update. */
+    private suspend fun refreshAppliedSkill(
+        saved: SemanticSkill,
+        message: String,
+        clearEditPreview: Boolean = false,
+    ) {
+        val versions = graph.skillStore.versions(saved.id)
+        val patches = graph.skillStore.pendingPatches()
+        _state.update { state ->
+            state.copy(
+                skills = listOf(saved) + state.skills.filterNot { it.id == saved.id },
+                selectedSkillId = saved.id,
+                skillVersions = versions,
+                patches = patches,
+                editPreview = if (clearEditPreview) null else state.editPreview,
+                message = message,
+            )
+        }
     }
 
     fun selectTask(taskId: String) = launchAction {

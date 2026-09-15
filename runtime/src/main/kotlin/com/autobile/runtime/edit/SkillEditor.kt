@@ -15,6 +15,7 @@ import com.autobile.core.model.SemanticSkill
 import com.autobile.core.model.SkillConstant
 import com.autobile.core.model.SkillVersionRecord
 import com.autobile.core.model.SkillVariable
+import com.autobile.core.model.SkillStep
 import com.autobile.core.model.StepIntent
 import com.autobile.core.model.TriggerSpec
 import com.autobile.core.model.ValueRef
@@ -67,6 +68,15 @@ class SkillEditor(
 
     /** Handles obvious time changes without spending battery or exposing text to a model. */
     private fun parseDeterministic(request: String): SkillEdit? {
+        if (requestsStayingInApp(request)) {
+            return SkillEdit(
+                field = SkillEditField.BEHAVIOR,
+                newValue = request.trim(),
+                meaningChanged = true,
+                summary = "Keep the game open and remove recorded exit actions",
+                confidence = 1f,
+            )
+        }
         if (hasCurrentMomentIntent(request)) {
             return SkillEdit(
                 field = SkillEditField.INPUT_TEXT,
@@ -122,12 +132,16 @@ class SkillEditor(
             SkillEditField.VALUE_FIELD -> patchValueField(skill, value)
             SkillEditField.INPUT_TEXT -> patchCurrentMoment(skill, value)
             SkillEditField.NAME -> skill.copy(name = value.take(MAX_NAME_LENGTH))
+            SkillEditField.BEHAVIOR -> patchBehavior(skill, value)
             SkillEditField.UNKNOWN -> null
         } ?: return SkillEditPreview.Rejected("That kind of change is not supported yet")
 
-        val changedSteps = skill.steps.zip(patched.steps)
-            .filter { (before, after) -> before != after }
-            .map { it.second.id }
+        if (patched == skill) return SkillEditPreview.Rejected("The requested change did not alter this automation")
+
+        val beforeById = skill.steps.associateBy { it.id }
+        val afterById = patched.steps.associateBy { it.id }
+        val changedSteps = (beforeById.keys + afterById.keys)
+            .filter { beforeById[it] != afterById[it] }
         val summary = edit.summary.ifBlank { "Update ${edit.field.name.lowercase().replace('_', ' ')} to $value" }
         return SkillEditPreview.Ready(
             original = skill,
@@ -200,6 +214,48 @@ class SkillEditor(
             )
         }
         return skill.copy(steps = steps)
+    }
+
+    /**
+     * Applies the bounded behaviour correction that is safe to derive without inventing
+     * new gameplay. A request to keep playing / not leave removes recorded exit moves
+     * and adds an observable package post-condition. Other free-form behaviour changes
+     * fail closed instead of displaying an "applied" message for a cosmetic goal edit.
+     */
+    private fun patchBehavior(skill: SemanticSkill, value: String): SemanticSkill? {
+        if (!requestsStayingInApp(value)) return null
+        val removed = skill.steps.filter(::isExitStep)
+        if (removed.isEmpty()) return null
+        val retained = skill.steps.filterNot(::isExitStep)
+        if (retained.isEmpty()) return null
+
+        val appPackage = retained.asSequence().mapNotNull { step ->
+            (step.action as? ActionSpec.LaunchApp)?.packageName
+                ?: step.target.screen?.packageName
+                ?: step.target.locators.firstNotNullOfOrNull { it.packageName }
+        }.firstOrNull() ?: skill.runtimeRequirements.requiredPackages.singleOrNull()
+
+        val postconditions = if (appPackage == null || skill.postconditions.any { it.packageName == appPackage }) {
+            skill.postconditions
+        } else {
+            skill.postconditions + com.autobile.core.model.Condition(
+                description = "The game remains in the foreground",
+                kind = com.autobile.core.model.ConditionKind.STRUCTURAL,
+                packageName = appPackage,
+            )
+        }
+        return skill.copy(goal = value, steps = retained, postconditions = postconditions)
+    }
+
+    private fun isExitStep(step: SkillStep): Boolean {
+        if (step.action is ActionSpec.Home || step.intent == StepIntent.GO_HOME) return true
+        val semanticText = listOf(
+            step.target.intentLabel,
+            step.target.description,
+            step.description,
+        ).joinToString(" ").lowercase()
+        return EXIT_TERMS.any(semanticText::contains) ||
+            (step.action is ActionSpec.Back && LEAVE_TERMS.any(semanticText::contains))
     }
 
     /**
@@ -293,6 +349,12 @@ class SkillEditor(
             append(". Constants: ")
             append(constants.joinToString { "${it.name}=${it.value}" })
         }
+        if (steps.isNotEmpty()) {
+            append(". Steps: ")
+            append(steps.joinToString(" -> ") { step ->
+                step.description.ifBlank { step.target.description.ifBlank { step.target.intentLabel } }
+            })
+        }
     }
 
     private companion object {
@@ -301,6 +363,8 @@ class SkillEditor(
         val TIME_PATTERN = Regex("(?:^|\\s)([01]?\\d|2[0-3]):([0-5]\\d)(?:\\s|$)")
         val KOREAN_TIME_PATTERN = Regex("(?:^|\\s)([01]?\\d|2[0-3])\\s*시(?:\\s*([0-5]?\\d)\\s*분)?")
         val DESTINATION_NAMES = listOf("destination", "channel", "recipient", "target", "room")
+        val EXIT_TERMS = listOf("exit", "quit", "leave game", "leave the game", "나가기", "게임 종료", "종료하기", "홈으로")
+        val LEAVE_TERMS = listOf("back", "뒤로", "나가기", "exit", "leave")
         // Android's ICU regex engine (including API 30) requires the closing brace to
         // be escaped as well. The desktop JVM accepts a bare `}`, which let unit tests
         // pass while the release APK crashed during AppGraph construction.
@@ -313,6 +377,14 @@ class SkillEditor(
             val englishMoment = listOf("current", "now", "today").any(normalised::contains) &&
                 listOf("date", "time", "timestamp", "moment").any(normalised::contains)
             return koreanMoment || englishMoment
+        }
+
+        fun requestsStayingInApp(value: String): Boolean {
+            val normalised = value.lowercase()
+            return listOf(
+                "계속 플레이", "게임 플레이", "게임을 해", "게임해", "나가지 마", "나가면 안", "종료하지 마",
+                "keep playing", "play the game", "do not exit", "don't exit", "do not leave", "don't leave", "stay in",
+            ).any(normalised::contains)
         }
     }
 }

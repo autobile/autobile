@@ -198,6 +198,22 @@ class ValidationEngineTest {
     }
 
     @Test
+    fun `semantic model cannot confirm an outcome after leaving the required app`() = runTest {
+        val provider = ScriptedProvider().answerWith(
+            "outcome-check",
+            OutcomeCheck(satisfied = true, confidence = 0.99f, observed = "home screen"),
+        )
+        val outcome = engine(provider).validate(
+            spec = ValidationSpec(mode = ValidationMode.SEMANTIC, expectation = "continue playing"),
+            expected = ExpectedState(requiredPackage = "com.example.game"),
+            snapshot = screen(packageName = "com.android.launcher", nodes = arrayOf(node("home", text = "Home"))),
+        )
+
+        assertThat(outcome.passed).isFalse()
+        assertThat(outcome.reason).contains("com.android.launcher")
+    }
+
+    @Test
     fun `a rejected semantic outcome fails and records what was seen`() = runTest {
         val provider = ScriptedProvider().answerWith(
             "outcome-check",

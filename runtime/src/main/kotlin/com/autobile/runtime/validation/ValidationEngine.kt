@@ -60,6 +60,7 @@ class ValidationEngine(
         screenshot: Bitmap,
         localOnly: Boolean,
     ): ValidationOutcome {
+        packageMismatch(expected, snapshot, spec.mode)?.let { return it }
         val expectation = spec.expectation.ifBlank { expected.description }
         if (expectation.isBlank()) {
             return ValidationOutcome(
@@ -110,7 +111,7 @@ class ValidationEngine(
         if (expected.isEmpty) {
             return ValidationOutcome(spec.mode, passed = true, reason = words.noExpectationDeclared())
         }
-        expected.requiredPackage?.let { pkg ->
+        (expected.requiredPackage ?: expected.screen?.packageName)?.let { pkg ->
             if (snapshot.packageName != pkg) {
                 return ValidationOutcome(
                     spec.mode,
@@ -255,6 +256,10 @@ class ValidationEngine(
         snapshot: ScreenSnapshot,
         localOnly: Boolean,
     ): ValidationOutcome {
+        // A model describing the pixels cannot overrule an objective app identity.
+        // This prevents a launcher/Home screen from being accepted as successful game
+        // progress merely because it looks like a plausible navigation outcome.
+        packageMismatch(expected, snapshot, spec.mode)?.let { return it }
         val expectation = spec.expectation.ifBlank { expected.description }
         if (expectation.isBlank()) {
             return validateStructure(spec.copy(mode = ValidationMode.STRUCTURAL), expected, snapshot)
@@ -292,6 +297,22 @@ class ValidationEngine(
             reason = if (check.satisfied) "outcome confirmed" else "expected outcome did not occur",
             observed = check.observed,
             confidence = minOf(check.confidence, routed.confidence),
+        )
+    }
+
+    private fun packageMismatch(
+        expected: ExpectedState,
+        snapshot: ScreenSnapshot,
+        mode: ValidationMode,
+    ): ValidationOutcome? {
+        val required = expected.requiredPackage ?: expected.screen?.packageName ?: return null
+        if (snapshot.packageName == required) return null
+        return ValidationOutcome(
+            mode = mode,
+            passed = false,
+            reason = words.wrongApp(required, snapshot.packageName),
+            observed = snapshot.packageName,
+            confidence = 1f,
         )
     }
 

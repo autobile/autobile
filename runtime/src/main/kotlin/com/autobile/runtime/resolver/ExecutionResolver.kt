@@ -293,7 +293,7 @@ class ExecutionResolver(
             ),
         )
         val match = routed.value
-        return if (match != null && match.found) {
+        return if (match != null && match.found && match.isInsideAppContent()) {
             Resolution.FoundPoint(
                 xRatio = match.xRatio,
                 yRatio = match.yRatio,
@@ -302,6 +302,8 @@ class ExecutionResolver(
                 explanation = match.reason.ifBlank { "located by looking at the screen" },
                 usedCloud = routed.usedCloud,
             )
+        } else if (match != null && match.found) {
+            Resolution.NotFound("The visual target is inside a system navigation edge")
         } else if (match == null) {
             unresolved(routed.result.error, target, visually = true)
         } else {
@@ -482,7 +484,14 @@ class ExecutionResolver(
         const val STRONG_MATCH_SCORE = 3.0
         const val AMBIGUITY_MARGIN = 1.5
         const val INFERENCE_CONFIDENCE_THRESHOLD = 0.6f
+        // Screen captures include status/navigation bars. An ordinary app element must
+        // never resolve inside those edges; Back/Home have dedicated context-free actions.
+        const val MIN_APP_Y_RATIO = 0.025f
+        const val MAX_APP_Y_RATIO = 0.94f
         val WHITESPACE = Regex("\\s+")
+
+        fun com.autobile.ai.task.PointMatch.isInsideAppContent(): Boolean =
+            xRatio in 0f..1f && yRatio in MIN_APP_Y_RATIO..MAX_APP_Y_RATIO
     }
 }
 
