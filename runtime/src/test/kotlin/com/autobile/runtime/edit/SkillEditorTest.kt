@@ -2,6 +2,8 @@ package com.autobile.runtime.edit
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.Configuration
+import androidx.work.WorkManager
 import com.autobile.ai.task.SkillEdit
 import com.autobile.ai.task.SkillEditField
 import com.autobile.core.data.AutobileDatabase
@@ -45,6 +47,12 @@ class SkillEditorTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         context.deleteDatabase(AutobileDatabase.DATABASE_NAME)
+        runCatching {
+            WorkManager.initialize(
+                context,
+                Configuration.Builder().setMinimumLoggingLevel(android.util.Log.ERROR).build(),
+            )
+        }
         database = AutobileDatabase(context)
         store = SkillStore(database)
         editor = SkillEditor(
