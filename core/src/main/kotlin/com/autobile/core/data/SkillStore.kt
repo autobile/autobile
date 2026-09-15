@@ -118,10 +118,17 @@ class SkillStore(
     }
 
     suspend fun versions(skillId: String): List<SemanticSkill> = withContext(Dispatchers.IO) {
-        query(
+        val archived = query(
             "SELECT document FROM skill_versions WHERE skill_id = ? ORDER BY version DESC",
             arrayOf(skillId),
         )
+        // The archive contains the documents superseded by a save. The active head lives
+        // in `skills`, so omitting it made a just-applied edit look as though it had not
+        // produced a version until the *next* edit archived it.
+        val head = query("SELECT document FROM skills WHERE id = ?", arrayOf(skillId)).firstOrNull()
+        (listOfNotNull(head) + archived)
+            .distinctBy { it.version }
+            .sortedByDescending { it.version }
     }
 
     /** Restores an archived version as a new head version (never rewrites history). */

@@ -66,6 +66,20 @@ class UnnameableScreenTest {
     }
 
     @Test
+    fun `visual grounding cannot select the system navigation edge`() = runTest {
+        val resolver = resolverSeeing(PointMatch(true, 0.5f, 0.98f, 0.99f, "system Home button"))
+
+        val resolution = resolver.resolve(
+            target,
+            ScreenSnapshot(),
+            screenshot = { ScreenshotCapture.Success(bitmap()) },
+        )
+
+        assertThat(resolution).isInstanceOf(Resolution.NotFound::class.java)
+        assertThat((resolution as Resolution.NotFound).reason).contains("system navigation")
+    }
+
+    @Test
     fun `missing vision runtime is deferred instead of reported as a missing control`() = runTest {
         val resolver = ExecutionResolver(routerWith(ScriptedProvider(available = false)))
 

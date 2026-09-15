@@ -67,7 +67,9 @@ fun SkillDetailScreen(state: AppUiState, viewModel: AppViewModel) {
         return
     }
 
-    var editText by remember(skill.id) { mutableStateOf("") }
+    // A successful edit changes the version. Clearing then makes the committed state
+    // visible instead of leaving the old request in the field as if nothing happened.
+    var editText by remember(skill.id, skill.version) { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
 
     Column(
