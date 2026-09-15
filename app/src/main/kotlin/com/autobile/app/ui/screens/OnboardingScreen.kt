@@ -32,6 +32,8 @@ import com.autobile.app.ui.design.Hairline
 import com.autobile.app.ui.design.Meter
 import com.autobile.app.ui.design.PrimaryButton
 import com.autobile.app.ui.design.QuietButton
+import com.autobile.app.ui.design.Choice
+import com.autobile.app.ui.design.ChoiceRow
 import com.autobile.app.ui.design.Space
 import com.autobile.app.ui.design.Statement
 import com.autobile.app.ui.design.StatusBarSpacer
@@ -41,9 +43,11 @@ import com.autobile.app.ui.design.theme
 import com.autobile.app.ui.detailRes
 import com.autobile.app.ui.labelRes
 import com.autobile.core.model.DeviceCapabilityProfile
+import com.autobile.core.model.RuntimePreference
 
 private val OnboardingOrder = listOf(
     OnboardingStep.CAPABILITY,
+    OnboardingStep.AI_RUNTIME,
     OnboardingStep.PERMISSIONS,
     OnboardingStep.INSTANT_TASK,
     OnboardingStep.TEACH,
@@ -93,6 +97,7 @@ fun OnboardingScreen(
 
         when (state.onboardingStep) {
             OnboardingStep.CAPABILITY -> CapabilityStep(state, viewModel)
+            OnboardingStep.AI_RUNTIME -> AiRuntimeStep(state, viewModel)
             OnboardingStep.PERMISSIONS -> PermissionsStep(state, viewModel, context, requestNotificationPermission)
             OnboardingStep.INSTANT_TASK -> FirstRunStep(viewModel)
             OnboardingStep.TEACH -> TeachStep(viewModel)
@@ -100,6 +105,70 @@ fun OnboardingScreen(
         }
         Spacer(Modifier.height(48.dp))
     }
+}
+
+@Composable
+private fun AiRuntimeStep(state: AppUiState, viewModel: AppViewModel) {
+    Text(stringResource(R.string.onboarding_ai_title), style = TypeScale.title, color = theme.ink)
+    Spacer(Modifier.height(10.dp))
+    Statement(
+        stringResource(
+            if (state.capability.deviceAi.isUsable) {
+                R.string.onboarding_ai_device_available
+            } else {
+                R.string.onboarding_ai_device_unavailable
+            },
+        ),
+    )
+    Spacer(Modifier.height(24.dp))
+
+    if (state.privacy.cloudSignedIn) {
+        Text(stringResource(R.string.onboarding_ai_priority), style = TypeScale.meta, color = theme.muted)
+        Spacer(Modifier.height(10.dp))
+        ChoiceRow {
+            Choice(
+                stringResource(R.string.onboarding_ai_device_first),
+                state.privacy.runtimePreference == RuntimePreference.DEVICE_FIRST,
+                { viewModel.updateRuntimePreference(RuntimePreference.DEVICE_FIRST) },
+            )
+            Choice(
+                stringResource(R.string.onboarding_ai_chatgpt_first),
+                state.privacy.runtimePreference == RuntimePreference.CLOUD_FIRST,
+                viewModel::configureChatGptPriority,
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        Statement(stringResource(R.string.onboarding_ai_connected, state.privacy.cloudAccountLabel))
+        Spacer(Modifier.height(24.dp))
+        PrimaryButton(stringResource(R.string.action_continue), viewModel::nextOnboardingStep)
+        return
+    }
+
+    if (!state.capability.deviceAi.isUsable) {
+        PrimaryButton(
+            stringResource(R.string.onboarding_ai_connect_chatgpt),
+            viewModel::configureChatGptPriority,
+            enabled = !state.cloudSignInPending,
+        )
+        Spacer(Modifier.height(12.dp))
+        QuietButton(
+            stringResource(R.string.onboarding_ai_continue_deterministic),
+            viewModel::continueWithDeviceFirst,
+        )
+    } else {
+        PrimaryButton(
+            stringResource(R.string.onboarding_ai_continue_device),
+            viewModel::continueWithDeviceFirst,
+        )
+        Spacer(Modifier.height(12.dp))
+        QuietButton(
+            stringResource(R.string.onboarding_ai_connect_chatgpt_first),
+            viewModel::configureChatGptPriority,
+            enabled = !state.cloudSignInPending,
+        )
+    }
+    Spacer(Modifier.height(16.dp))
+    Statement(stringResource(R.string.onboarding_ai_cloud_consent), color = theme.muted)
 }
 
 @Composable

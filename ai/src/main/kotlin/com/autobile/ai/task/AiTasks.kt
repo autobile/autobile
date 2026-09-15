@@ -116,7 +116,11 @@ object AiTasks {
         },
     )
 
-    fun pointMatchPrompt(targetDescription: String, synonyms: List<String>): String = buildString {
+    fun pointMatchPrompt(
+        targetDescription: String,
+        synonyms: List<String>,
+        avoidedPoints: List<Pair<Float, Float>> = emptyList(),
+    ): String = buildString {
         append("Look at this screen and find where to act.\n")
         append("Action: ").append(targetDescription).append('\n')
         if (synonyms.isNotEmpty()) {
@@ -124,6 +128,11 @@ object AiTasks {
         }
         append("\nAnswer with the point to touch, as fractions of the screen width and height ")
         append("measured from the top-left corner. Aim for the centre of the control.\n")
+        if (avoidedPoints.isNotEmpty()) {
+            append("These points were already tried without reaching the expected state: ")
+            append(avoidedPoints.joinToString { (x, y) -> "(${"%.2f".format(x)}, ${"%.2f".format(y)})" })
+            append(". Choose a different valid control, or answer found false.\n")
+        }
         append("If the screen does not offer this action, answer with found false.")
     }
 

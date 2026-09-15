@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.autobile.core.model.KillSwitchState
 import com.autobile.core.model.PrivacySettings
+import com.autobile.core.model.RuntimePreference
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -48,6 +49,11 @@ class SettingsStore(context: Context) {
         cloudSignedIn = !prefs.getString(KEY_CLOUD_SESSION, "").isNullOrBlank(),
         cloudModel = prefs.getString(KEY_CLOUD_MODEL, DEFAULT_CLOUD_MODEL).orEmpty(),
         cloudVisionModel = prefs.getString(KEY_CLOUD_VISION_MODEL, DEFAULT_CLOUD_MODEL).orEmpty(),
+        runtimePreference = runCatching {
+            RuntimePreference.valueOf(
+                prefs.getString(KEY_RUNTIME_PREFERENCE, RuntimePreference.DEVICE_FIRST.name).orEmpty(),
+            )
+        }.getOrDefault(RuntimePreference.DEVICE_FIRST),
     )
 
     fun updatePrivacy(settings: PrivacySettings) = prefs.edit {
@@ -58,6 +64,7 @@ class SettingsStore(context: Context) {
         putString(KEY_CLOUD_ENDPOINT, settings.cloudEndpoint)
         putString(KEY_CLOUD_MODEL, settings.cloudModel)
         putString(KEY_CLOUD_VISION_MODEL, settings.cloudVisionModel)
+        putString(KEY_RUNTIME_PREFERENCE, settings.runtimePreference.name)
     }
 
     /**
@@ -136,6 +143,7 @@ class SettingsStore(context: Context) {
         private const val KEY_CLOUD_ACCOUNT_LABEL = "cloud_account_label"
         private const val KEY_CLOUD_MODEL = "cloud_model"
         private const val KEY_CLOUD_VISION_MODEL = "cloud_vision_model"
+        private const val KEY_RUNTIME_PREFERENCE = "runtime_preference"
         private const val KEY_KILL_SWITCH = "kill_switch"
         private const val KEY_KILL_SWITCH_AT = "kill_switch_at"
         private const val KEY_KILL_SWITCH_REASON = "kill_switch_reason"

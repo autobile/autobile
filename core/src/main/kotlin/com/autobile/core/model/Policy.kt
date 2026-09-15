@@ -94,7 +94,17 @@ data class PrivacySettings(
     val cloudSignedIn: Boolean = false,
     val cloudModel: String = "",
     val cloudVisionModel: String = "",
+    /** Which inference family is tried first after deterministic execution cannot finish. */
+    val runtimePreference: RuntimePreference = RuntimePreference.DEVICE_FIRST,
 )
+
+enum class RuntimePreference {
+    /** Preserve privacy and latency by trying on-device runtimes before the cloud. */
+    DEVICE_FIRST,
+
+    /** Use the configured cloud subscription first for users who prefer its capability. */
+    CLOUD_FIRST,
+}
 
 /** Global stop control. While engaged, no skill may execute for any reason. */
 @Serializable

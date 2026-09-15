@@ -11,6 +11,7 @@ import com.autobile.core.model.InferenceErrorKind
 import com.autobile.core.model.InferenceRequirements
 import com.autobile.core.model.InferenceResult
 import com.autobile.core.model.RuntimeTier
+import com.autobile.core.model.RuntimePreference
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -122,6 +123,42 @@ class AiRuntimeRouterTest {
         assertThat(routed.isSuccess).isTrue()
         assertThat(routed.tier).isEqualTo(RuntimeTier.DEVICE_AI)
         assertThat(routed.usedCloud).isFalse()
+        assertThat(cloud.callCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `cloud-first preference tries the configured cloud before device AI`() = runTest {
+        val device = FakeProvider(RuntimeTier.DEVICE_AI) { success(RuntimeTier.DEVICE_AI) }
+        val cloud = FakeProvider(RuntimeTier.CLOUD_LIGHT) { success(RuntimeTier.CLOUD_LIGHT) }
+        val router = AiRuntimeRouter(
+            providers = listOf(device, cloud),
+            preference = { RuntimePreference.CLOUD_FIRST },
+        )
+
+        val routed = router.infer("test", schema, "prompt")
+
+        assertThat(routed.tier).isEqualTo(RuntimeTier.CLOUD_LIGHT)
+        assertThat(cloud.callCount).isEqualTo(1)
+        assertThat(device.callCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `local-only request overrides cloud-first preference`() = runTest {
+        val device = FakeProvider(RuntimeTier.DEVICE_AI) { success(RuntimeTier.DEVICE_AI) }
+        val cloud = FakeProvider(RuntimeTier.CLOUD_LIGHT) { success(RuntimeTier.CLOUD_LIGHT) }
+        val router = AiRuntimeRouter(
+            providers = listOf(device, cloud),
+            preference = { RuntimePreference.CLOUD_FIRST },
+        )
+
+        val routed = router.infer(
+            "test",
+            schema,
+            "prompt",
+            requirements = InferenceRequirements(localOnly = true),
+        )
+
+        assertThat(routed.tier).isEqualTo(RuntimeTier.DEVICE_AI)
         assertThat(cloud.callCount).isEqualTo(0)
     }
 

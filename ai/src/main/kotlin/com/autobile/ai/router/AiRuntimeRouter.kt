@@ -15,6 +15,7 @@ import com.autobile.core.model.InferenceError
 import com.autobile.core.model.InferenceErrorKind
 import com.autobile.core.model.InferenceRequirements
 import com.autobile.core.model.InferenceResult
+import com.autobile.core.model.RuntimePreference
 import com.autobile.core.model.RuntimeTier
 import kotlinx.coroutines.delay
 import java.io.Closeable
@@ -35,6 +36,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 class AiRuntimeRouter(
     private val providers: List<AiProvider>,
     listener: RoutingListener = RoutingListener.NoOp,
+    private val preference: () -> RuntimePreference = { RuntimePreference.DEVICE_FIRST },
 ) {
 
     private val listeners = CopyOnWriteArrayList<RoutingListener>().apply { add(listener) }
@@ -45,13 +47,21 @@ class AiRuntimeRouter(
         return Closeable { listeners -= listener }
     }
 
-    /** Ordered cheapest-first; the order of [RuntimeTier] is the routing order. */
-    private val orderedTiers = listOf(
-        RuntimeTier.DEVICE_AI,
-        RuntimeTier.LOCAL_LLM,
-        RuntimeTier.CLOUD_LIGHT,
-        RuntimeTier.CLOUD_ADVANCED,
-    )
+    /** Ordered by the user's policy after deterministic execution has already failed. */
+    private fun orderedTiers(): List<RuntimeTier> = when (preference()) {
+        RuntimePreference.DEVICE_FIRST -> listOf(
+            RuntimeTier.DEVICE_AI,
+            RuntimeTier.LOCAL_LLM,
+            RuntimeTier.CLOUD_LIGHT,
+            RuntimeTier.CLOUD_ADVANCED,
+        )
+        RuntimePreference.CLOUD_FIRST -> listOf(
+            RuntimeTier.CLOUD_LIGHT,
+            RuntimeTier.CLOUD_ADVANCED,
+            RuntimeTier.DEVICE_AI,
+            RuntimeTier.LOCAL_LLM,
+        )
+    }
 
     /**
      * Runs a structured request, escalating until one tier succeeds.
@@ -263,7 +273,7 @@ class AiRuntimeRouter(
         }
 
     private fun candidateTiers(requirements: InferenceRequirements): List<RuntimeTier> =
-        if (requirements.localOnly) orderedTiers.filter { it.isLocal } else orderedTiers
+        if (requirements.localOnly) orderedTiers().filter { it.isLocal } else orderedTiers()
 
     private fun providerFor(tier: RuntimeTier): AiProvider? = providers.firstOrNull { it.tier == tier }
 

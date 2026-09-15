@@ -320,6 +320,7 @@ class SkillExecutor(
         var openedTargetApp = false
         var forceVision = false
         val attemptedMoves = mutableListOf<String>()
+        val attemptedVisualPoints = mutableListOf<Pair<Float, Float>>()
         val navigationSteps = mutableListOf<SkillStep>()
 
         while (attempt <= step.fallback.maxRetries) {
@@ -374,6 +375,7 @@ class SkillExecutor(
                 localOnly = localOnly || !step.fallback.allowCloudAi,
                 requireEditable = step.action is ActionSpec.InputText,
                 forceVision = thisAttemptUsesVision,
+                avoidedVisualPoints = attemptedVisualPoints,
             )
 
             awaitingReasoning = resolution is Resolution.NeedsReasoning
@@ -459,8 +461,17 @@ class SkillExecutor(
                         task,
                         index,
                     )
-                    val pixelsChanged = beforePixels != null && afterPixels != null &&
-                        VisualChangeDetector.changed(beforePixels, afterPixels)
+                    val pixelsChanged = beforePixels != null && afterPixels != null && when (step.action) {
+                        ActionSpec.Click, is ActionSpec.Tap, is ActionSpec.LongPress, is ActionSpec.InputText ->
+                            VisualChangeDetector.changedAround(
+                                beforePixels,
+                                afterPixels,
+                                resolution.xRatio,
+                                resolution.yRatio,
+                            )
+
+                        else -> VisualChangeDetector.changed(beforePixels, afterPixels)
+                    }
                     val textConfirmed = step.action is ActionSpec.InputText && wrote
                     val visuallyConfirmed = when {
                         step.validation.mode == ValidationMode.NONE -> pixelsChanged || textConfirmed
@@ -488,6 +499,11 @@ class SkillExecutor(
                         )
                     }
                 }
+                // A visual action that did not prove its outcome must be grounded again
+                // from fresh pixels. Returning to the same accessibility locator merely
+                // repeats the failure that made this attempt visual in the first place.
+                forceVision = step.fallback.allowVision
+                attemptedVisualPoints += resolution.xRatio to resolution.yRatio
             }
 
             if (resolution is Resolution.Found) {

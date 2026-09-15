@@ -23,6 +23,7 @@ import com.autobile.core.model.DeviceCapabilityProfile
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.MetricsSnapshot
 import com.autobile.core.model.PrivacySettings
+import com.autobile.core.model.RuntimePreference
 import com.autobile.core.model.RuntimeTier
 import com.autobile.core.model.SemanticSkill
 import com.autobile.core.model.SkillVersionRecord
@@ -503,6 +504,9 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
 
     fun updateCloudEnabled(enabled: Boolean) = updatePrivacy { it.copy(cloudEnabled = enabled) }
     fun updateCloudScreenshots(enabled: Boolean) = updatePrivacy { it.copy(allowScreenshotToCloud = enabled) }
+    fun updateRuntimePreference(preference: RuntimePreference) = updatePrivacy {
+        it.copy(runtimePreference = preference)
+    }
     fun updateMasking(enabled: Boolean) = updatePrivacy { it.copy(maskSensitiveFields = enabled) }
     fun updateCloudEndpoint(value: String) = updatePrivacy { it.copy(cloudEndpoint = value.trim()) }
 
@@ -524,6 +528,28 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
             cloudVisionModel = "",
             allowScreenshotToCloud = current.allowScreenshotToCloud && service.supportsImages,
         )
+    }
+
+    /** Applies the explicit onboarding choice to use a ChatGPT subscription first. */
+    fun configureChatGptPriority() {
+        updatePrivacy { current ->
+            current.copy(
+                cloudEnabled = true,
+                cloudServiceName = CloudService.CHATGPT.name,
+                cloudEndpoint = "",
+                cloudModel = "",
+                cloudVisionModel = "",
+                allowScreenshotToCloud = true,
+                maskSensitiveFields = true,
+                runtimePreference = RuntimePreference.CLOUD_FIRST,
+            )
+        }
+        if (!_state.value.privacy.cloudSignedIn) signInToCloud()
+    }
+
+    fun continueWithDeviceFirst() {
+        updateRuntimePreference(RuntimePreference.DEVICE_FIRST)
+        nextOnboardingStep()
     }
 
     /**
@@ -686,7 +712,7 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
 
 enum class AppScreen { HOME, HISTORY, SETTINGS, SKILL_DETAIL, HISTORY_DETAIL, TEACH, TEACH_REVIEW }
 
-enum class OnboardingStep { CAPABILITY, PERMISSIONS, INSTANT_TASK, TEACH, REPLAY, COMPLETE }
+enum class OnboardingStep { CAPABILITY, AI_RUNTIME, PERMISSIONS, INSTANT_TASK, TEACH, REPLAY, COMPLETE }
 
 data class TeachDraft(
     val skill: SemanticSkill,

@@ -66,6 +66,19 @@ class UnnameableScreenTest {
     }
 
     @Test
+    fun `missing vision runtime is deferred instead of reported as a missing control`() = runTest {
+        val resolver = ExecutionResolver(routerWith(ScriptedProvider(available = false)))
+
+        val resolution = resolver.resolve(
+            target,
+            ScreenSnapshot(),
+            screenshot = { ScreenshotCapture.Success(bitmap()) },
+        )
+
+        assertThat(resolution).isInstanceOf(Resolution.NeedsReasoning::class.java)
+    }
+
+    @Test
     fun `screenshot failure is preserved instead of becoming a false not found`() = runTest {
         val resolver = resolverSeeing(PointMatch(true, 0.5f, 0.5f, 0.9f, "there"))
 

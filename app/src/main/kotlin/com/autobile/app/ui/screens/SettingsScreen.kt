@@ -60,6 +60,7 @@ import com.autobile.ai.mlkit.DownloadState
 import com.autobile.core.model.AiFeatureStatus
 import com.autobile.core.model.AppPolicy
 import com.autobile.core.model.AppPolicyMode
+import com.autobile.core.model.RuntimePreference
 
 @Composable
 fun SettingsScreen(state: AppUiState, viewModel: AppViewModel, context: Context) {
@@ -121,6 +122,25 @@ fun SettingsScreen(state: AppUiState, viewModel: AppViewModel, context: Context)
         ) { context.openSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION) }
 
         SectionHeading(stringResource(R.string.settings_cloud), Modifier.padding(horizontal = Space.gutter))
+        Column(Modifier.padding(horizontal = Space.gutter, vertical = 12.dp)) {
+            Text(stringResource(R.string.settings_runtime_priority), style = TypeScale.label, color = theme.ink)
+            Spacer(Modifier.height(8.dp))
+            ChoiceRow {
+                Choice(
+                    stringResource(R.string.onboarding_ai_device_first),
+                    state.privacy.runtimePreference == RuntimePreference.DEVICE_FIRST,
+                    { viewModel.updateRuntimePreference(RuntimePreference.DEVICE_FIRST) },
+                )
+                Choice(
+                    stringResource(R.string.settings_runtime_cloud_first),
+                    state.privacy.runtimePreference == RuntimePreference.CLOUD_FIRST,
+                    { viewModel.updateRuntimePreference(RuntimePreference.CLOUD_FIRST) },
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Statement(stringResource(R.string.settings_runtime_priority_detail), color = theme.muted)
+        }
+        Hairline(Modifier.padding(horizontal = Space.gutter))
         SettingSwitch(
             title = stringResource(R.string.settings_cloud_enabled),
             detail = stringResource(R.string.settings_cloud_enabled_detail),
