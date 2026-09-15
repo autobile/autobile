@@ -2,6 +2,7 @@ package com.autobile.ai.cloud
 
 import android.graphics.Bitmap
 import android.util.Base64
+import com.autobile.ai.cloud.oauth.CloudSession
 import com.autobile.ai.provider.ProviderCapabilities
 import com.autobile.ai.provider.ReasoningProvider
 import com.autobile.ai.provider.StructuredInferenceProvider
@@ -11,10 +12,10 @@ import com.autobile.ai.provider.VisionProvider
 import com.autobile.ai.provider.VisionRequest
 import com.autobile.core.common.AutobileJson
 import com.autobile.core.common.Logx
+import com.autobile.core.model.EscalationReason
 import com.autobile.core.model.InferenceError
 import com.autobile.core.model.InferenceErrorKind
 import com.autobile.core.model.InferenceResult
-import com.autobile.ai.cloud.oauth.CloudSession
 import com.autobile.core.model.RuntimeTier
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -68,6 +69,11 @@ class CloudAiProvider(
         return ProviderCapabilities(
             available = true,
             supportsVision = cfg.allowImages && cfg.service.supportsImages,
+            visionRestriction = when {
+                !cfg.service.supportsImages -> EscalationReason.MODALITY_UNSUPPORTED
+                !cfg.allowImages -> EscalationReason.POLICY_REQUIRED
+                else -> null
+            },
             supportsSystemPrompt = true,
             maxInputTokens = cfg.maxInputTokens,
             modelName = cfg.modelFor(tier),
@@ -137,7 +143,13 @@ class CloudAiProvider(
         val startedAt = System.currentTimeMillis()
         var connection: HttpURLConnection? = null
         try {
-            val model = currentModel(cfg)
+            val model = currentModel(cfg, needsVision = image != null)
+            if (image != null && model.isBlank()) {
+                return@withContext failure<String>(
+                    InferenceErrorKind.UNSUPPORTED,
+                    "The signed-in account has no model advertising image input",
+                )
+            }
             val url = URL(cfg.service.dialect.requestUrl(cfg.endpoint, model))
             connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
@@ -215,7 +227,7 @@ class CloudAiProvider(
      * Discovery is best-effort: a network failure must not prevent a valid configured
      * model from being attempted.
      */
-    private fun currentModel(cfg: CloudConfig): String {
+    private fun currentModel(cfg: CloudConfig, needsVision: Boolean): String {
         val requested = cfg.modelFor(tier)
         if (cfg.service != CloudService.CHATGPT) return requested
         val discoveryEnabled = if (tier == RuntimeTier.CLOUD_ADVANCED) {
@@ -231,7 +243,7 @@ class CloudAiProvider(
             ?: discoverChatGptModels(cfg)?.also {
                 chatGptCatalog = CachedChatGptCatalog(cacheKey, it)
             }
-        return catalog?.select(requested)?.ifBlank { requested } ?: requested
+        return catalog?.select(requested, needsVision) ?: requested
     }
 
     private fun discoverChatGptModels(cfg: CloudConfig): ChatGptModelCatalog? {

@@ -143,7 +143,7 @@ class AiRuntimeRouter(
                 InferenceErrorKind.LOW_CONFIDENCE,
                 "confidence ${"%.2f".format(settled.confidence)} below ${requirements.minConfidence}",
             )
-            if (!lastError.escalatable) break
+            if (!shouldEscalate(lastError, tier, image != null || requirements.needsVision)) break
             previousTier = tier
         }
 
@@ -248,7 +248,7 @@ class AiRuntimeRouter(
                 return RoutedResult(result, attempts)
             }
             lastError = result.error
-            if (lastError?.escalatable == false) break
+            if (lastError != null && !shouldEscalate(lastError, tier, requiresVision = true)) break
             previousTier = tier
         }
 
@@ -292,7 +292,7 @@ class AiRuntimeRouter(
     ): EscalationReason? = when {
         !capabilities.available -> EscalationReason.RUNTIME_UNAVAILABLE
         (hasImage || requirements.needsVision) && !capabilities.supportsVision ->
-            EscalationReason.MODALITY_UNSUPPORTED
+            capabilities.visionRestriction ?: EscalationReason.MODALITY_UNSUPPORTED
 
         requirements.localOnly && tier.isCloud -> EscalationReason.POLICY_REQUIRED
         requirements.needsLongContext && capabilities.maxInputTokens in 1 until LONG_CONTEXT_TOKENS ->
@@ -305,6 +305,20 @@ class AiRuntimeRouter(
 
         else -> null
     }
+
+    /**
+     * ML Kit can report a generic policy rejection while Autobile is behind the app it
+     * controls. For an image request that is a device-runtime limitation, not authority
+     * to ignore the user's cloud policy. Candidate tiers have already been narrowed by
+     * [InferenceRequirements.localOnly], and cloud providers independently enforce the
+     * screenshot consent, so only this local visual boundary may continue.
+     */
+    private fun shouldEscalate(
+        error: InferenceError,
+        tier: RuntimeTier,
+        requiresVision: Boolean,
+    ): Boolean = error.escalatable ||
+        (requiresVision && tier.isLocal && error.kind == InferenceErrorKind.POLICY_BLOCKED)
 
     fun close() = providers.forEach { runCatching { it.close() } }
 

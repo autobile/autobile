@@ -1,6 +1,7 @@
 package com.autobile.ai.provider
 
 import android.graphics.Bitmap
+import com.autobile.core.model.EscalationReason
 import com.autobile.core.model.InferenceRequirements
 import com.autobile.core.model.InferenceResult
 import com.autobile.core.model.RuntimeTier
@@ -33,6 +34,8 @@ interface AiProvider {
 data class ProviderCapabilities(
     val available: Boolean = false,
     val supportsVision: Boolean = false,
+    /** Why image input is unavailable, when [supportsVision] is false. */
+    val visionRestriction: EscalationReason? = null,
     val supportsSystemPrompt: Boolean = false,
     val maxInputTokens: Int = 0,
     val modelName: String? = null,

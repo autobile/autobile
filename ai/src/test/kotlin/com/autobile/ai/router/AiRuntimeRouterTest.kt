@@ -283,6 +283,55 @@ class AiRuntimeRouterTest {
     }
 
     @Test
+    fun `a local visual policy rejection reaches an explicitly allowed cloud vision tier`() = runTest {
+        val cloud = FakeProvider(RuntimeTier.CLOUD_ADVANCED) { success(RuntimeTier.CLOUD_ADVANCED) }
+        val router = AiRuntimeRouter(
+            listOf(
+                FakeProvider(RuntimeTier.DEVICE_AI) {
+                    failure(RuntimeTier.DEVICE_AI, InferenceErrorKind.POLICY_BLOCKED)
+                },
+                cloud,
+            ),
+        )
+
+        val routed = router.infer(
+            "point-match",
+            schema,
+            "prompt",
+            image = android.graphics.Bitmap.createBitmap(2, 2, android.graphics.Bitmap.Config.ARGB_8888),
+            requirements = InferenceRequirements(needsVision = true),
+        )
+
+        assertThat(routed.isSuccess).isTrue()
+        assertThat(routed.tier).isEqualTo(RuntimeTier.CLOUD_ADVANCED)
+        assertThat(cloud.callCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `cloud screenshot consent is reported as policy rather than missing modality`() = runTest {
+        val cloud = FakeProvider(
+            RuntimeTier.CLOUD_ADVANCED,
+            capabilities = ProviderCapabilities(
+                available = true,
+                supportsVision = false,
+                visionRestriction = EscalationReason.POLICY_REQUIRED,
+            ),
+        ) { success(RuntimeTier.CLOUD_ADVANCED) }
+        val router = AiRuntimeRouter(listOf(cloud))
+
+        val routed = router.infer(
+            "point-match",
+            schema,
+            "prompt",
+            requirements = InferenceRequirements(needsVision = true),
+        )
+
+        assertThat(routed.isSuccess).isFalse()
+        assertThat(routed.attempts.single().reason).isEqualTo(EscalationReason.POLICY_REQUIRED)
+        assertThat(cloud.callCount).isEqualTo(0)
+    }
+
+    @Test
     fun `a background restricted device runtime escalates to an allowed cloud tier`() = runTest {
         val cloud = FakeProvider(RuntimeTier.CLOUD_LIGHT) { success(RuntimeTier.CLOUD_LIGHT) }
         val router = AiRuntimeRouter(

@@ -666,12 +666,16 @@ class SkillExecutorTest {
         )
         val step = clickStep(label = "Play", resourceId = null)
         val automation = skill(listOf(step))
+        val recorder = Recorder()
 
-        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+        val outcome = executor(screen, provider).execute(automation, task(automation), recorder)
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
         assertThat(provider.requestedLabels).contains("point-match")
         assertThat(screen.gestures).containsExactly("tap")
+        assertThat(recorder.typesOf(ExecutionEventType.SCREEN_CAPTURED)).hasSize(1)
+        assertThat(recorder.typesOf(ExecutionEventType.SCREEN_CAPTURED).single().message)
+            .contains("60x120")
         assertThat(outcome.stepResults.single().resolver)
             .isEqualTo(com.autobile.core.model.ResolverKind.VISION)
     }

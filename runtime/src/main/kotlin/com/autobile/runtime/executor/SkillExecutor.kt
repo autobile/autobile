@@ -361,8 +361,30 @@ class SkillExecutor(
             // slow and rate-limited by the platform, and a step that matches by recorded
             // id — the ordinary case — never looks at one.
             var screenshotTaken: ScreenshotCapture? = null
+            var screenshotReported = false
             val screenshot: suspend () -> ScreenshotCapture = {
                 val capture = screenshotTaken ?: perception.captureScreenshot().also { screenshotTaken = it }
+                if (!screenshotReported) {
+                    screenshotReported = true
+                    val (message, success) = when (capture) {
+                        is ScreenshotCapture.Success ->
+                            "fresh screenshot captured (${capture.bitmap.width}x${capture.bitmap.height})" to true
+                        is ScreenshotCapture.SecureWindowBlocked ->
+                            "screenshot blocked by protected window" to false
+                        is ScreenshotCapture.Unavailable -> capture.reason to false
+                    }
+                    observer.onEvent(
+                        event(
+                            task.id,
+                            ExecutionEventType.SCREEN_CAPTURED,
+                            step.id,
+                            index,
+                            message,
+                            success = success,
+                            resolver = ResolverKind.VISION,
+                        ),
+                    )
+                }
                 capture
             }
 

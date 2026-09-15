@@ -179,7 +179,7 @@ private fun CapabilityStep(state: AppUiState, viewModel: AppViewModel) {
     CapabilityLine(stringResource(R.string.capability_phone_control), state.capability.canControlScreen)
     CapabilityLine(
         stringResource(R.string.capability_screen_understanding),
-        state.capability.canUnderstandScreenVisually || state.capability.accessibilityConnected,
+        state.capability.canUnderstandScreenVisually,
     )
     CapabilityLine(stringResource(R.string.capability_on_device_ai), state.capability.deviceAi.isUsable)
     CapabilityLine(stringResource(R.string.capability_cloud_ai), state.capability.cloud.isUsable)

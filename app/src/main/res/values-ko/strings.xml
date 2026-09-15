@@ -282,6 +282,7 @@
     <string name="event_skill_matched">자동화 선택</string>
     <string name="event_precondition">사전 조건 확인</string>
     <string name="event_step_started">단계 시작</string>
+    <string name="event_screen_captured">화면 확인</string>
     <string name="event_resolver_selected">대상 찾음</string>
     <string name="event_runtime_selected">실행 방식 선택</string>
     <string name="event_action_executed">동작 수행</string>
