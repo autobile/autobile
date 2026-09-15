@@ -2,6 +2,19 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.7.3] - 2026-09-15
+
+### Fixed
+
+- Compile plain-language requests to finish a game before exiting into a bounded,
+  screenshot-grounded gameplay loop followed by the original exit action.
+- Require an unambiguous victory, clear, results, or completion state before the
+  gameplay loop can pass; ordinary visual progress no longer permits an early exit.
+- Re-ground progressing game actions from each fresh frame without permanently
+  excluding a coordinate that may remain valid after the board changes.
+- Allow an explicit Home step to validate its intended launcher transition instead of
+  inheriting the preceding game's foreground-package requirement.
+
 ## [0.7.2] - 2026-09-15
 
 ### Fixed
