@@ -69,6 +69,8 @@ class ExecutionResolver(
         requireEditable: Boolean = false,
         /** Skip a node that already failed to reach the expected state. */
         forceVision: Boolean = false,
+        /** Visual points that were already acted on without reaching the expected state. */
+        avoidedVisualPoints: List<Pair<Float, Float>> = emptyList(),
     ): Resolution {
         if (forceVision) {
             return lookOrGiveUp(
@@ -78,6 +80,7 @@ class ExecutionResolver(
                 allowVision,
                 localOnly,
                 "The accessibility action did not reach the expected state",
+                avoidedVisualPoints,
             )
         }
 
@@ -104,6 +107,7 @@ class ExecutionResolver(
                 allowVision,
                 localOnly,
                 "No candidate elements on this screen",
+                avoidedVisualPoints,
             )
         }
 
@@ -167,6 +171,7 @@ class ExecutionResolver(
             allowVision,
             localOnly,
             visuallyUnresolved(visually, target),
+            avoidedVisualPoints,
         )
     }
 
@@ -195,11 +200,18 @@ class ExecutionResolver(
         allowVision: Boolean,
         localOnly: Boolean,
         reasonIfBlind: String,
+        avoidedVisualPoints: List<Pair<Float, Float>>,
     ): Resolution {
         if (!allowVision) return Resolution.NotFound(reasonIfBlind)
         return when (val capture = screenshot()) {
             null -> Resolution.NotFound(reasonIfBlind)
-            is ScreenshotCapture.Success -> resolveByLooking(target, snapshot, capture.bitmap, localOnly)
+            is ScreenshotCapture.Success -> resolveByLooking(
+                target,
+                snapshot,
+                capture.bitmap,
+                localOnly,
+                avoidedVisualPoints,
+            )
             is ScreenshotCapture.SecureWindowBlocked -> Resolution.VisionBlocked(
                 "Screen capture is blocked for ${capture.packageName.ifBlank { "this protected app" }}",
                 secureWindow = true,
@@ -260,6 +272,7 @@ class ExecutionResolver(
         snapshot: ScreenSnapshot,
         screenshot: Bitmap,
         localOnly: Boolean,
+        avoidedVisualPoints: List<Pair<Float, Float>>,
     ): Resolution {
         val routed = router.infer(
             label = "point-match",
@@ -267,6 +280,7 @@ class ExecutionResolver(
             prompt = AiTasks.pointMatchPrompt(
                 targetDescription = target.description.ifBlank { target.intentLabel },
                 synonyms = target.synonyms,
+                avoidedPoints = avoidedVisualPoints,
             ),
             systemInstruction = AiTasks.SYSTEM_INSTRUCTION,
             // Scaled but never cropped: the answer is a position within the picture, so
@@ -288,6 +302,8 @@ class ExecutionResolver(
                 explanation = match.reason.ifBlank { "located by looking at the screen" },
                 usedCloud = routed.usedCloud,
             )
+        } else if (match == null) {
+            unresolved(routed.result.error, target, visually = true)
         } else {
             Resolution.NotFound("Nothing on this screen offers \"${target.intentLabel}\"")
         }

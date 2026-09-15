@@ -724,4 +724,25 @@ class SkillExecutorTest {
         assertThat(outcome.status).isEqualTo(OutcomeStatus.PARTIAL)
         assertThat(outcome.stepResults.single().success).isFalse()
     }
+
+    @Test
+    fun `a failed visual action is grounded again from a fresh frame`() = runTest {
+        val unchanged = ScreenshotCapture.Success(Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888))
+        val screen = FakeScreen(
+            current = screen(packageName = "com.example.game", windowTitle = ""),
+            screenshot = unchanged,
+            nextScreenshot = unchanged,
+        )
+        val provider = ScriptedProvider().answerWith(
+            "point-match",
+            PointMatch(true, 0.5f, 0.7f, 0.9f, "play button"),
+        )
+        val step = clickStep(label = "Play", resourceId = null, retries = 1)
+        val automation = skill(listOf(step))
+
+        executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(provider.requestedLabels.filter { it == "point-match" }).hasSize(2)
+        assertThat(screen.gestures).containsExactly("tap", "tap")
+    }
 }

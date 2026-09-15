@@ -148,6 +148,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
                 ::renewCloudSession,
             ),
         ),
+        preference = { settings.privacy().runtimePreference },
     )
 
     private val minimizer = ContextMinimizer()

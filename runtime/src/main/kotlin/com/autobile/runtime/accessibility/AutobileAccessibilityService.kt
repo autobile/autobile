@@ -1,9 +1,11 @@
 package com.autobile.runtime.accessibility
 
+import android.annotation.SuppressLint
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.graphics.Bitmap
+import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.autobile.core.common.Logx
@@ -116,17 +118,7 @@ class AutobileAccessibilityService : AccessibilityService() {
                     }
 
                     override fun onFailure(errorCode: Int) {
-                        deferred.complete(
-                            when (errorCode) {
-                                ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY ->
-                                    ScreenshotOutcome.Failed("Display is not available")
-
-                                ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT ->
-                                    ScreenshotOutcome.Throttled
-
-                                else -> ScreenshotOutcome.SecureWindowBlocked
-                            },
-                        )
+                        deferred.complete(classifyScreenshotError(errorCode, Build.VERSION.SDK_INT))
                     }
                 },
             )
@@ -194,6 +186,23 @@ class AutobileAccessibilityService : AccessibilityService() {
         private const val SCREENSHOT_TIMEOUT_MS = 4_000L
         private const val GESTURE_TIMEOUT_MS = 8_000L
     }
+}
+
+/** Classifies platform capture errors without turning transient failures into policy blocks. */
+@SuppressLint("NewApi") // API 34-only constants are read only behind the explicit sdkInt guard.
+internal fun classifyScreenshotError(errorCode: Int, sdkInt: Int): ScreenshotOutcome = when {
+    errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> ScreenshotOutcome.Throttled
+    errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY ->
+        ScreenshotOutcome.Failed("Display is not available")
+    errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS ->
+        ScreenshotOutcome.Failed("Screenshot access is not granted")
+    sdkInt >= 34 && errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INVALID_WINDOW ->
+        ScreenshotOutcome.Failed("Window is no longer available")
+    sdkInt >= 34 && errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW ->
+        ScreenshotOutcome.SecureWindowBlocked
+    errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR ->
+        ScreenshotOutcome.Failed("Android could not capture the screen")
+    else -> ScreenshotOutcome.Failed("Screenshot failed with Android error $errorCode")
 }
 
 /** What the platform actually granted this service, as opposed to what it asked for. */

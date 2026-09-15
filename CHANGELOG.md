@@ -2,6 +2,27 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.7.0] - 2026-09-15
+
+### Added
+
+- Let users choose on-device-first or cloud-first inference while deterministic actions
+  remain the first execution tier.
+- Guide devices without on-device AI through ChatGPT Subscription setup during
+  onboarding, including explicit screenshot consent for visual recovery.
+- Re-ground failed visual actions from fresh screenshots and exclude points that have
+  already failed during the current step.
+
+### Fixed
+
+- Recognize renewable ChatGPT Subscription sessions as configured cloud capability
+  instead of requiring an unrelated API key.
+- Defer rootless visual steps when no vision runtime is available instead of reporting
+  that the visible control does not exist.
+- Reject false visual success caused by animation away from the grounded control.
+- Keep transient screenshot and accessibility errors recoverable instead of labeling
+  every unknown platform capture failure as a secure window.
+
 ## [0.6.4] - 2026-09-15
 
 ### Fixed
@@ -77,3 +98,4 @@ All notable changes to Autobile are documented here. Releases follow semantic ve
 [0.6.2]: https://github.com/autobile/autobile/releases/tag/v0.6.2
 [0.6.3]: https://github.com/autobile/autobile/releases/tag/v0.6.3
 [0.6.4]: https://github.com/autobile/autobile/releases/tag/v0.6.4
+[0.7.0]: https://github.com/autobile/autobile/releases/tag/v0.7.0

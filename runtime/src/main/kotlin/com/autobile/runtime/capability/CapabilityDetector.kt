@@ -53,14 +53,7 @@ class CapabilityDetector(
         val enabledInSettings = AccessibilityBridge.isEnabledInSettings(context)
         val deviceAiCapability = probeDeviceAi()
         val network = detectNetwork()
-        val cloud = cloudConfig().let {
-            CloudCapability(
-                configured = it.endpoint.isNotBlank() && it.apiKey.isNotBlank(),
-                userConsented = it.enabled,
-                visionSupported = it.allowImages,
-                endpointLabel = it.endpointLabel,
-            )
-        }
+        val cloud = cloudConfig().toCapability()
 
         val profile = DeviceCapabilityProfile(
             apiLevel = Build.VERSION.SDK_INT,
@@ -221,3 +214,11 @@ class CapabilityDetector(
         const val MEDIUM_RAM_GB = 5
     }
 }
+
+/** Maps both API-key and renewable subscription credentials into one capability. */
+internal fun CloudConfig.toCapability(): CloudCapability = CloudCapability(
+    configured = endpoint.isNotBlank() && credential.isPresent,
+    userConsented = enabled,
+    visionSupported = allowImages && serviceSupportsImages,
+    endpointLabel = endpointLabel,
+)
