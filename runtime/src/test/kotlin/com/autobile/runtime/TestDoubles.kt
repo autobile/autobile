@@ -160,6 +160,8 @@ class FakeScreen(
     val gestures = mutableListOf<String>()
     var backPresses: Int = 0
         private set
+    var homePresses: Int = 0
+        private set
     private var textInputAttempts = 0
     private var actionOccurred = false
 
@@ -232,7 +234,11 @@ class FakeScreen(
         return ActionResult.Performed("back")
     }
 
-    override fun pressHome(): ActionResult = ActionResult.Performed("home")
+    override fun pressHome(): ActionResult {
+        homePresses++
+        advance()
+        return ActionResult.Performed("home")
+    }
 
     override fun launchApp(packageName: String, activity: String?): ActionResult {
         launched += packageName

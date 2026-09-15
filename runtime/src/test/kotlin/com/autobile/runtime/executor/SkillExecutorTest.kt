@@ -33,6 +33,7 @@ import com.autobile.core.model.OutcomeStatus
 import com.autobile.core.model.PerceptionResult
 import com.autobile.core.model.RiskDecision
 import com.autobile.core.model.RuntimeTier
+import com.autobile.core.model.RuntimeRequirements
 import com.autobile.core.model.ScreenSnapshot
 import com.autobile.core.model.SemanticSkill
 import com.autobile.core.model.SkillConfidence
@@ -678,6 +679,29 @@ class SkillExecutorTest {
             .contains("60x120")
         assertThat(outcome.stepResults.single().resolver)
             .isEqualTo(com.autobile.core.model.ResolverKind.VISION)
+    }
+
+    @Test
+    fun `explicit home exit does not inherit the game package postcondition`() = runTest {
+        val screen = FakeScreen(
+            current = screen(packageName = "com.example.game", windowTitle = "Victory"),
+            nextScreen = screen(packageName = "com.android.launcher", windowTitle = "Home"),
+        )
+        val step = SkillStep(
+            id = "exit",
+            intent = StepIntent.GO_HOME,
+            target = TargetSemantics(intentLabel = "Exit after completion"),
+            action = ActionSpec.Home,
+            validation = ValidationSpec(mode = ValidationMode.STRUCTURAL),
+        )
+        val automation = skill(listOf(step)).copy(
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
+        )
+
+        val outcome = executor(screen, ScriptedProvider()).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(screen.homePresses).isEqualTo(1)
     }
 
     @Test

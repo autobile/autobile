@@ -9,9 +9,13 @@ import com.autobile.ai.task.SkillEditField
 import com.autobile.core.data.AutobileDatabase
 import com.autobile.core.data.SkillStore
 import com.autobile.core.model.ActionSpec
+import com.autobile.core.model.Condition
+import com.autobile.core.model.ConditionKind
 import com.autobile.core.model.Locator
 import com.autobile.core.model.LocatorKind
 import com.autobile.core.model.SemanticSkill
+import com.autobile.core.model.ResolverKind
+import com.autobile.core.model.RuntimeRequirements
 import com.autobile.core.model.SkillConstant
 import com.autobile.core.model.SkillStep
 import com.autobile.core.model.StepIntent
@@ -312,6 +316,64 @@ class SkillEditorTest {
         assertThat(applied.skill.postconditions.single().packageName).isEqualTo("com.example.game")
         assertThat(preview.changedStepIds).contains("exit")
         assertThat(store.versions("skill").map { it.version }).containsExactly(4, 3).inOrder()
+    }
+
+    @Test
+    fun `complete game before exit correction retains exit and gates it behind visual completion`() = runTest {
+        val request = """
+            나가기 단계는 게임이 종료된 뒤 진행되어야한다.
+            즉, 게임을 시작하면 완벽하게 끝마쳐야한다.
+        """.trimIndent()
+        val game = skill().copy(
+            goal = "Start and exit game",
+            steps = listOf(
+                SkillStep(
+                    id = "launch",
+                    intent = StepIntent.LAUNCH_APP,
+                    target = TargetSemantics(intentLabel = "Puzzle game"),
+                    action = ActionSpec.LaunchApp("com.example.game"),
+                ),
+                SkillStep(
+                    id = "play",
+                    intent = StepIntent.SELECT_ITEM,
+                    target = TargetSemantics(
+                        intentLabel = "New game",
+                        locators = listOf(Locator(LocatorKind.TEXT, "New game", "com.example.game")),
+                    ),
+                    action = ActionSpec.Click,
+                ),
+                SkillStep(
+                    id = "exit",
+                    intent = StepIntent.GO_HOME,
+                    target = TargetSemantics(intentLabel = "Exit game", description = "leave the game"),
+                    action = ActionSpec.Home,
+                ),
+            ),
+            postconditions = listOf(
+                Condition(
+                    description = "The game remains in the foreground",
+                    kind = ConditionKind.STRUCTURAL,
+                    packageName = "com.example.game",
+                ),
+            ),
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
+        )
+
+        val preview = editor.preview(game, request, localOnly = true) as SkillEditPreview.Ready
+
+        assertThat(preview.updated.steps.map { it.id }).containsExactly("launch", "play", "exit").inOrder()
+        val play = preview.updated.step("play")!!
+        assertThat(play.preferredResolver).isEqualTo(ResolverKind.VISION)
+        assertThat(play.target.locators).isEmpty()
+        assertThat(play.validation.mode).isEqualTo(ValidationMode.SEMANTIC)
+        assertThat(play.validation.goalCritical).isTrue()
+        assertThat(play.validation.expectation).contains("Progress alone is not completion")
+        assertThat(play.expectedState.requiredPackage).isEqualTo("com.example.game")
+        assertThat(play.fallback.maxRetries).isAtLeast(64)
+        assertThat(preview.updated.steps.last().action).isEqualTo(ActionSpec.Home)
+        assertThat(preview.updated.postconditions).isEmpty()
+        assertThat(preview.updated.runtimeRequirements.requiresScreenshot).isTrue()
+        assertThat(preview.changedStepIds).containsAtLeast("play", "exit")
     }
 
     @Test

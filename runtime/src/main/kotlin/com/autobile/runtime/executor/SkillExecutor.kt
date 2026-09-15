@@ -443,6 +443,7 @@ class SkillExecutor(
                     ),
                 )
                 val beforePixels = (screenshotTaken as? ScreenshotCapture.Success)?.bitmap
+                var visualProgressed = false
                 val actionResult = performAtPoint(step, resolution)
                 observer.onEvent(
                     event(
@@ -500,6 +501,7 @@ class SkillExecutor(
 
                         else -> VisualChangeDetector.changed(beforePixels, afterPixels)
                     }
+                    visualProgressed = pixelsChanged
                     val textConfirmed = step.action is ActionSpec.InputText && wrote
                     val visuallyConfirmed = when {
                         step.validation.mode == ValidationMode.NONE -> pixelsChanged || textConfirmed
@@ -531,7 +533,15 @@ class SkillExecutor(
                 // from fresh pixels. Returning to the same accessibility locator merely
                 // repeats the failure that made this attempt visual in the first place.
                 forceVision = step.fallback.allowVision
-                attemptedVisualPoints += resolution.xRatio to resolution.yRatio
+                if (visualProgressed) {
+                    // A local change around the action proves that the game advanced,
+                    // even when its completion post-condition has not passed yet. The
+                    // next grounding sees a new frame, so old coordinates are no longer
+                    // failed candidates and may legitimately be selected again.
+                    attemptedVisualPoints.clear()
+                } else {
+                    attemptedVisualPoints += resolution.xRatio to resolution.yRatio
+                }
             }
 
             if (resolution is Resolution.Found) {
@@ -702,6 +712,10 @@ class SkillExecutor(
     }
 
     private fun SkillStep.expectedForValidation(skill: SemanticSkill): ExpectedState {
+        // Leaving is itself the intended outcome of an explicit Home step. Inferring
+        // the interaction package here would require the game to remain foregrounded
+        // after Home and make a correctly gated exit impossible to validate.
+        if (action is ActionSpec.Home || intent == StepIntent.GO_HOME) return expectedState
         if (expectedState.requiredPackage != null || expectedState.screen?.packageName != null) return expectedState
         val required = interactionPackage(skill) ?: return expectedState
         return expectedState.copy(requiredPackage = required)

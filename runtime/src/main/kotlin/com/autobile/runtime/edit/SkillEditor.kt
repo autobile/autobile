@@ -8,16 +8,20 @@ import com.autobile.core.common.TemporalText
 import com.autobile.core.common.TimeSource
 import com.autobile.core.data.SkillStore
 import com.autobile.core.model.ActionSpec
+import com.autobile.core.model.ConditionKind
+import com.autobile.core.model.ExpectedState
 import com.autobile.core.model.InferenceRequirements
 import com.autobile.core.model.LocatorKind
 import com.autobile.core.model.PatchAuthor
 import com.autobile.core.model.SemanticSkill
+import com.autobile.core.model.ResolverKind
 import com.autobile.core.model.SkillConstant
 import com.autobile.core.model.SkillVersionRecord
 import com.autobile.core.model.SkillVariable
 import com.autobile.core.model.SkillStep
 import com.autobile.core.model.StepIntent
 import com.autobile.core.model.TriggerSpec
+import com.autobile.core.model.ValidationMode
 import com.autobile.core.model.ValueRef
 import com.autobile.core.model.ValueType
 import com.autobile.core.model.VariableBinding
@@ -68,6 +72,15 @@ class SkillEditor(
 
     /** Handles obvious time changes without spending battery or exposing text to a model. */
     private fun parseDeterministic(request: String): SkillEdit? {
+        if (requestsCompletionBeforeExit(request)) {
+            return SkillEdit(
+                field = SkillEditField.BEHAVIOR,
+                newValue = request.trim(),
+                meaningChanged = true,
+                summary = "Finish the game before running the recorded exit action",
+                confidence = 1f,
+            )
+        }
         if (requestsStayingInApp(request)) {
             return SkillEdit(
                 field = SkillEditField.BEHAVIOR,
@@ -223,7 +236,73 @@ class SkillEditor(
      * fail closed instead of displaying an "applied" message for a cosmetic goal edit.
      */
     private fun patchBehavior(skill: SemanticSkill, value: String): SemanticSkill? {
-        if (!requestsStayingInApp(value)) return null
+        return when {
+            requestsCompletionBeforeExit(value) -> patchCompletionBeforeExit(skill, value)
+            requestsStayingInApp(value) -> patchStayInApp(skill, value)
+            else -> null
+        }
+    }
+
+    /**
+     * Keeps the demonstrated exit, but makes it unreachable until a bounded visual
+     * gameplay loop has positively identified the game's completed state.
+     *
+     * Cached locators are deliberately cleared from the loop step: repeatedly clicking
+     * the taught "start" control cannot finish a game whose next correct action changes
+     * from frame to frame. Each attempt must instead be grounded from fresh pixels.
+     */
+    private fun patchCompletionBeforeExit(skill: SemanticSkill, value: String): SemanticSkill? {
+        val exitIndex = skill.steps.indexOfFirst(::isExitStep)
+        if (exitIndex <= 0) return null
+        val playIndex = (exitIndex - 1 downTo 0).firstOrNull { index ->
+            val step = skill.steps[index]
+            step.action !is ActionSpec.LaunchApp && !isExitStep(step) && isVisualGameplayAction(step.action)
+        } ?: return null
+        val appPackage = gamePackage(skill, exitIndex) ?: return null
+
+        val steps = skill.steps.mapIndexed { index, step ->
+            when (index) {
+                playIndex -> step.copy(
+                    target = step.target.copy(
+                        intentLabel = "Next correct action to complete the game",
+                        description = "Choose the next in-game action that advances toward a fully completed game",
+                        synonyms = listOf("next move", "continue playing", "finish game", "complete level"),
+                        locators = emptyList(),
+                    ),
+                    preferredResolver = ResolverKind.VISION,
+                    expectedState = ExpectedState(
+                        requiredPackage = appPackage,
+                        description = "The game is fully completed and no required gameplay remains",
+                    ),
+                    validation = step.validation.copy(
+                        mode = ValidationMode.SEMANTIC,
+                        timeoutMs = maxOf(step.validation.timeoutMs, GAMEPLAY_SETTLE_TIMEOUT_MS),
+                        expectation = GAME_COMPLETION_EXPECTATION,
+                        goalCritical = true,
+                    ),
+                    fallback = step.fallback.copy(
+                        allowVision = true,
+                        maxRetries = maxOf(step.fallback.maxRetries, MAX_GAMEPLAY_ACTIONS),
+                    ),
+                    description = "Play until the game is fully completed",
+                )
+                exitIndex -> step.copy(description = "Exit only after the game completion check passes")
+                else -> step
+            }
+        }
+        val staleStayPostconditions = skill.postconditions.filterNot { condition ->
+            condition.kind == ConditionKind.STRUCTURAL && condition.packageName == appPackage &&
+                STAY_POSTCONDITION_TERMS.any(condition.description.lowercase()::contains)
+        }
+        return skill.copy(
+            goal = value,
+            steps = steps,
+            postconditions = staleStayPostconditions,
+            runtimeRequirements = skill.runtimeRequirements.copy(requiresScreenshot = true),
+        )
+    }
+
+    private fun patchStayInApp(skill: SemanticSkill, value: String): SemanticSkill? {
         val removed = skill.steps.filter(::isExitStep)
         if (removed.isEmpty()) return null
         val retained = skill.steps.filterNot(::isExitStep)
@@ -245,6 +324,18 @@ class SkillEditor(
             )
         }
         return skill.copy(goal = value, steps = retained, postconditions = postconditions)
+    }
+
+    private fun gamePackage(skill: SemanticSkill, beforeIndex: Int): String? =
+        skill.steps.take(beforeIndex).asSequence().mapNotNull { step ->
+            (step.action as? ActionSpec.LaunchApp)?.packageName
+                ?: step.target.screen?.packageName
+                ?: step.target.locators.firstNotNullOfOrNull { it.packageName }
+        }.firstOrNull { it.isNotBlank() } ?: skill.runtimeRequirements.requiredPackages.singleOrNull()
+
+    private fun isVisualGameplayAction(action: ActionSpec): Boolean = when (action) {
+        ActionSpec.Click, is ActionSpec.Tap, is ActionSpec.LongPress, is ActionSpec.Swipe -> true
+        else -> false
     }
 
     private fun isExitStep(step: SkillStep): Boolean {
@@ -365,6 +456,16 @@ class SkillEditor(
         val DESTINATION_NAMES = listOf("destination", "channel", "recipient", "target", "room")
         val EXIT_TERMS = listOf("exit", "quit", "leave game", "leave the game", "나가기", "게임 종료", "종료하기", "홈으로")
         val LEAVE_TERMS = listOf("back", "뒤로", "나가기", "exit", "leave")
+        val COMPLETION_TERMS = listOf(
+            "완벽하게 끝", "끝까지", "완료한 뒤", "완료된 뒤", "끝난 뒤", "종료된 뒤",
+            "finish before", "complete before", "after completing", "after finishing", "until complete",
+        )
+        val STAY_POSTCONDITION_TERMS = listOf("remain", "stay", "foreground", "유지", "머무")
+        const val MAX_GAMEPLAY_ACTIONS = 64
+        const val GAMEPLAY_SETTLE_TIMEOUT_MS = 8_000L
+        const val GAME_COMPLETION_EXPECTATION =
+            "The game or level is visibly and unambiguously complete (for example a victory, clear, results, " +
+                "or completion screen), with no required gameplay remaining. Progress alone is not completion."
         // Android's ICU regex engine (including API 30) requires the closing brace to
         // be escaped as well. The desktop JVM accepts a bare `}`, which let unit tests
         // pass while the release APK crashed during AppGraph construction.
@@ -385,6 +486,13 @@ class SkillEditor(
                 "계속 플레이", "게임 플레이", "게임을 해", "게임해", "나가지 마", "나가면 안", "종료하지 마",
                 "keep playing", "play the game", "do not exit", "don't exit", "do not leave", "don't leave", "stay in",
             ).any(normalised::contains)
+        }
+
+        fun requestsCompletionBeforeExit(value: String): Boolean {
+            val normalised = value.lowercase()
+            val mentionsExit = EXIT_TERMS.any(normalised::contains) ||
+                listOf("나간", "나가", "leave", "exit").any(normalised::contains)
+            return mentionsExit && COMPLETION_TERMS.any(normalised::contains)
         }
     }
 }
