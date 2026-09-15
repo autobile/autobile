@@ -165,6 +165,16 @@ class StoredSkillSurvivesShrinkingTest {
                 action = ActionSpec.Swipe(Direction.LEFT, 0.7f, 250),
             ),
             SkillStep(id = "tap", intent = StepIntent.CONFIRM, target = TargetSemantics("ok"), action = ActionSpec.Tap(0.5f, 0.9f)),
+            SkillStep(
+                id = "visual-task",
+                intent = StepIntent.SELECT_ITEM,
+                target = TargetSemantics("finish game"),
+                action = ActionSpec.VisualTask(
+                    objective = "finish the current game",
+                    completionCriteria = "victory screen is visible",
+                    maxActions = 64,
+                ),
+            ),
             SkillStep(id = "wait", intent = StepIntent.WAIT, target = TargetSemantics("settle"), action = ActionSpec.Wait(1200)),
             SkillStep(id = "back", intent = StepIntent.GO_BACK, target = TargetSemantics("back"), action = ActionSpec.Back),
             SkillStep(id = "home", intent = StepIntent.GO_HOME, target = TargetSemantics("home"), action = ActionSpec.Home),

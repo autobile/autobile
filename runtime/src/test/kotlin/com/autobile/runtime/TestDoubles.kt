@@ -37,9 +37,15 @@ class ScriptedProvider(
 
     private val failures = mutableMapOf<String, InferenceErrorKind>()
     private val transientFailures = mutableMapOf<String, InferenceErrorKind>()
+    private val answerQueues = mutableMapOf<String, ArrayDeque<Any>>()
 
     fun answerWith(label: String, value: Any): ScriptedProvider {
         answers[label] = value
+        return this
+    }
+
+    fun answerSequence(label: String, vararg values: Any): ScriptedProvider {
+        answerQueues[label] = ArrayDeque(values.toList())
         return this
     }
 
@@ -83,7 +89,7 @@ class ScriptedProvider(
                 error = InferenceError(kind, "scripted ${kind.name.lowercase()}"),
             )
         }
-        val answer = answers[request.label]
+        val answer = answerQueues[request.label]?.removeFirstOrNull() ?: answers[request.label]
             ?: return InferenceResult(
                 value = null,
                 confidence = 0f,
@@ -205,6 +211,18 @@ class FakeScreen(
         gestures += "swipe"
         scrolled += direction
         return ActionResult.Performed("swipe")
+    }
+
+    override suspend fun swipeRatio(
+        startXRatio: Float,
+        startYRatio: Float,
+        endXRatio: Float,
+        endYRatio: Float,
+        durationMs: Long,
+    ): ActionResult {
+        gestures += "swipe_ratio"
+        advance()
+        return ActionResult.Performed("visual swipe")
     }
 
     override suspend fun scroll(container: UiNode?, direction: Direction): ActionResult {

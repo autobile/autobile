@@ -26,6 +26,15 @@ interface ScreenActuator {
 
     suspend fun swipe(direction: Direction, distanceRatio: Float, durationMs: Long): ActionResult
 
+    /** Performs a visual-task swipe/drag between exact screen-relative points. */
+    suspend fun swipeRatio(
+        startXRatio: Float,
+        startYRatio: Float,
+        endXRatio: Float,
+        endYRatio: Float,
+        durationMs: Long,
+    ): ActionResult
+
     /** Scrolls [container] if it can scroll itself, otherwise swipes. */
     suspend fun scroll(container: UiNode?, direction: Direction): ActionResult
 

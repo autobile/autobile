@@ -2,6 +2,31 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.8.0] - 2026-09-15
+
+### Added
+
+- Add a first-class visual-task action for games and canvas interfaces. It observes a
+  fresh screenshot for every turn and can choose a tap, long press, exact-point swipe,
+  wait, completion, or blocked result.
+- Require two fresh visual completion observations before a game task can advance to a
+  recorded exit action.
+
+### Changed
+
+- Interpret behavior edits through a structured, language-independent AI plan instead
+  of matching hard-coded Korean or English phrases.
+- Select exit steps by stable step IDs supplied by the edit plan, with structural Home
+  and Back actions used only as a compatibility fallback.
+- Use different image-capable ChatGPT catalog fallbacks for light and advanced tiers so
+  one unsupported model does not make both cloud attempts identical.
+
+### Fixed
+
+- Stop treating a repeated click with a high retry count as autonomous game play.
+- Keep visual tasks inside the learned app and reject system-edge gestures, missing
+  screenshot runtimes, false progress, and unconfirmed completion.
+
 ## [0.7.3] - 2026-09-15
 
 ### Fixed

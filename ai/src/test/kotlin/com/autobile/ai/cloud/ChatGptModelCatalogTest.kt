@@ -45,6 +45,21 @@ class ChatGptModelCatalogTest {
     }
 
     @Test
+    fun `light and advanced vision tiers choose different catalog fallbacks`() {
+        val catalog = ChatGptModelCatalog.parse(
+            """{"models":[
+                {"slug":"vision-fast","supported_in_api":true,"input_modalities":["text","image"]},
+                {"slug":"vision-deep","supported_in_api":true,"input_modalities":["text","image"]}
+            ]}""",
+        )!!
+
+        assertThat(catalog.select("missing", needsVision = true, preferAdvanced = false))
+            .isEqualTo("vision-fast")
+        assertThat(catalog.select("missing", needsVision = true, preferAdvanced = true))
+            .isEqualTo("vision-deep")
+    }
+
+    @Test
     fun `invalid or empty catalogs do not replace a configured model`() {
         assertThat(ChatGptModelCatalog.parse("not json")).isNull()
         assertThat(ChatGptModelCatalog.parse("""{"models":[]}""")).isNull()

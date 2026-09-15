@@ -174,6 +174,22 @@ enum class ValueType { TEXT, NUMBER, CURRENCY, DATE, PERCENT, BOOLEAN }
 
 @Serializable
 sealed interface ActionSpec {
+    /**
+     * A bounded visual control task whose next gesture cannot be known at compile time.
+     *
+     * Games and canvas applications are not a repeated `Click`: every frame can require
+     * a different tap, drag, swipe, wait, or completion decision. The executor therefore
+     * observes fresh pixels and chooses one audited action per iteration until the
+     * independently declared completion criterion is confirmed.
+     */
+    @Serializable
+    @SerialName("visual_task")
+    data class VisualTask(
+        val objective: String,
+        val completionCriteria: String,
+        val maxActions: Int = 64,
+    ) : ActionSpec
+
     @Serializable
     @SerialName("click")
     data object Click : ActionSpec

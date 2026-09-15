@@ -6,6 +6,7 @@ import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.autobile.ai.task.SkillEdit
 import com.autobile.ai.task.SkillEditField
+import com.autobile.ai.task.BehaviorEditMode
 import com.autobile.core.data.AutobileDatabase
 import com.autobile.core.data.SkillStore
 import com.autobile.core.model.ActionSpec
@@ -308,7 +309,12 @@ class SkillEditorTest {
 
         val preview = editor.buildPreview(
             game,
-            edit(SkillEditField.BEHAVIOR, "게임에서 나가지 말고 계속 플레이해", meaningChanged = true),
+            edit(
+                SkillEditField.BEHAVIOR,
+                "게임에서 나가지 말고 계속 플레이해",
+                meaningChanged = true,
+                behaviorMode = BehaviorEditMode.STAY_IN_APP,
+            ),
         ) as SkillEditPreview.Ready
         val applied = editor.apply(preview) as SkillEditApplyResult.Applied
 
@@ -359,6 +365,20 @@ class SkillEditorTest {
             runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
         )
 
+        val inferred = edit(
+            SkillEditField.BEHAVIOR,
+            request,
+            meaningChanged = true,
+            behaviorMode = BehaviorEditMode.VISUAL_UNTIL_COMPLETE,
+            objective = "Finish the current game completely",
+            completionCriteria = "A victory, clear, or final results screen is visible and no gameplay remains",
+        )
+        editor = SkillEditor(
+            router = routerWith(ScriptedProvider().answerWith("skill-edit", inferred)),
+            skillStore = store,
+            scheduler = TriggerScheduler(context),
+        )
+
         val preview = editor.preview(game, request, localOnly = true) as SkillEditPreview.Ready
 
         assertThat(preview.updated.steps.map { it.id }).containsExactly("launch", "play", "exit").inOrder()
@@ -367,9 +387,12 @@ class SkillEditorTest {
         assertThat(play.target.locators).isEmpty()
         assertThat(play.validation.mode).isEqualTo(ValidationMode.SEMANTIC)
         assertThat(play.validation.goalCritical).isTrue()
-        assertThat(play.validation.expectation).contains("Progress alone is not completion")
+        assertThat(play.validation.expectation).isEqualTo(inferred.completionCriteria)
         assertThat(play.expectedState.requiredPackage).isEqualTo("com.example.game")
-        assertThat(play.fallback.maxRetries).isAtLeast(64)
+        val visualTask = play.action as ActionSpec.VisualTask
+        assertThat(visualTask.objective).isEqualTo(inferred.objective)
+        assertThat(visualTask.completionCriteria).isEqualTo(inferred.completionCriteria)
+        assertThat(visualTask.maxActions).isAtLeast(64)
         assertThat(preview.updated.steps.last().action).isEqualTo(ActionSpec.Home)
         assertThat(preview.updated.postconditions).isEmpty()
         assertThat(preview.updated.runtimeRequirements.requiresScreenshot).isTrue()
@@ -411,11 +434,21 @@ class SkillEditorTest {
         goal = "Report yesterday's sales",
     )
 
-    private fun edit(field: SkillEditField, value: String, meaningChanged: Boolean = false) = SkillEdit(
+    private fun edit(
+        field: SkillEditField,
+        value: String,
+        meaningChanged: Boolean = false,
+        behaviorMode: BehaviorEditMode = BehaviorEditMode.UNSUPPORTED,
+        objective: String = "",
+        completionCriteria: String = "",
+    ) = SkillEdit(
         field = field,
         newValue = value,
         meaningChanged = meaningChanged,
         summary = "Change ${field.name.lowercase()}",
         confidence = 0.9f,
+        behaviorMode = behaviorMode,
+        objective = objective,
+        completionCriteria = completionCriteria,
     )
 }
