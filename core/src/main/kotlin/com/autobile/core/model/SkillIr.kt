@@ -187,7 +187,7 @@ sealed interface ActionSpec {
     data class VisualTask(
         val objective: String,
         val completionCriteria: String,
-        val maxActions: Int = 64,
+        val maxActions: Int = 256,
     ) : ActionSpec
 
     @Serializable

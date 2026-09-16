@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.autobile.ai.task.AnalysedConstant
 import com.autobile.ai.task.AnalysedVariable
+import com.autobile.ai.task.DemonstrationExecutionMode
 import com.autobile.ai.task.InferredGoal
 import com.autobile.ai.task.VariableAnalysis
 import com.autobile.core.data.AppPolicyStore
@@ -162,6 +163,38 @@ class SkillCompilerTest {
         val step = result.skill.steps.first()
         assertThat(step.intent).isEqualTo(StepIntent.LAUNCH_APP)
         assertThat(step.action).isInstanceOf(ActionSpec.LaunchApp::class.java)
+    }
+
+    @Test
+    fun `a dynamic game demonstration compiles to one autonomous visual task`() = runTest {
+        val provider = provider().answerWith(
+            "goal-inference",
+            InferredGoal(
+                name = "Finish Sudoku",
+                goal = "Start and completely solve the Sudoku puzzle",
+                summary = "Solve the entire puzzle, then leave the game",
+                confidence = 0.92f,
+                executionMode = DemonstrationExecutionMode.VISUAL_AGENT,
+                completionCriteria = "The completed puzzle or success screen is visibly shown with no empty cells",
+            ),
+        )
+        val result = compiler(provider).compile(
+            trace(
+                event(0, ObservedAction.AppOpen("com.example.sudoku"), packageName = "com.example.sudoku"),
+                event(1, ObservedAction.Click, label = "New game", packageName = "com.example.sudoku"),
+                event(2, ObservedAction.Click, label = "Cell", packageName = "com.example.sudoku"),
+                event(3, ObservedAction.Click, label = "7", packageName = "com.example.sudoku"),
+                event(4, ObservedAction.Home, label = "Home", packageName = "com.example.sudoku"),
+            ),
+        ) as CompilationResult.Success
+
+        assertThat(result.skill.steps).hasSize(3)
+        assertThat(result.skill.steps.first().action).isInstanceOf(ActionSpec.LaunchApp::class.java)
+        val visual = result.skill.steps[1].action as ActionSpec.VisualTask
+        assertThat(visual.objective).isEqualTo("Start and completely solve the Sudoku puzzle")
+        assertThat(visual.completionCriteria).contains("no empty cells")
+        assertThat(result.skill.steps.last().action).isEqualTo(ActionSpec.Home)
+        assertThat(result.skill.runtimeRequirements.requiresScreenshot).isTrue()
     }
 
     @Test

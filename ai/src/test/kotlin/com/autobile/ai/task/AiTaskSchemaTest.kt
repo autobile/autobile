@@ -55,6 +55,22 @@ class AiTaskSchemaTest {
     }
 
     @Test
+    fun `visual goal requires explicit completion evidence`() {
+        val invalid = parse(
+            AiTasks.goalInference,
+            """{"name":"Sudoku","goal":"Solve it","executionMode":"visual_agent","completionCriteria":"","confidence":0.9}""",
+        )!!
+        assertThat(AiTasks.goalInference.validate(invalid)).isNotNull()
+
+        val valid = parse(
+            AiTasks.goalInference,
+            """{"name":"Sudoku","goal":"Solve it","executionMode":"visual_agent","completionCriteria":"Success screen and no empty cells","confidence":0.9}""",
+        )!!
+        assertThat(valid.executionMode).isEqualTo(DemonstrationExecutionMode.VISUAL_AGENT)
+        assertThat(AiTasks.goalInference.validate(valid)).isNull()
+    }
+
+    @Test
     fun `variable analysis recognises a relative date`() {
         val analysis = parse(
             AiTasks.variableAnalysis,
@@ -108,6 +124,18 @@ class AiTaskSchemaTest {
         )!!
         assertThat(edit.meaningChanged).isTrue()
         assertThat(edit.field).isEqualTo(SkillEditField.VALUE_FIELD)
+    }
+
+    @Test
+    fun `skill edit parses structural step operations`() {
+        val edit = parse(
+            AiTasks.skillEdit,
+            """{"field":"behavior","newValue":"finish the puzzle","behaviorMode":"step_operations","meaningChanged":true,"operations":[{"kind":"replace","stepId":"play","action":"visual_task","objective":"Solve the puzzle","completionCriteria":"Success is visible"}]}""",
+        )!!
+        assertThat(edit.behaviorMode).isEqualTo(BehaviorEditMode.STEP_OPERATIONS)
+        assertThat(edit.operations).hasSize(1)
+        assertThat(edit.operations.first().kind).isEqualTo(SkillStepEditKind.REPLACE)
+        assertThat(edit.operations.first().action).isEqualTo(EditableStepAction.VISUAL_TASK)
     }
 
     @Test

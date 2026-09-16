@@ -3,8 +3,12 @@ package com.autobile.runtime.edit
 import com.autobile.ai.router.AiRuntimeRouter
 import com.autobile.ai.task.AiTasks
 import com.autobile.ai.task.BehaviorEditMode
+import com.autobile.ai.task.EditableStepAction
 import com.autobile.ai.task.SkillEdit
 import com.autobile.ai.task.SkillEditField
+import com.autobile.ai.task.SkillStepEdit
+import com.autobile.ai.task.SkillStepEditKind
+import com.autobile.core.common.Ids
 import com.autobile.core.common.TemporalText
 import com.autobile.core.common.TimeSource
 import com.autobile.core.data.SkillStore
@@ -22,6 +26,8 @@ import com.autobile.core.model.SkillVariable
 import com.autobile.core.model.SkillStep
 import com.autobile.core.model.StepIntent
 import com.autobile.core.model.TriggerSpec
+import com.autobile.core.model.TargetSemantics
+import com.autobile.core.model.ValidationSpec
 import com.autobile.core.model.ValidationMode
 import com.autobile.core.model.ValueRef
 import com.autobile.core.model.ValueType
@@ -222,7 +228,105 @@ class SkillEditor(
         return when (edit.behaviorMode) {
             BehaviorEditMode.VISUAL_UNTIL_COMPLETE -> patchCompletionBeforeExit(skill, edit)
             BehaviorEditMode.STAY_IN_APP -> patchStayInApp(skill, edit)
+            BehaviorEditMode.STEP_OPERATIONS -> patchStepOperations(skill, edit.operations)
             BehaviorEditMode.UNSUPPORTED -> null
+        }
+    }
+
+    /** Applies model-proposed structural edits only through a closed action vocabulary. */
+    private fun patchStepOperations(skill: SemanticSkill, operations: List<SkillStepEdit>): SemanticSkill? {
+        if (operations.isEmpty() || operations.size > MAX_STEP_EDIT_OPERATIONS) return null
+        val steps = skill.steps.toMutableList()
+        operations.forEach { operation ->
+            val anchor = steps.indexOfFirst { it.id == operation.stepId }
+            if (anchor < 0 || operation.kind == SkillStepEditKind.UNKNOWN) return null
+            when (operation.kind) {
+                SkillStepEditKind.DELETE -> steps.removeAt(anchor)
+                SkillStepEditKind.REPLACE -> {
+                    steps[anchor] = buildEditedStep(skill, operation, steps[anchor].id) ?: return null
+                }
+                SkillStepEditKind.INSERT_BEFORE -> {
+                    steps.add(anchor, buildEditedStep(skill, operation, Ids.step()) ?: return null)
+                }
+                SkillStepEditKind.INSERT_AFTER -> {
+                    steps.add(anchor + 1, buildEditedStep(skill, operation, Ids.step()) ?: return null)
+                }
+                SkillStepEditKind.UNKNOWN -> return null
+            }
+        }
+        if (steps.isEmpty()) return null
+        val needsVision = steps.any { it.action is ActionSpec.VisualTask }
+        return skill.copy(
+            steps = steps,
+            runtimeRequirements = skill.runtimeRequirements.copy(
+                requiresScreenshot = skill.runtimeRequirements.requiresScreenshot || needsVision,
+            ),
+        )
+    }
+
+    private fun buildEditedStep(skill: SemanticSkill, edit: SkillStepEdit, id: String): SkillStep? {
+        val packageName = edit.packageName.takeIf { it.isNotBlank() }
+            ?: skill.runtimeRequirements.requiredPackages.singleOrNull()
+        val targetLabel = edit.target.ifBlank { edit.objective }.trim()
+        return when (edit.action) {
+            EditableStepAction.VISUAL_TASK -> {
+                val objective = edit.objective.trim().takeIf { it.isNotBlank() } ?: return null
+                val completion = edit.completionCriteria.trim().takeIf { it.isNotBlank() } ?: return null
+                packageName ?: return null
+                SkillStep(
+                    id = id,
+                    intent = StepIntent.NAVIGATE,
+                    target = TargetSemantics(
+                        intentLabel = targetLabel.ifBlank { objective },
+                        description = objective,
+                    ),
+                    preferredResolver = ResolverKind.VISION,
+                    action = ActionSpec.VisualTask(objective, completion, MAX_GAMEPLAY_ACTIONS),
+                    expectedState = ExpectedState(requiredPackage = packageName, description = completion),
+                    validation = ValidationSpec(
+                        mode = ValidationMode.SEMANTIC,
+                        timeoutMs = GAMEPLAY_SETTLE_TIMEOUT_MS,
+                        expectation = completion,
+                        goalCritical = true,
+                    ),
+                    description = objective,
+                )
+            }
+            EditableStepAction.CLICK, EditableStepAction.LONG_PRESS -> {
+                if (targetLabel.isBlank()) return null
+                SkillStep(
+                    id = id,
+                    intent = StepIntent.SELECT_ITEM,
+                    target = TargetSemantics(targetLabel, targetLabel),
+                    preferredResolver = ResolverKind.ACCESSIBILITY_NODE,
+                    action = if (edit.action == EditableStepAction.CLICK) ActionSpec.Click else ActionSpec.LongPress(),
+                    expectedState = ExpectedState(requiredPackage = packageName),
+                    description = targetLabel,
+                )
+            }
+            EditableStepAction.WAIT -> SkillStep(
+                id = id,
+                intent = StepIntent.WAIT,
+                target = TargetSemantics(targetLabel.ifBlank { "Wait for the app" }),
+                action = ActionSpec.Wait(edit.durationMs.coerceIn(100L, 30_000L)),
+                expectedState = ExpectedState(requiredPackage = packageName),
+                description = targetLabel.ifBlank { "Wait for the app" },
+            )
+            EditableStepAction.BACK -> SkillStep(
+                id = id,
+                intent = StepIntent.GO_BACK,
+                target = TargetSemantics(targetLabel.ifBlank { "Previous screen" }),
+                action = ActionSpec.Back,
+                description = targetLabel.ifBlank { "Go back" },
+            )
+            EditableStepAction.HOME -> SkillStep(
+                id = id,
+                intent = StepIntent.GO_HOME,
+                target = TargetSemantics(targetLabel.ifBlank { "Home screen" }),
+                action = ActionSpec.Home,
+                description = targetLabel.ifBlank { "Go home" },
+            )
+            EditableStepAction.NONE -> null
         }
     }
 
@@ -235,51 +339,57 @@ class SkillEditor(
      * from frame to frame. Each attempt must instead be grounded from fresh pixels.
      */
     private fun patchCompletionBeforeExit(skill: SemanticSkill, edit: SkillEdit): SemanticSkill? {
-        val exitIndex = selectedExitIndexes(skill, edit).lastOrNull() ?: return null
-        if (exitIndex <= 0) return null
-        val playIndex = (exitIndex - 1 downTo 0).firstOrNull { index ->
-            val step = skill.steps[index]
-            step.action !is ActionSpec.LaunchApp && !isExitStep(step) && isVisualGameplayAction(step.action)
-        } ?: return null
+        val exitIndexes = selectedExitIndexes(skill, edit)
+        val exitIndex = exitIndexes.firstOrNull() ?: skill.steps.size
+        val launchIndex = skill.steps.take(exitIndex).indexOfLast { it.action is ActionSpec.LaunchApp }
+        val playIndex = (launchIndex + 1).coerceAtLeast(0)
+        if (playIndex >= exitIndex) return null
         val appPackage = gamePackage(skill, exitIndex) ?: return null
 
         val objective = edit.objective.ifBlank { edit.newValue }.trim()
         val completionCriteria = edit.completionCriteria.trim().takeIf { it.isNotBlank() } ?: return null
-        val steps = skill.steps.mapIndexed { index, step ->
-            when (index) {
-                playIndex -> step.copy(
-                    target = step.target.copy(
-                        intentLabel = "Next correct action to complete the game",
-                        description = "Choose the next in-game action that advances toward a fully completed game",
-                        synonyms = listOf("next move", "continue playing", "finish game", "complete level"),
-                        locators = emptyList(),
-                    ),
-                    action = ActionSpec.VisualTask(
-                        objective = objective,
-                        completionCriteria = completionCriteria,
-                        maxActions = MAX_GAMEPLAY_ACTIONS,
-                    ),
-                    preferredResolver = ResolverKind.VISION,
-                    expectedState = ExpectedState(
-                        requiredPackage = appPackage,
-                        description = "The game is fully completed and no required gameplay remains",
-                    ),
-                    validation = step.validation.copy(
-                        mode = ValidationMode.SEMANTIC,
-                        timeoutMs = maxOf(step.validation.timeoutMs, GAMEPLAY_SETTLE_TIMEOUT_MS),
-                        expectation = completionCriteria,
-                        goalCritical = true,
-                    ),
-                    fallback = step.fallback.copy(
-                        allowVision = true,
-                        maxRetries = maxOf(step.fallback.maxRetries, MAX_GAMEPLAY_ACTIONS),
-                    ),
-                    description = "Play until the game is fully completed",
-                )
-                exitIndex -> step.copy(description = "Exit only after the game completion check passes")
-                else -> step
+        val playSeed = skill.steps[playIndex]
+        val visualStep = playSeed.copy(
+            target = playSeed.target.copy(
+                intentLabel = "Next correct action to complete the game",
+                description = "Choose the next in-game action that advances toward a fully completed game",
+                synonyms = listOf("next move", "continue playing", "finish game", "complete level"),
+                locators = emptyList(),
+            ),
+            action = ActionSpec.VisualTask(
+                objective = objective,
+                completionCriteria = completionCriteria,
+                maxActions = MAX_GAMEPLAY_ACTIONS,
+            ),
+            preferredResolver = ResolverKind.VISION,
+            expectedState = ExpectedState(
+                requiredPackage = appPackage,
+                description = "The game is fully completed and no required gameplay remains",
+            ),
+            validation = playSeed.validation.copy(
+                mode = ValidationMode.SEMANTIC,
+                timeoutMs = maxOf(playSeed.validation.timeoutMs, GAMEPLAY_SETTLE_TIMEOUT_MS),
+                expectation = completionCriteria,
+                goalCritical = true,
+            ),
+            fallback = playSeed.fallback.copy(
+                allowVision = true,
+                maxRetries = maxOf(playSeed.fallback.maxRetries, MAX_GAMEPLAY_ACTIONS),
+            ),
+            description = "Play until the game is fully completed",
+        )
+        val preservedExit = if (edit.preserveExit) {
+            skill.steps.drop(exitIndex).mapIndexed { offset, step ->
+                if (offset == 0 && isExitStep(step)) {
+                    step.copy(description = "Exit only after the game completion check passes")
+                } else {
+                    step
+                }
             }
+        } else {
+            skill.steps.drop(exitIndex).filterNot(::isExitStep)
         }
+        val steps = skill.steps.take(playIndex) + visualStep + preservedExit
         val staleStayPostconditions = skill.postconditions.filterNot { condition ->
             condition.kind == ConditionKind.STRUCTURAL && condition.packageName == appPackage &&
                 STAY_POSTCONDITION_TERMS.any(condition.description.lowercase()::contains)
@@ -331,11 +441,6 @@ class SkillEditor(
                 ?: step.target.screen?.packageName
                 ?: step.target.locators.firstNotNullOfOrNull { it.packageName }
         }.firstOrNull { it.isNotBlank() } ?: skill.runtimeRequirements.requiredPackages.singleOrNull()
-
-    private fun isVisualGameplayAction(action: ActionSpec): Boolean = when (action) {
-        ActionSpec.Click, is ActionSpec.Tap, is ActionSpec.LongPress, is ActionSpec.Swipe -> true
-        else -> false
-    }
 
     private fun isExitStep(step: SkillStep): Boolean =
         step.action is ActionSpec.Home || step.intent == StepIntent.GO_HOME || step.action is ActionSpec.Back
@@ -458,7 +563,8 @@ class SkillEditor(
         val KOREAN_TIME_PATTERN = Regex("(?:^|\\s)([01]?\\d|2[0-3])\\s*시(?:\\s*([0-5]?\\d)\\s*분)?")
         val DESTINATION_NAMES = listOf("destination", "channel", "recipient", "target", "room")
         val STAY_POSTCONDITION_TERMS = listOf("remain", "stay", "foreground", "유지", "머무")
-        const val MAX_GAMEPLAY_ACTIONS = 64
+        const val MAX_GAMEPLAY_ACTIONS = 256
+        const val MAX_STEP_EDIT_OPERATIONS = 32
         const val GAMEPLAY_SETTLE_TIMEOUT_MS = 8_000L
         // Android's ICU regex engine (including API 30) requires the closing brace to
         // be escaped as well. The desktop JVM accepts a bare `}`, which let unit tests
