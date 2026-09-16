@@ -77,7 +77,7 @@ class RiskEngine(
 
         val needsConfirmation = when {
             userConfirmedThisRun -> false
-            categories.isEmpty() && policy.mode != AppPolicyMode.ASK -> autonomy <= AutonomyLevel.L1_SUGGEST
+            categories.isEmpty() && policy.mode != AppPolicyMode.ASK -> autonomy <= AutonomyLevel.L2_ASK_BEFORE_ACTION
             categories.isEmpty() -> autonomy < AutonomyLevel.L3_AUTONOMOUS_LOW_RISK
             // A high-impact action is only ever unattended on a skill the user has
             // explicitly trusted. Nothing else earns that, however well it has run.
