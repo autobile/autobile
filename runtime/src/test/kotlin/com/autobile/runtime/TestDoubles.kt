@@ -168,14 +168,20 @@ class FakeScreen(
         private set
     var homePresses: Int = 0
         private set
+    val observeSettleMs = mutableListOf<Long>()
+    val stableObservationTimeouts = mutableListOf<Long>()
     private var textInputAttempts = 0
     private var actionOccurred = false
 
-    override suspend fun observe(settleMs: Long): PerceptionResult =
-        perception ?: PerceptionResult.Success(current)
+    override suspend fun observe(settleMs: Long): PerceptionResult {
+        observeSettleMs += settleMs
+        return perception ?: PerceptionResult.Success(current)
+    }
 
-    override suspend fun observeStable(timeoutMs: Long, settleMs: Long): PerceptionResult =
-        perception ?: PerceptionResult.Success(current)
+    override suspend fun observeStable(timeoutMs: Long, settleMs: Long): PerceptionResult {
+        stableObservationTimeouts += timeoutMs
+        return perception ?: PerceptionResult.Success(current)
+    }
 
     override suspend fun captureScreenshot(): ScreenshotCapture =
         if (actionOccurred) nextScreenshot ?: screenshot else screenshot

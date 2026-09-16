@@ -847,5 +847,7 @@ class SkillExecutorTest {
         assertThat(screen.gestures).containsExactly("swipe_ratio")
         assertThat(provider.requestedLabels.filter { it == "visual-task-action" }).hasSize(3)
         assertThat(outcome.stepResults.single().validation.reason).contains("two fresh observations")
+        assertThat(screen.stableObservationTimeouts).isEmpty()
+        assertThat(screen.observeSettleMs).containsAtLeast(180L, 700L)
     }
 }

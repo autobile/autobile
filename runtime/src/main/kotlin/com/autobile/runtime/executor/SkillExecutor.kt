@@ -1217,8 +1217,12 @@ class SkillExecutor(
                             deviceAiCalls,
                         )
                     }
-                    delay(VISUAL_COMPLETION_RECHECK_MS)
-                    snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)?.snapshot
+                    // A visual task's next screenshot is the authoritative observation.
+                    // Waiting for the accessibility tree to become equivalent is both
+                    // redundant and pathological on games with timers or animations:
+                    // the tree may never settle, costing the full 5-8 second validation
+                    // timeout on every turn.
+                    snapshot = (perception.observe(VISUAL_COMPLETION_RECHECK_MS) as? PerceptionResult.Success)?.snapshot
                         ?: snapshot
                 }
 
@@ -1284,7 +1288,12 @@ class SkillExecutor(
                         }
                         append(": ").append(decision.reason)
                     }
-                    snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)?.snapshot
+                    while (recentActions.size > VISUAL_TASK_HISTORY_LIMIT) recentActions.removeAt(0)
+                    // Observe package identity once after a short animation allowance.
+                    // Fresh pixels are captured at the top of the next turn, so a
+                    // multi-sample accessibility stability loop adds latency without
+                    // improving visual correctness.
+                    snapshot = (perception.observe(VISUAL_ACTION_SETTLE_MS) as? PerceptionResult.Success)?.snapshot
                         ?: snapshot
                 }
             }
@@ -1385,6 +1394,8 @@ class SkillExecutor(
         const val COLUMN_TOLERANCE_PX = 160
         const val MAX_VISUAL_TASK_ACTIONS = 256
         const val VISUAL_TASK_MAX_IMAGE_DIMENSION = 1_280
+        const val VISUAL_TASK_HISTORY_LIMIT = 12
+        const val VISUAL_ACTION_SETTLE_MS = 180L
         const val REQUIRED_COMPLETION_CONFIRMATIONS = 2
         const val VISUAL_COMPLETION_RECHECK_MS = 700L
         const val VISUAL_TASK_CONFIDENCE = 0.65f
