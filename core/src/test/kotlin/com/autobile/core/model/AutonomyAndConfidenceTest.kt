@@ -21,10 +21,20 @@ class AutonomyAndConfidenceTest {
     }
 
     @Test
-    fun `degraded skills lose autonomy entirely`() {
+    fun `degraded skills require attended confirmation instead of deadlocking`() {
         val skill = SemanticSkill(
             id = "s", version = 1, name = "n", goal = "g",
             autonomyLevel = AutonomyLevel.L4_EXPLICITLY_TRUSTED,
+            confidence = SkillConfidence(score = 0.05f),
+        )
+        assertThat(skill.effectiveAutonomy()).isEqualTo(AutonomyLevel.L2_ASK_BEFORE_ACTION)
+    }
+
+    @Test
+    fun `explicit watch only remains watch only when confidence is degraded`() {
+        val skill = SemanticSkill(
+            id = "s", version = 1, name = "n", goal = "g",
+            autonomyLevel = AutonomyLevel.L0_OBSERVE,
             confidence = SkillConfidence(score = 0.05f),
         )
         assertThat(skill.effectiveAutonomy()).isEqualTo(AutonomyLevel.L0_OBSERVE)

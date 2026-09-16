@@ -150,6 +150,19 @@ fun SkillDetailScreen(state: AppUiState, viewModel: AppViewModel) {
                     )
                 }
             }
+            when {
+                skill.autonomyLevel == AutonomyLevel.L0_OBSERVE ->
+                    Statement(stringResource(R.string.skill_autonomy_observe_hint), color = theme.caution)
+
+                skill.effectiveAutonomy() < skill.autonomyLevel ->
+                    Statement(
+                        stringResource(
+                            R.string.skill_autonomy_confidence_cap,
+                            stringResource(skill.effectiveAutonomy().labelRes()),
+                        ),
+                        color = theme.caution,
+                    )
+            }
         }
 
         Column(Modifier.padding(horizontal = Space.gutter)) {

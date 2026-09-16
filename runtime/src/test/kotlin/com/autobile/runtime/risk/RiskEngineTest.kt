@@ -104,14 +104,26 @@ class RiskEngineTest {
     }
 
     @Test
-    fun `a degraded skill is denied regardless of its declared autonomy`() = runTest {
+    fun `a degraded skill asks for attended confirmation so it can recover`() = runTest {
         policies.save(AppPolicy("com.example.app", AppPolicyMode.ALLOW, AppCategory.OTHER))
         val decision = engine.evaluate(
             skill(autonomy = AutonomyLevel.L4_EXPLICITLY_TRUSTED, confidence = 0.05f),
             step(),
             "com.example.app",
         )
+        assertThat(decision.verdict).isEqualTo(RiskVerdict.CONFIRM)
+    }
+
+    @Test
+    fun `an explicitly watch only skill is denied with an actionable reason`() = runTest {
+        policies.save(AppPolicy("com.example.app", AppPolicyMode.ALLOW, AppCategory.OTHER))
+        val decision = engine.evaluate(
+            skill(autonomy = AutonomyLevel.L0_OBSERVE),
+            step(),
+            "com.example.app",
+        )
         assertThat(decision.verdict).isEqualTo(RiskVerdict.DENY)
+        assertThat(decision.reason).contains("Ask first")
     }
 
     @Test

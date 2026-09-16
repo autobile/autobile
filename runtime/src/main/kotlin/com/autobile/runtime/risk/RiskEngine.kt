@@ -71,7 +71,7 @@ class RiskEngine(
             return RiskDecision(
                 verdict = RiskVerdict.DENY,
                 categories = categories,
-                reason = words.suspendedPendingReview(),
+                reason = words.automationObserveOnly(),
             )
         }
 

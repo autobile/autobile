@@ -103,6 +103,8 @@
     <string name="skill_delete">Delete automation</string>
     <string name="skill_delete_confirm_title">Delete %1$s?</string>
     <string name="skill_delete_confirm_body">Its saved versions and repair proposals go too. Execution history stays.</string>
+    <string name="skill_autonomy_observe_hint">Watch only never controls the screen. Choose Ask first or higher to run this automation.</string>
+    <string name="skill_autonomy_confidence_cap">Recent results currently limit this automation to %1$s. Approve its actions; successful runs restore confidence.</string>
     <string name="skill_unavailable_title">Automation unavailable</string>
     <string name="skill_unavailable_detail">It may have been deleted.</string>
 
@@ -419,7 +421,7 @@
     <string name="run_automation_stopped">Automation is stopped</string>
     <string name="run_category_blocked">%1$s apps are blocked</string>
     <string name="run_app_observe_only">this app is set to observe only</string>
-    <string name="run_suspended_review">this automation is suspended until you review it</string>
+    <string name="run_automation_observe_only">This automation is set to Watch only and will not control the screen. Choose Ask first or higher under How much freedom it has.</string>
     <string name="run_low_risk">low risk action</string>
     <string name="run_risk_decision">%1$s: %2$s</string>
     <string name="run_own_screen">Autobile\'s own screen is in front, so this step has nothing to act on</string>

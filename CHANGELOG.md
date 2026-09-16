@@ -2,6 +2,17 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.9.1] - 2026-09-16
+
+### Fixed
+
+- Replace the unreachable "suspended until review" state with an actionable explanation
+  that points to the automation's autonomy controls.
+- Cap degraded automations at attended `Ask first` execution instead of deadlocking them
+  in `Watch only`, so successful supervised runs can restore confidence.
+- Explain `Watch only` and confidence-based autonomy limits directly on the automation
+  detail screen.
+
 ## [0.9.0] - 2026-09-16
 
 ### Added
