@@ -31,7 +31,7 @@ class ResourceRuntimeVocabulary(private val context: Context) : RuntimeVocabular
     override fun categoryBlocked(category: String): String =
         context.getString(R.string.run_category_blocked, category)
     override fun appObserveOnly(): String = context.getString(R.string.run_app_observe_only)
-    override fun suspendedPendingReview(): String = context.getString(R.string.run_suspended_review)
+    override fun automationObserveOnly(): String = context.getString(R.string.run_automation_observe_only)
     override fun lowRiskAction(): String = context.getString(R.string.run_low_risk)
     override fun riskDecision(verdict: String, reason: String): String =
         context.getString(R.string.run_risk_decision, verdict, reason)

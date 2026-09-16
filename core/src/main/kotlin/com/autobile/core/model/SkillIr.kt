@@ -50,7 +50,12 @@ data class SemanticSkill(
             ConfidenceBand.HIGH -> riskCapped
             ConfidenceBand.MEDIUM -> riskCapped
             ConfidenceBand.LOW -> minOf(riskCapped, AutonomyLevel.L2_ASK_BEFORE_ACTION)
-            ConfidenceBand.DEGRADED -> AutonomyLevel.L0_OBSERVE
+            // A failed skill still needs an attended recovery path. Capping it at L0
+            // used to deadlock the skill: execution was denied, so it could never
+            // complete a run and recover confidence. Keep every action behind an
+            // explicit confirmation instead. An explicitly selected L0 remains L0
+            // because [riskCapped] is already the lower value.
+            ConfidenceBand.DEGRADED -> minOf(riskCapped, AutonomyLevel.L2_ASK_BEFORE_ACTION)
         }
     }
 

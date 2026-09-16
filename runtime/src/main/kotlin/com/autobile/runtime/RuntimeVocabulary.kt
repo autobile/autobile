@@ -37,7 +37,7 @@ interface RuntimeVocabulary {
     fun automationStopped(): String
     fun categoryBlocked(category: String): String
     fun appObserveOnly(): String
-    fun suspendedPendingReview(): String
+    fun automationObserveOnly(): String
     fun lowRiskAction(): String
     fun riskDecision(verdict: String, reason: String): String
 
@@ -99,7 +99,8 @@ object EnglishRuntimeVocabulary : RuntimeVocabulary {
     override fun automationStopped() = "Automation is stopped"
     override fun categoryBlocked(category: String) = "$category apps are blocked"
     override fun appObserveOnly() = "this app is set to observe only"
-    override fun suspendedPendingReview() = "this automation is suspended until you review it"
+    override fun automationObserveOnly() =
+        "this automation is set to Watch only; choose Ask first or higher under How much freedom it has"
     override fun lowRiskAction() = "low risk action"
     override fun riskDecision(verdict: String, reason: String) = "$verdict: $reason"
 
