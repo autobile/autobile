@@ -3,6 +3,7 @@ package com.autobile.runtime.compiler
 import com.autobile.ai.router.AiRuntimeRouter
 import com.autobile.ai.task.AiTasks
 import com.autobile.ai.task.AnalysedVariable
+import com.autobile.ai.task.DemonstrationExecutionMode
 import com.autobile.core.common.Ids
 import com.autobile.core.common.TemporalText
 import com.autobile.core.common.TimeSource
@@ -116,12 +117,13 @@ class SkillCompiler(
             SkillConstant(name = it.name, value = it.value, description = it.why)
         }
 
-        val steps = compilable.mapIndexedNotNull { index, event ->
+        val recordedSteps = compilable.mapIndexedNotNull { index, event ->
             buildStep(event, index, compilable, variables)
         }
-        if (steps.isEmpty()) {
+        if (recordedSteps.isEmpty()) {
             return CompilationResult.Failed(vocabulary.stepsNotUnderstood())
         }
+        val steps = compileExecutionPlan(recordedSteps, goal)
 
         val now = time.nowMillis()
         val riskCategories = steps.flatMap { riskEngine.categorise(it) }.toSet()
@@ -153,7 +155,9 @@ class SkillCompiler(
             confidence = SkillConfidence(score = INITIAL_CONFIDENCE),
             runtimeRequirements = RuntimeRequirements(
                 requiredPackages = compilable.map { it.packageName }.filter { it.isNotBlank() }.distinct(),
-                requiresScreenshot = steps.any { it.preferredResolver == ResolverKind.VISION },
+                requiresScreenshot = steps.any {
+                    it.preferredResolver == ResolverKind.VISION || it.action is ActionSpec.VisualTask
+                },
             ),
             history = listOf(
                 SkillVersionRecord(
@@ -175,6 +179,64 @@ class SkillCompiler(
             discardedSteps = segmented.discardedCount,
             understoodBy = routedGoal.tier.takeIf { goal != null },
         )
+    }
+
+    /**
+     * A dynamic demonstration is evidence of the objective, not a macro to replay.
+     * Preserve deterministic app launch and an explicitly demonstrated exit, while
+     * replacing the variable in-app interaction sequence with one visual-agent step.
+     */
+    private fun compileExecutionPlan(
+        recorded: List<SkillStep>,
+        goal: com.autobile.ai.task.InferredGoal?,
+    ): List<SkillStep> {
+        if (goal?.executionMode != DemonstrationExecutionMode.VISUAL_AGENT) return recorded
+
+        val launchIndex = recorded.indexOfLast { it.action is ActionSpec.LaunchApp }
+        val exitIndex = recorded.mapIndexedNotNull { index, step ->
+            index.takeIf {
+                index > launchIndex && (step.action is ActionSpec.Home || step.intent == StepIntent.GO_HOME)
+            }
+        }.firstOrNull() ?: recorded.size
+        val dynamicStart = (launchIndex + 1).coerceAtLeast(0)
+        if (dynamicStart >= exitIndex) return recorded
+
+        val packageName = (recorded.getOrNull(launchIndex)?.action as? ActionSpec.LaunchApp)?.packageName
+            ?: recorded.subList(dynamicStart, exitIndex).firstNotNullOfOrNull { it.target.screen?.packageName }
+            ?: return recorded
+        val replaced = recorded.subList(dynamicStart, exitIndex)
+        val visual = SkillStep(
+            id = Ids.step(),
+            intent = StepIntent.NAVIGATE,
+            target = com.autobile.core.model.TargetSemantics(
+                intentLabel = goal.goal,
+                description = "Choose each next action from the current screen until the demonstrated objective is complete",
+                screen = ScreenSemantics(label = "Dynamic visual task", packageName = packageName),
+            ),
+            preferredResolver = ResolverKind.VISION,
+            action = ActionSpec.VisualTask(
+                objective = goal.goal,
+                completionCriteria = goal.completionCriteria,
+                maxActions = MAX_VISUAL_AGENT_ACTIONS,
+            ),
+            expectedState = ExpectedState(
+                requiredPackage = packageName,
+                description = goal.completionCriteria,
+            ),
+            validation = ValidationSpec(
+                mode = ValidationMode.SEMANTIC,
+                timeoutMs = VISUAL_AGENT_SETTLE_TIMEOUT_MS,
+                expectation = goal.completionCriteria,
+                goalCritical = true,
+            ),
+            fallback = FallbackPolicy(
+                allowVision = true,
+                allowCloudAi = replaced.any { it.fallback.allowCloudAi },
+                maxRetries = MAX_VISUAL_AGENT_ACTIONS,
+            ),
+            description = "Visually complete: ${goal.goal}",
+        )
+        return recorded.take(dynamicStart) + visual + recorded.drop(exitIndex)
     }
 
     /**
@@ -571,6 +633,8 @@ class SkillCompiler(
         const val ANALYSIS_CONFIDENCE_THRESHOLD = 0.4f
         const val ANALYSIS_OUTPUT_TOKENS = 1_024
         const val APP_LAUNCH_TIMEOUT_MS = 8_000L
+        const val VISUAL_AGENT_SETTLE_TIMEOUT_MS = 5_000L
+        const val MAX_VISUAL_AGENT_ACTIONS = 256
 
         val SEND_TERMS = listOf("send", "post", "submit", "보내기", "전송", "등록")
         val SHARE_TERMS = listOf("share", "공유")

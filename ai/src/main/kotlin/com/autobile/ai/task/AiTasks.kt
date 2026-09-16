@@ -194,7 +194,9 @@ object AiTasks {
         append("Completion criteria: ").append(completionCriteria).append('\n')
         append("Action number: ").append(actionNumber).append('\n')
         if (screenDescription.isNotBlank()) append("Visible semantics: ").append(screenDescription).append('\n')
-        if (recentActions.isNotEmpty()) append("Recent actions: ").append(recentActions.takeLast(6).joinToString(" | ")).append('\n')
+        if (recentActions.isNotEmpty()) append("Recent actions: ").append(recentActions.takeLast(12).joinToString(" | ")).append('\n')
+        append("Reason from the complete current visual state; the demonstration is evidence of the objective, not a move sequence to copy. ")
+        append("Choose a concrete progress action even when it was not demonstrated, and do not repeat an action whose visible result did not advance the task. ")
         append("Use complete only when the screenshot visibly proves every completion criterion. Progress is not completion. ")
         append("Never choose Android Home, Back, Recents, status/navigation bars, ads, purchases, or leaving the app. ")
         append("Set safeToAct false and use blocked when no safe progress action exists. For swipe, provide exact start and end points.")
@@ -318,6 +320,11 @@ object AiTasks {
             name: a short name for this automation, at most 4 words
             goal: one sentence describing the repeatable outcome
             summary: a plain-language description the user will be asked to confirm
+            executionMode: fixed_steps when replaying the demonstrated actions is sufficient,
+                           visual_agent when the next correct action depends on fresh pixels
+                           (games, puzzles, canvases, changing boards, or other dynamic scenes)
+            completionCriteria: for visual_agent, concrete visible evidence that proves the
+                                whole task is finished; never use mere screen change or progress
             confidence: number between 0 and 1
         """.trimIndent(),
         example = """{"name":"Daily Sales","goal":"Report yesterday's net sales to the #daily-sales channel","summary":"Check yesterday's net sales and post it to #daily-sales","confidence":0.82}""",
@@ -326,10 +333,19 @@ object AiTasks {
                 name = json.stringOr("name"),
                 goal = json.stringOr("goal"),
                 summary = json.stringOr("summary"),
+                executionMode = DemonstrationExecutionMode.parse(json.stringOr("executionMode")),
+                completionCriteria = json.stringOr("completionCriteria"),
                 confidence = json.floatOr("confidence", 0f),
             )
         },
-        validator = { goal -> if (goal.goal.isBlank()) "goal was empty" else null },
+        validator = { goal ->
+            when {
+                goal.goal.isBlank() -> "goal was empty"
+                goal.executionMode == DemonstrationExecutionMode.VISUAL_AGENT &&
+                    goal.completionCriteria.isBlank() -> "visual task completion criteria were empty"
+                else -> null
+            }
+        },
     )
 
     fun goalInferencePrompt(steps: String): String = buildString {
@@ -523,11 +539,16 @@ object AiTasks {
             field: one of trigger_time, trigger_notification, destination, value_field, input_text, name, behavior, unknown
             Use behavior for a request that adds, removes, or changes what execution steps do.
             newValue: the replacement value as the user stated it
-            behaviorMode: for behavior only, one of visual_until_complete, stay_in_app, unsupported
+            behaviorMode: for behavior only, one of visual_until_complete, stay_in_app, step_operations, unsupported
             objective: for visual_until_complete, the language-independent task objective
             completionCriteria: for visual_until_complete, visible evidence that proves the objective is fully complete
             preserveExit: true when recorded exit steps must run only after completion; false when they must be removed
             exitStepIds: for behavior only, IDs of recorded steps that leave the controlled app
+            operations: for step_operations, an ordered array of edits. Each item has:
+                        kind (insert_before, insert_after, replace, delete), stepId (the anchor),
+                        action (visual_task, click, long_press, wait, back, home), target,
+                        objective, completionCriteria, durationMs, and packageName.
+                        Use visual_task whenever future actions depend on fresh screenshots.
             meaningChanged: true when this changes what the automation does, not just how
             summary: one sentence describing the change
             confidence: number between 0 and 1
@@ -545,6 +566,18 @@ object AiTasks {
                 completionCriteria = json.stringOr("completionCriteria"),
                 preserveExit = json.boolOr("preserveExit"),
                 exitStepIds = json.stringList("exitStepIds"),
+                operations = json.objectList("operations").map { operation ->
+                    SkillStepEdit(
+                        kind = SkillStepEditKind.parse(operation.stringOr("kind")),
+                        stepId = operation.stringOr("stepId"),
+                        action = EditableStepAction.parse(operation.stringOr("action")),
+                        target = operation.stringOr("target"),
+                        objective = operation.stringOr("objective"),
+                        completionCriteria = operation.stringOr("completionCriteria"),
+                        durationMs = operation.intOr("durationMs", 500).toLong(),
+                        packageName = operation.stringOr("packageName"),
+                    )
+                },
             )
         },
     )
@@ -665,7 +698,21 @@ data class InferredGoal(
     val goal: String,
     val summary: String,
     val confidence: Float,
+    val executionMode: DemonstrationExecutionMode = DemonstrationExecutionMode.FIXED_STEPS,
+    val completionCriteria: String = "",
 )
+
+enum class DemonstrationExecutionMode {
+    FIXED_STEPS,
+    VISUAL_AGENT;
+
+    companion object {
+        fun parse(value: String): DemonstrationExecutionMode = when (value.trim().lowercase()) {
+            "visual_agent", "visual_task", "dynamic_visual" -> VISUAL_AGENT
+            else -> FIXED_STEPS
+        }
+    }
+}
 
 data class TraceSegmentation(val steps: List<SegmentedStep>, val confidence: Float)
 
@@ -752,17 +799,61 @@ data class SkillEdit(
     val completionCriteria: String = "",
     val preserveExit: Boolean = false,
     val exitStepIds: List<String> = emptyList(),
+    val operations: List<SkillStepEdit> = emptyList(),
 )
+
+data class SkillStepEdit(
+    val kind: SkillStepEditKind,
+    val stepId: String,
+    val action: EditableStepAction = EditableStepAction.NONE,
+    val target: String = "",
+    val objective: String = "",
+    val completionCriteria: String = "",
+    val durationMs: Long = 500,
+    val packageName: String = "",
+)
+
+enum class SkillStepEditKind {
+    INSERT_BEFORE, INSERT_AFTER, REPLACE, DELETE, UNKNOWN;
+
+    companion object {
+        fun parse(value: String): SkillStepEditKind = when (value.trim().lowercase()) {
+            "insert_before" -> INSERT_BEFORE
+            "insert_after" -> INSERT_AFTER
+            "replace", "update" -> REPLACE
+            "delete", "remove" -> DELETE
+            else -> UNKNOWN
+        }
+    }
+}
+
+enum class EditableStepAction {
+    VISUAL_TASK, CLICK, LONG_PRESS, WAIT, BACK, HOME, NONE;
+
+    companion object {
+        fun parse(value: String): EditableStepAction = when (value.trim().lowercase()) {
+            "visual_task", "visual_agent" -> VISUAL_TASK
+            "click", "tap" -> CLICK
+            "long_press", "long-press" -> LONG_PRESS
+            "wait" -> WAIT
+            "back" -> BACK
+            "home" -> HOME
+            else -> NONE
+        }
+    }
+}
 
 enum class BehaviorEditMode {
     VISUAL_UNTIL_COMPLETE,
     STAY_IN_APP,
+    STEP_OPERATIONS,
     UNSUPPORTED;
 
     companion object {
         fun parse(value: String): BehaviorEditMode = when (value.trim().lowercase()) {
             "visual_until_complete" -> VISUAL_UNTIL_COMPLETE
             "stay_in_app" -> STAY_IN_APP
+            "step_operations" -> STEP_OPERATIONS
             else -> UNSUPPORTED
         }
     }

@@ -2,6 +2,33 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.9.0] - 2026-09-16
+
+### Added
+
+- Classify demonstrations as fixed replays or dynamic visual-agent tasks. Games,
+  puzzles, canvases, and changing boards are compiled directly to a screenshot-driven
+  objective instead of replaying the demonstrated taps.
+- Allow plain-language corrections to propose bounded step insert, replace, and delete
+  operations through a closed executable action vocabulary.
+- Give long visual tasks up to 256 freshly observed actions, enough for multi-move
+  puzzles whose solution was not fully demonstrated.
+
+### Changed
+
+- Treat a demonstration as evidence of the goal rather than the sequence an autonomous
+  visual task must copy.
+- Preserve recent gesture coordinates and outcomes in the bounded visual-agent context
+  to reduce repeated non-progress actions.
+
+### Fixed
+
+- Make both the post-demonstration correction field and saved-automation editor capable
+  of changing executable step structure instead of rejecting every unrecognized
+  behavior change.
+- Collapse all dynamic in-app demonstration actions into one visual task while retaining
+  deterministic launch and an explicitly requested post-completion exit.
+
 ## [0.8.0] - 2026-09-15
 
 ### Added

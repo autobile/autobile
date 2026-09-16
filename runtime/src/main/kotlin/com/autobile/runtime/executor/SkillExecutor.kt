@@ -1142,6 +1142,7 @@ class SkillExecutor(
                 image = minimizer.cropForInference(
                     if (maskScreenshots()) ScreenshotMasking.mask(bitmap, snapshot) else bitmap,
                     null,
+                    maxDimension = VISUAL_TASK_MAX_IMAGE_DIMENSION,
                 ),
                 requirements = InferenceRequirements(
                     needsVision = true,
@@ -1271,7 +1272,18 @@ class SkillExecutor(
                     if (!performed.succeeded) {
                         return failedOutcome(step, index, startedAt, performed.describe, cloudCalls, deviceAiCalls)
                     }
-                    recentActions += "${decision.action.name.lowercase()}: ${decision.reason}"
+                    recentActions += buildString {
+                        append(decision.action.name.lowercase())
+                        if (decision.action.requiresStart) {
+                            append("@(").append("%.3f".format(decision.x)).append(',')
+                                .append("%.3f".format(decision.y)).append(')')
+                        }
+                        if (decision.action == VisualTaskAction.SWIPE) {
+                            append("→(").append("%.3f".format(decision.endX)).append(',')
+                                .append("%.3f".format(decision.endY)).append(')')
+                        }
+                        append(": ").append(decision.reason)
+                    }
                     snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)?.snapshot
                         ?: snapshot
                 }
@@ -1371,7 +1383,8 @@ class SkillExecutor(
         const val APP_LAUNCH_SETTLE_MS = 1_200L
         const val ROW_TOLERANCE_PX = 40
         const val COLUMN_TOLERANCE_PX = 160
-        const val MAX_VISUAL_TASK_ACTIONS = 128
+        const val MAX_VISUAL_TASK_ACTIONS = 256
+        const val VISUAL_TASK_MAX_IMAGE_DIMENSION = 1_280
         const val REQUIRED_COMPLETION_CONFIRMATIONS = 2
         const val VISUAL_COMPLETION_RECHECK_MS = 700L
         const val VISUAL_TASK_CONFIDENCE = 0.65f

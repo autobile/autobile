@@ -7,6 +7,9 @@ import androidx.work.WorkManager
 import com.autobile.ai.task.SkillEdit
 import com.autobile.ai.task.SkillEditField
 import com.autobile.ai.task.BehaviorEditMode
+import com.autobile.ai.task.EditableStepAction
+import com.autobile.ai.task.SkillStepEdit
+import com.autobile.ai.task.SkillStepEditKind
 import com.autobile.core.data.AutobileDatabase
 import com.autobile.core.data.SkillStore
 import com.autobile.core.model.ActionSpec
@@ -372,6 +375,7 @@ class SkillEditorTest {
             behaviorMode = BehaviorEditMode.VISUAL_UNTIL_COMPLETE,
             objective = "Finish the current game completely",
             completionCriteria = "A victory, clear, or final results screen is visible and no gameplay remains",
+            preserveExit = true,
         )
         editor = SkillEditor(
             router = routerWith(ScriptedProvider().answerWith("skill-edit", inferred)),
@@ -409,6 +413,42 @@ class SkillEditorTest {
         assertThat(preview).isInstanceOf(SkillEditPreview.Rejected::class.java)
     }
 
+    @Test
+    fun `structured behavior edit can insert replace and delete executable steps`() {
+        val original = skill().copy(
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.sudoku")),
+            steps = listOf(
+                SkillStep("launch", StepIntent.LAUNCH_APP, TargetSemantics("Sudoku"), action = ActionSpec.LaunchApp("com.example.sudoku")),
+                SkillStep("tap", StepIntent.SELECT_ITEM, TargetSemantics("New game"), action = ActionSpec.Click),
+                SkillStep("exit", StepIntent.GO_HOME, TargetSemantics("Home"), action = ActionSpec.Home),
+            ),
+        )
+        val preview = editor.buildPreview(
+            original,
+            edit(
+                SkillEditField.BEHAVIOR,
+                "Solve the whole puzzle before leaving",
+                meaningChanged = true,
+                behaviorMode = BehaviorEditMode.STEP_OPERATIONS,
+                operations = listOf(
+                    SkillStepEdit(
+                        kind = SkillStepEditKind.REPLACE,
+                        stepId = "tap",
+                        action = EditableStepAction.VISUAL_TASK,
+                        objective = "Solve the Sudoku puzzle",
+                        completionCriteria = "Every cell is filled correctly and the success state is visible",
+                    ),
+                    SkillStepEdit(SkillStepEditKind.DELETE, "exit"),
+                ),
+            ),
+        ) as SkillEditPreview.Ready
+
+        assertThat(preview.updated.steps.map { it.id }).containsExactly("launch", "tap").inOrder()
+        assertThat(preview.updated.step("tap")!!.action).isInstanceOf(ActionSpec.VisualTask::class.java)
+        assertThat(preview.updated.runtimeRequirements.requiresScreenshot).isTrue()
+        assertThat(preview.changedStepIds).containsExactly("tap", "exit")
+    }
+
     private fun noteSkill(): SemanticSkill {
         val taughtAt = LocalDateTime.of(2026, 9, 12, 14, 56)
         return skill().copy(
@@ -441,6 +481,8 @@ class SkillEditorTest {
         behaviorMode: BehaviorEditMode = BehaviorEditMode.UNSUPPORTED,
         objective: String = "",
         completionCriteria: String = "",
+        preserveExit: Boolean = false,
+        operations: List<SkillStepEdit> = emptyList(),
     ) = SkillEdit(
         field = field,
         newValue = value,
@@ -450,5 +492,7 @@ class SkillEditorTest {
         behaviorMode = behaviorMode,
         objective = objective,
         completionCriteria = completionCriteria,
+        preserveExit = preserveExit,
+        operations = operations,
     )
 }
