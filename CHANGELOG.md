@@ -2,6 +2,21 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.9.2] - 2026-09-16
+
+### Performance
+
+- Stop waiting up to the full semantic-validation timeout for an accessibility tree to
+  become stable after every visual-game action. Recheck package identity once after a
+  short settle period; the next turn's fresh screenshot remains authoritative.
+- Bound retained visual-action history in memory while preserving the existing
+  12-action model context window.
+
+### Fixed
+
+- Keep two-observation completion verification without adding an accessibility
+  stability wait that animated games may never satisfy.
+
 ## [0.9.1] - 2026-09-16
 
 ### Fixed
