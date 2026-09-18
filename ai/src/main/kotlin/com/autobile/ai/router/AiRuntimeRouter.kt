@@ -68,6 +68,9 @@ class AiRuntimeRouter(
      *
      * @param requirements what the request needs in order to be answerable at all.
      * @param image optional screenshot; requires a tier with vision support.
+     * @param preferredTier a task-local runtime that already answered the same request
+     * shape. It is tried first, but never bypasses local-only policy or the normal
+     * fallback chain when it is unavailable.
      */
     suspend fun <T : Any> infer(
         label: String,
@@ -77,12 +80,13 @@ class AiRuntimeRouter(
         image: Bitmap? = null,
         requirements: InferenceRequirements = InferenceRequirements(),
         maxOutputTokens: Int = 640,
+        preferredTier: RuntimeTier? = null,
     ): RoutedResult<T> {
         val attempts = mutableListOf<RoutingAttempt>()
         var previousTier: RuntimeTier? = null
         var lastError: InferenceError? = null
 
-        for (tier in candidateTiers(requirements)) {
+        for (tier in candidateTiers(requirements, preferredTier)) {
             val provider = providerFor(tier) as? StructuredInferenceProvider ?: continue
             val capabilities = provider.capabilities()
 
@@ -272,8 +276,14 @@ class AiRuntimeRouter(
             skipReason(tier, provider.capabilities(), requirements, requirements.needsVision) == null
         }
 
-    private fun candidateTiers(requirements: InferenceRequirements): List<RuntimeTier> =
-        if (requirements.localOnly) orderedTiers().filter { it.isLocal } else orderedTiers()
+    private fun candidateTiers(
+        requirements: InferenceRequirements,
+        preferredTier: RuntimeTier? = null,
+    ): List<RuntimeTier> {
+        val allowed = if (requirements.localOnly) orderedTiers().filter { it.isLocal } else orderedTiers()
+        if (preferredTier == null || preferredTier !in allowed) return allowed
+        return listOf(preferredTier) + allowed.filterNot { it == preferredTier }
+    }
 
     private fun providerFor(tier: RuntimeTier): AiProvider? = providers.firstOrNull { it.tier == tier }
 

@@ -1074,6 +1074,7 @@ class SkillExecutor(
         var deviceAiCalls = 0
         var completionConfirmations = 0
         var lastTier = RuntimeTier.DETERMINISTIC
+        var preferredTier: RuntimeTier? = null
         val recentActions = mutableListOf<String>()
 
         if (snapshot.packageName != requiredPackage) {
@@ -1149,10 +1150,13 @@ class SkillExecutor(
                     minConfidence = VISUAL_TASK_CONFIDENCE,
                     localOnly = localOnly || !step.fallback.allowCloudAi,
                 ),
+                maxOutputTokens = VISUAL_TASK_MAX_OUTPUT_TOKENS,
+                preferredTier = preferredTier,
             )
             if (routed.usedCloud) cloudCalls++
             if (routed.tier == RuntimeTier.DEVICE_AI) deviceAiCalls++
             lastTier = routed.tier
+            preferredTier = routed.tier.takeUnless { it == RuntimeTier.DETERMINISTIC }
             val decision = routed.value ?: return StepOutcome(
                 failedStep(
                     step,
@@ -1393,7 +1397,8 @@ class SkillExecutor(
         const val ROW_TOLERANCE_PX = 40
         const val COLUMN_TOLERANCE_PX = 160
         const val MAX_VISUAL_TASK_ACTIONS = 256
-        const val VISUAL_TASK_MAX_IMAGE_DIMENSION = 1_280
+        const val VISUAL_TASK_MAX_IMAGE_DIMENSION = 1_024
+        const val VISUAL_TASK_MAX_OUTPUT_TOKENS = 256
         const val VISUAL_TASK_HISTORY_LIMIT = 12
         const val VISUAL_ACTION_SETTLE_MS = 180L
         const val REQUIRED_COMPLETION_CONFIRMATIONS = 2

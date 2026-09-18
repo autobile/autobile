@@ -285,8 +285,8 @@ class CloudAiProvider(
         )
 
     private companion object {
-        const val JPEG_QUALITY = 80
-        const val CLIENT_VERSION = "0.9.2"
+        const val JPEG_QUALITY = 70
+        const val CLIENT_VERSION = "0.9.3"
     }
 
     private data class CachedChatGptCatalog(

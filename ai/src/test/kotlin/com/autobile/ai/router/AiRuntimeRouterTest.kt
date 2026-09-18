@@ -143,6 +143,62 @@ class AiRuntimeRouterTest {
     }
 
     @Test
+    fun `a preferred tier is reused before the normal order`() = runTest {
+        val device = FakeProvider(RuntimeTier.DEVICE_AI) { success(RuntimeTier.DEVICE_AI) }
+        val cloud = FakeProvider(RuntimeTier.CLOUD_ADVANCED) { success(RuntimeTier.CLOUD_ADVANCED) }
+        val router = AiRuntimeRouter(listOf(device, cloud))
+
+        val routed = router.infer(
+            "visual-turn",
+            schema,
+            "prompt",
+            preferredTier = RuntimeTier.CLOUD_ADVANCED,
+        )
+
+        assertThat(routed.tier).isEqualTo(RuntimeTier.CLOUD_ADVANCED)
+        assertThat(cloud.callCount).isEqualTo(1)
+        assertThat(device.callCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `a failed preferred tier falls back through the normal order`() = runTest {
+        val device = FakeProvider(RuntimeTier.DEVICE_AI) { success(RuntimeTier.DEVICE_AI) }
+        val cloud = FakeProvider(RuntimeTier.CLOUD_ADVANCED) {
+            failure(RuntimeTier.CLOUD_ADVANCED, InferenceErrorKind.NETWORK)
+        }
+        val router = AiRuntimeRouter(listOf(device, cloud))
+
+        val routed = router.infer(
+            "visual-turn",
+            schema,
+            "prompt",
+            preferredTier = RuntimeTier.CLOUD_ADVANCED,
+        )
+
+        assertThat(cloud.callCount).isEqualTo(1)
+        assertThat(device.callCount).isEqualTo(1)
+        assertThat(routed.tier).isEqualTo(RuntimeTier.DEVICE_AI)
+    }
+
+    @Test
+    fun `local-only request ignores a preferred cloud tier`() = runTest {
+        val device = FakeProvider(RuntimeTier.DEVICE_AI) { success(RuntimeTier.DEVICE_AI) }
+        val cloud = FakeProvider(RuntimeTier.CLOUD_ADVANCED) { success(RuntimeTier.CLOUD_ADVANCED) }
+        val router = AiRuntimeRouter(listOf(device, cloud))
+
+        val routed = router.infer(
+            "visual-turn",
+            schema,
+            "prompt",
+            requirements = InferenceRequirements(localOnly = true),
+            preferredTier = RuntimeTier.CLOUD_ADVANCED,
+        )
+
+        assertThat(routed.tier).isEqualTo(RuntimeTier.DEVICE_AI)
+        assertThat(cloud.callCount).isEqualTo(0)
+    }
+
+    @Test
     fun `local-only request overrides cloud-first preference`() = runTest {
         val device = FakeProvider(RuntimeTier.DEVICE_AI) { success(RuntimeTier.DEVICE_AI) }
         val cloud = FakeProvider(RuntimeTier.CLOUD_LIGHT) { success(RuntimeTier.CLOUD_LIGHT) }

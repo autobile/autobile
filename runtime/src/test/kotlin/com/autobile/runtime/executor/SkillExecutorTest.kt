@@ -30,6 +30,7 @@ import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.ExecutionEventType
 import com.autobile.core.model.ExpectedState
 import com.autobile.core.model.FallbackPolicy
+import com.autobile.core.model.InferenceErrorKind
 import com.autobile.core.model.Locator
 import com.autobile.core.model.LocatorKind
 import com.autobile.core.model.OutcomeStatus
@@ -90,10 +91,10 @@ class SkillExecutorTest {
 
     private fun executor(
         screen: FakeScreen,
-        provider: ScriptedProvider,
+        vararg providers: ScriptedProvider,
         ownPackage: String = "com.autobile",
     ): SkillExecutor {
-        val router = routerWith(provider)
+        val router = routerWith(*providers)
         return SkillExecutor(
             perception = screen,
             controller = screen,
@@ -779,7 +780,7 @@ class SkillExecutorTest {
 
     @Test
     fun `visual task observes chooses gestures and requires repeated completion evidence`() = runTest {
-        val frame = ScreenshotCapture.Success(Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888))
+        val frame = ScreenshotCapture.Success(Bitmap.createBitmap(600, 1200, Bitmap.Config.ARGB_8888))
         val screen = FakeScreen(
             current = screen(packageName = "com.example.game", windowTitle = "Game"),
             screenshot = frame,
@@ -849,5 +850,80 @@ class SkillExecutorTest {
         assertThat(outcome.stepResults.single().validation.reason).contains("two fresh observations")
         assertThat(screen.stableObservationTimeouts).isEmpty()
         assertThat(screen.observeSettleMs).containsAtLeast(180L, 700L)
+        assertThat(provider.requestedMaxOutputTokens).containsExactly(256, 256, 256)
+        assertThat(provider.requestedImageDimensions).containsExactly(512 to 1024, 512 to 1024, 512 to 1024)
+    }
+
+    @Test
+    fun `visual task reuses the runtime that resolved its first turn`() = runTest {
+        val frame = ScreenshotCapture.Success(Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888))
+        val screen = FakeScreen(
+            current = screen(packageName = "com.example.game", windowTitle = "Game"),
+            screenshot = frame,
+            nextScreenshot = frame,
+        )
+        val device = ScriptedProvider(RuntimeTier.DEVICE_AI)
+            .failWith("visual-task-action", InferenceErrorKind.DEVICE_BACKGROUND_RESTRICTED)
+        val cloud = ScriptedProvider(RuntimeTier.CLOUD_ADVANCED).answerSequence(
+            "visual-task-action",
+            VisualTaskDecision(
+                VisualTaskStatus.ACT,
+                VisualTaskAction.TAP,
+                0.5f,
+                0.5f,
+                0.5f,
+                0.5f,
+                100,
+                0.9f,
+                true,
+                "advance",
+            ),
+            VisualTaskDecision(
+                VisualTaskStatus.COMPLETE,
+                VisualTaskAction.NONE,
+                -1f,
+                -1f,
+                -1f,
+                -1f,
+                100,
+                0.9f,
+                true,
+                "victory visible",
+            ),
+            VisualTaskDecision(
+                VisualTaskStatus.COMPLETE,
+                VisualTaskAction.NONE,
+                -1f,
+                -1f,
+                -1f,
+                -1f,
+                100,
+                0.9f,
+                true,
+                "victory remains visible",
+            ),
+        )
+        val step = SkillStep(
+            id = "play",
+            intent = StepIntent.SELECT_ITEM,
+            target = TargetSemantics(intentLabel = "Finish game"),
+            action = ActionSpec.VisualTask("Finish", "Victory visible", maxActions = 8),
+            expectedState = ExpectedState(requiredPackage = "com.example.game"),
+            validation = ValidationSpec(mode = ValidationMode.SEMANTIC, goalCritical = true),
+            fallback = FallbackPolicy(allowVision = true, allowCloudAi = true),
+        )
+        val automation = skill(listOf(step)).copy(
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
+        )
+
+        val outcome = executor(screen, device, cloud).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(device.requestedLabels).containsExactly("visual-task-action")
+        assertThat(cloud.requestedLabels).containsExactly(
+            "visual-task-action",
+            "visual-task-action",
+            "visual-task-action",
+        )
     }
 }
