@@ -34,6 +34,8 @@ class ScriptedProvider(
 ) : StructuredInferenceProvider {
 
     val requestedLabels = mutableListOf<String>()
+    val requestedMaxOutputTokens = mutableListOf<Int>()
+    val requestedImageDimensions = mutableListOf<Pair<Int, Int>>()
 
     private val failures = mutableMapOf<String, InferenceErrorKind>()
     private val transientFailures = mutableMapOf<String, InferenceErrorKind>()
@@ -71,6 +73,8 @@ class ScriptedProvider(
     @Suppress("UNCHECKED_CAST")
     override suspend fun <T : Any> structured(request: StructuredRequest<T>): InferenceResult<T> {
         requestedLabels += request.label
+        requestedMaxOutputTokens += request.maxOutputTokens
+        request.image?.let { requestedImageDimensions += it.width to it.height }
         transientFailures.remove(request.label)?.let { kind ->
             return InferenceResult(
                 value = null,

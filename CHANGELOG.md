@@ -2,6 +2,22 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.9.3] - 2026-09-18
+
+### Performance
+
+- Keep the runtime that successfully handled the first visual-task turn at the front of
+  the routing order for later turns in the same task. If it fails, the complete policy-
+  ordered fallback chain remains available.
+- Reduce game-frame inference input from a 1280-pixel to a 1024-pixel longest edge and
+  use a smaller JPEG payload while preserving the full-screen aspect ratio.
+- Reduce the visual-action structured response budget from 640 to 256 tokens.
+
+### Safety
+
+- Preserve local-only routing, screenshot consent, fresh-frame decisions, package
+  containment, system-edge rejection, and two-observation completion confirmation.
+
 ## [0.9.2] - 2026-09-16
 
 ### Performance
