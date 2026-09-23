@@ -619,11 +619,14 @@ class SkillExecutor(
                     // Text confirmation is an extra requirement for typing steps. It
                     // must not make point-based click/press gestures impossible to
                     // complete: those actions have no text payload to confirm.
-                    val textConfirmed = step.action !is ActionSpec.InputText ||
+                    val isTextInput = step.action is ActionSpec.InputText
+                    val textConfirmed = !isTextInput ||
                         wrote || (validated.evaluated && validated.passed)
                     val visuallyConfirmed = when {
-                        step.validation.mode == ValidationMode.NONE -> pixelsChanged || textConfirmed
-                        afterTyping.nodes.isEmpty() -> pixelsChanged || (validated.evaluated && validated.passed)
+                        step.validation.mode == ValidationMode.NONE ->
+                            pixelsChanged || (isTextInput && textConfirmed)
+                        afterTyping.nodes.isEmpty() ->
+                            pixelsChanged || (isTextInput && validated.evaluated && validated.passed)
                         else -> true
                     }
                     if (typed && textConfirmed && stayedInTargetApp && validated.passed && visuallyConfirmed) {
