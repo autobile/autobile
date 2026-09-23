@@ -10,14 +10,21 @@ internal data class ChatGptModelCatalog(val models: List<Model>) {
     data class Model(val slug: String, val acceptsImages: Boolean?)
 
     fun select(requested: String, needsVision: Boolean = false, preferAdvanced: Boolean = false): String {
+        return candidates(requested, needsVision, preferAdvanced).firstOrNull().orEmpty()
+    }
+
+    fun candidates(requested: String, needsVision: Boolean = false, preferAdvanced: Boolean = false): List<String> {
         val eligible = if (needsVision) {
             val explicitlyVisual = models.filter { it.acceptsImages == true }
             explicitlyVisual.ifEmpty { models.filter { it.acceptsImages != false } }
         } else {
             models
         }
-        eligible.firstOrNull { it.slug == requested }?.let { return it.slug }
-        return (if (preferAdvanced) eligible.lastOrNull() else eligible.firstOrNull())?.slug.orEmpty()
+        val ordered = if (preferAdvanced) eligible.asReversed() else eligible
+        return buildList {
+            eligible.firstOrNull { it.slug == requested }?.slug?.let(::add)
+            ordered.mapTo(this) { it.slug }
+        }.distinct()
     }
 
     companion object {

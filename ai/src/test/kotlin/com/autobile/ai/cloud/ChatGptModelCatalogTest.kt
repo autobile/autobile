@@ -60,6 +60,22 @@ class ChatGptModelCatalogTest {
     }
 
     @Test
+    fun `vision candidates retain alternate models for protocol fallback`() {
+        val catalog = ChatGptModelCatalog.parse(
+            """{"models":[
+                {"slug":"vision-fast","supported_in_api":true,"supports_image_input":true},
+                {"slug":"vision-deep","supported_in_api":true,"supports_image_input":true},
+                {"slug":"text-only","supported_in_api":true,"supports_image_input":false}
+            ]}""",
+        )!!
+
+        assertThat(catalog.candidates("vision-fast", needsVision = true, preferAdvanced = false))
+            .containsExactly("vision-fast", "vision-deep").inOrder()
+        assertThat(catalog.candidates("missing", needsVision = true, preferAdvanced = true))
+            .containsExactly("vision-deep", "vision-fast").inOrder()
+    }
+
+    @Test
     fun `invalid or empty catalogs do not replace a configured model`() {
         assertThat(ChatGptModelCatalog.parse("not json")).isNull()
         assertThat(ChatGptModelCatalog.parse("""{"models":[]}""")).isNull()

@@ -430,6 +430,14 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
                 _state.update { it.copy(loading = false) }
                 runSkill(resolution.skill.id)
             }
+            is CommandResolution.ReadyToRun -> {
+                _state.update { it.copy(loading = false) }
+                when (val result = graph.orchestrator.runAdHoc(resolution.skill, ConfirmationMode.AskUser())) {
+                    is RunResult.Completed -> showMessage(result.outcome.message)
+                    is RunResult.Deferred -> showMessageRes(result.state.labelRes())
+                    is RunResult.Rejected -> showMessage(result.reason)
+                }
+            }
             is CommandResolution.NeedsTeaching -> _state.update {
                 it.copy(
                     loading = false,

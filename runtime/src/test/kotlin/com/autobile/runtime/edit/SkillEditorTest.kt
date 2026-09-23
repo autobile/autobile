@@ -449,6 +449,55 @@ class SkillEditorTest {
         assertThat(preview.changedStepIds).containsExactly("tap", "exit")
     }
 
+    @Test
+    fun `structured edit can add text swipe and app launch steps`() {
+        val original = skill().copy(
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.notes")),
+            steps = listOf(
+                SkillStep("anchor", StepIntent.WAIT, TargetSemantics("Ready"), action = ActionSpec.Wait(100)),
+            ),
+        )
+
+        val preview = editor.buildPreview(
+            original,
+            edit(
+                SkillEditField.BEHAVIOR,
+                "Open the notes app, swipe, and enter the text",
+                meaningChanged = true,
+                behaviorMode = BehaviorEditMode.STEP_OPERATIONS,
+                operations = listOf(
+                    SkillStepEdit(
+                        SkillStepEditKind.INSERT_BEFORE,
+                        "anchor",
+                        EditableStepAction.LAUNCH_APP,
+                        target = "Notes",
+                        packageName = "com.example.notes",
+                    ),
+                    SkillStepEdit(
+                        SkillStepEditKind.INSERT_AFTER,
+                        "anchor",
+                        EditableStepAction.SWIPE,
+                        target = "Note body",
+                        direction = "up",
+                    ),
+                    SkillStepEdit(
+                        SkillStepEditKind.INSERT_AFTER,
+                        "anchor",
+                        EditableStepAction.INPUT_TEXT,
+                        target = "Note body",
+                        text = "Current date and time",
+                        clearExisting = true,
+                    ),
+                ),
+            ),
+        ) as SkillEditPreview.Ready
+
+        assertThat(preview.updated.steps.map { it.action::class.simpleName })
+            .containsExactly("LaunchApp", "Wait", "InputText", "Swipe").inOrder()
+        assertThat((preview.updated.steps[2].action as ActionSpec.InputText).value)
+            .isEqualTo(ValueRef.Literal("Current date and time"))
+    }
+
     private fun noteSkill(): SemanticSkill {
         val taughtAt = LocalDateTime.of(2026, 9, 12, 14, 56)
         return skill().copy(

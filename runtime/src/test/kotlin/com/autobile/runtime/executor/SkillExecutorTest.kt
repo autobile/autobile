@@ -926,4 +926,129 @@ class SkillExecutorTest {
             "visual-task-action",
         )
     }
+
+    @Test
+    fun `visual task can focus and enter objective text while retaining working memory`() = runTest {
+        val frame = ScreenshotCapture.Success(Bitmap.createBitmap(600, 1200, Bitmap.Config.ARGB_8888))
+        val screen = FakeScreen(
+            current = screen(packageName = "com.example.notes", windowTitle = "Note"),
+            screenshot = frame,
+            nextScreenshot = frame,
+        )
+        val provider = ScriptedProvider().answerSequence(
+            "visual-task-action",
+            VisualTaskDecision(
+                VisualTaskStatus.ACT,
+                VisualTaskAction.INPUT_TEXT,
+                0.5f,
+                0.42f,
+                0.5f,
+                0.42f,
+                100,
+                0.9f,
+                true,
+                "note body is ready",
+                text = "2026-09-23 14:00",
+                clearExisting = true,
+                memory = "date and time entered",
+            ),
+            VisualTaskDecision(
+                VisualTaskStatus.COMPLETE,
+                VisualTaskAction.NONE,
+                -1f,
+                -1f,
+                -1f,
+                -1f,
+                100,
+                0.9f,
+                true,
+                "required text is visible",
+            ),
+            VisualTaskDecision(
+                VisualTaskStatus.COMPLETE,
+                VisualTaskAction.NONE,
+                -1f,
+                -1f,
+                -1f,
+                -1f,
+                100,
+                0.9f,
+                true,
+                "required text remains visible",
+            ),
+        )
+        val step = SkillStep(
+            id = "write",
+            intent = StepIntent.ENTER_TEXT,
+            target = TargetSemantics("Current date and time"),
+            action = ActionSpec.VisualTask("Enter the current date and time", "The text is visible", 8),
+            expectedState = ExpectedState(requiredPackage = "com.example.notes"),
+            validation = ValidationSpec(mode = ValidationMode.SEMANTIC, goalCritical = true),
+        )
+        val automation = skill(listOf(step)).copy(
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.notes")),
+        )
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(screen.typed).containsExactly("focused" to "2026-09-23 14:00")
+        assertThat(provider.requestedPrompts[1]).contains("Working memory: date and time entered")
+        assertThat(provider.requestedPrompts.first()).contains("Current local date and time:")
+    }
+
+    @Test
+    fun `a failed low risk learned step is replanned from fresh screenshots`() = runTest {
+        val frame = ScreenshotCapture.Success(Bitmap.createBitmap(600, 1200, Bitmap.Config.ARGB_8888))
+        val screen = FakeScreen(
+            current = screen(packageName = "com.example.game", windowTitle = "Puzzle"),
+            screenshot = frame,
+            nextScreenshot = frame,
+        )
+        val provider = ScriptedProvider().answerSequence(
+            "visual-task-action",
+            VisualTaskDecision(
+                VisualTaskStatus.COMPLETE,
+                VisualTaskAction.NONE,
+                -1f,
+                -1f,
+                -1f,
+                -1f,
+                100,
+                0.9f,
+                true,
+                "solved board visible",
+            ),
+            VisualTaskDecision(
+                VisualTaskStatus.COMPLETE,
+                VisualTaskAction.NONE,
+                -1f,
+                -1f,
+                -1f,
+                -1f,
+                100,
+                0.9f,
+                true,
+                "solved board remains visible",
+            ),
+        )
+        val failedLearnedStep = clickStep(label = "Next move", resourceId = null, retries = 0).copy(
+            expectedState = ExpectedState(requiredPackage = "com.example.game"),
+            validation = ValidationSpec(
+                mode = ValidationMode.SEMANTIC,
+                expectation = "The puzzle is solved",
+                goalCritical = true,
+            ),
+        )
+        val automation = skill(listOf(failedLearnedStep)).copy(
+            goal = "Solve the puzzle",
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
+        )
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(outcome.stepResults.single().recovered).isTrue()
+        assertThat(provider.requestedLabels.filter { it == "visual-task-action" }).hasSize(2)
+    }
 }

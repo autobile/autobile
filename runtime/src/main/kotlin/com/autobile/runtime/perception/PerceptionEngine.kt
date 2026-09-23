@@ -19,6 +19,8 @@ import kotlinx.coroutines.delay
 class PerceptionEngine(
     private val context: Context,
     private val treeReader: UiTreeReader = UiTreeReader(),
+    private val beforeScreenshot: suspend () -> Unit = {},
+    private val afterScreenshot: suspend () -> Unit = {},
 ) : ScreenObserver {
 
     override suspend fun observe(settleMs: Long): PerceptionResult {
@@ -74,7 +76,12 @@ class PerceptionEngine(
     override suspend fun captureScreenshot(): ScreenshotCapture {
         val service = AccessibilityBridge.require()
             ?: return ScreenshotCapture.Unavailable("Accessibility access is not granted")
-        return captureWithBackoff(service::captureScreen, service::foregroundPackage)
+        beforeScreenshot()
+        return try {
+            captureWithBackoff(service::captureScreen, service::foregroundPackage)
+        } finally {
+            afterScreenshot()
+        }
     }
 }
 

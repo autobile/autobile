@@ -28,6 +28,7 @@ import com.autobile.core.model.SemanticSkill
 import com.autobile.core.model.SkillStep
 import com.autobile.core.model.StepIntent
 import com.autobile.core.model.StepResult
+import com.autobile.core.model.TargetSemantics
 import com.autobile.core.model.TaskOutcome
 import com.autobile.core.model.ValidationMode
 import com.autobile.core.model.ValidationOutcome
@@ -45,6 +46,9 @@ import com.autobile.runtime.resolver.Resolution
 import com.autobile.runtime.risk.RiskEngine
 import com.autobile.runtime.validation.ValidationEngine
 import kotlinx.coroutines.delay
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /**
  * Runs a compiled skill, step by step.
@@ -208,7 +212,69 @@ class SkillExecutor(
                 RiskVerdict.ALLOW -> Unit
             }
 
-            val outcome = runStep(skill, step, index, snapshot, context, task, observer, localOnly)
+            var outcome = runStep(skill, step, index, snapshot, context, task, observer, localOnly)
+            if (shouldAutonomouslyReplan(skill, step, outcome)) {
+                observer.onEvent(
+                    event(
+                        task.id,
+                        ExecutionEventType.RECOVERY_STARTED,
+                        step.id,
+                        index,
+                        "replanning the failed step from the current screen",
+                    ),
+                )
+                val targetPackage = step.interactionPackage(skill)
+                var current = (perception.observe(VISUAL_ACTION_SETTLE_MS) as? PerceptionResult.Success)?.snapshot
+                if (targetPackage != null && current?.packageName != targetPackage) {
+                    val opened = performContextFree(ActionSpec.LaunchApp(targetPackage), context)
+                    observer.onEvent(
+                        event(
+                            task.id,
+                            ExecutionEventType.ACTION_EXECUTED,
+                            step.id,
+                            index,
+                            opened.describe,
+                            success = opened.succeeded,
+                        ),
+                    )
+                    if (opened.succeeded) {
+                        current = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)
+                            ?.snapshot
+                    }
+                }
+                if (current != null && targetPackage != null && current.packageName == targetPackage) {
+                    val rescueStep = autonomousRecoveryStep(skill, step, targetPackage)
+                    val rescue = runVisualTask(
+                        skill,
+                        rescueStep,
+                        rescueStep.action as ActionSpec.VisualTask,
+                        index,
+                        current,
+                        task,
+                        observer,
+                        localOnly,
+                        time.nowMillis(),
+                    )
+                    outcome = if (rescue.result.success) {
+                        StepOutcome(
+                            result = rescue.result.copy(
+                                stepId = step.id,
+                                intent = step.intent,
+                                targetLabel = step.target.intentLabel,
+                                recovered = true,
+                                message = "Recovered with a fresh visual plan",
+                            ),
+                            cloudCalls = outcome.cloudCalls + rescue.cloudCalls,
+                            deviceAiCalls = outcome.deviceAiCalls + rescue.deviceAiCalls,
+                        )
+                    } else {
+                        rescue.copy(
+                            cloudCalls = outcome.cloudCalls + rescue.cloudCalls,
+                            deviceAiCalls = outcome.deviceAiCalls + rescue.deviceAiCalls,
+                        )
+                    }
+                }
+            }
             cloudCalls += outcome.cloudCalls
             deviceAiCalls += outcome.deviceAiCalls
             results += outcome.result
@@ -267,6 +333,46 @@ class SkillExecutor(
             deviceAiCalls = deviceAiCalls,
             message = goalOutcome.reason,
             stepResults = results,
+        )
+    }
+
+    private fun shouldAutonomouslyReplan(
+        skill: SemanticSkill,
+        step: SkillStep,
+        outcome: StepOutcome,
+    ): Boolean {
+        if (outcome.result.success || outcome.blocked || !step.fallback.allowVision) return false
+        if (step.action is ActionSpec.VisualTask || step.action.asContextFreeAction() != null) return false
+        if (riskEngine.categorise(step).isNotEmpty()) return false
+        return step.interactionPackage(skill) != null
+    }
+
+    private fun autonomousRecoveryStep(
+        skill: SemanticSkill,
+        failed: SkillStep,
+        packageName: String,
+    ): SkillStep {
+        val completion = sequenceOf(
+            failed.validation.expectation,
+            failed.expectedState.description,
+            skill.postconditions.joinToString("; ") { it.description },
+        ).firstOrNull { it.isNotBlank() } ?: "The failed step and automation goal are visibly complete"
+        val objective = buildString {
+            append("Complete this automation goal: ").append(skill.goal)
+            failed.description.takeIf { it.isNotBlank() }?.let { append(". Recover the current step: ").append(it) }
+        }
+        return failed.copy(
+            id = "${failed.id}-visual-recovery",
+            target = TargetSemantics(objective),
+            preferredResolver = ResolverKind.VISION,
+            action = ActionSpec.VisualTask(objective, completion, AUTONOMOUS_RECOVERY_ACTION_LIMIT),
+            expectedState = ExpectedState(requiredPackage = packageName, description = completion),
+            validation = failed.validation.copy(
+                mode = ValidationMode.SEMANTIC,
+                expectation = completion,
+                goalCritical = true,
+            ),
+            description = objective,
         )
     }
 
@@ -510,13 +616,20 @@ class SkillExecutor(
                         else -> VisualChangeDetector.changed(beforePixels, afterPixels)
                     }
                     visualProgressed = pixelsChanged
-                    val textConfirmed = step.action is ActionSpec.InputText && wrote
+                    // Text confirmation is an extra requirement for typing steps. It
+                    // must not make point-based click/press gestures impossible to
+                    // complete: those actions have no text payload to confirm.
+                    val isTextInput = step.action is ActionSpec.InputText
+                    val textConfirmed = !isTextInput ||
+                        wrote || (validated.evaluated && validated.passed)
                     val visuallyConfirmed = when {
-                        step.validation.mode == ValidationMode.NONE -> pixelsChanged || textConfirmed
-                        afterTyping.nodes.isEmpty() -> pixelsChanged || (validated.evaluated && validated.passed)
+                        step.validation.mode == ValidationMode.NONE ->
+                            pixelsChanged || (isTextInput && textConfirmed)
+                        afterTyping.nodes.isEmpty() ->
+                            pixelsChanged || (isTextInput && validated.evaluated && validated.passed)
                         else -> true
                     }
-                    if (typed && wrote && stayedInTargetApp && validated.passed && visuallyConfirmed) {
+                    if (typed && textConfirmed && stayedInTargetApp && validated.passed && visuallyConfirmed) {
                         return StepOutcome(
                             result = StepResult(
                                 stepId = step.id,
@@ -1075,6 +1188,8 @@ class SkillExecutor(
         var completionConfirmations = 0
         var lastTier = RuntimeTier.DETERMINISTIC
         var preferredTier: RuntimeTier? = null
+        var workingMemory = ""
+        var frameBeforeLastAction: Bitmap? = null
         val recentActions = mutableListOf<String>()
 
         if (snapshot.packageName != requiredPackage) {
@@ -1129,6 +1244,17 @@ class SkillExecutor(
                 )
             }
             val bitmap = capture.bitmap
+            frameBeforeLastAction?.let { previous ->
+                if (recentActions.isNotEmpty()) {
+                    val result = if (VisualChangeDetector.changed(previous, bitmap)) {
+                        "visible state changed"
+                    } else {
+                        "no visible progress"
+                    }
+                    recentActions[recentActions.lastIndex] = "${recentActions.last()} => $result"
+                }
+                frameBeforeLastAction = null
+            }
             val routed = router.infer(
                 label = "visual-task-action",
                 schema = AiTasks.visualTaskDecision,
@@ -1138,6 +1264,8 @@ class SkillExecutor(
                     minimizer.describeScreen(snapshot),
                     actionIndex + 1,
                     recentActions,
+                    workingMemory,
+                    currentDateTime(),
                 ),
                 systemInstruction = AiTasks.SYSTEM_INSTRUCTION,
                 image = minimizer.cropForInference(
@@ -1169,6 +1297,9 @@ class SkillExecutor(
                 deviceAiCalls,
                 awaitingReasoning = true,
             )
+            if (decision.memory.isNotBlank()) {
+                workingMemory = decision.memory.take(VISUAL_TASK_MEMORY_LIMIT)
+            }
             observer.onEvent(
                 event(
                     task.id,
@@ -1268,6 +1399,15 @@ class SkillExecutor(
                             decision.endY,
                             decision.durationMs.coerceIn(50L, 2_000L),
                         )
+                        VisualTaskAction.INPUT_TEXT -> {
+                            val focused = controller.tapRatio(decision.x, decision.y)
+                            if (!focused.succeeded) {
+                                focused
+                            } else {
+                                delay(VISUAL_TEXT_FOCUS_SETTLE_MS)
+                                controller.inputTextAtFocus(decision.text, decision.clearExisting)
+                            }
+                        }
                         VisualTaskAction.WAIT -> {
                             delay(decision.durationMs.coerceIn(100L, 2_000L))
                             ActionResult.Performed("visual wait")
@@ -1280,6 +1420,7 @@ class SkillExecutor(
                     if (!performed.succeeded) {
                         return failedOutcome(step, index, startedAt, performed.describe, cloudCalls, deviceAiCalls)
                     }
+                    frameBeforeLastAction = bitmap
                     recentActions += buildString {
                         append(decision.action.name.lowercase())
                         if (decision.action.requiresStart) {
@@ -1317,6 +1458,10 @@ class SkillExecutor(
         fun pointIsSafe(x: Float, y: Float) = x in 0.04f..0.96f && y in 0.06f..0.92f
         return pointIsSafe(x, y) && (action != VisualTaskAction.SWIPE || pointIsSafe(endX, endY))
     }
+
+    private fun currentDateTime(): String = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(
+        Instant.ofEpochMilli(time.nowMillis()).atZone(ZoneId.systemDefault()),
+    )
 
     /** Checks the skill's preconditions, returning the reason it cannot start. */
     private suspend fun preconditionFailure(skill: SemanticSkill, localOnly: Boolean): String? {
@@ -1397,10 +1542,13 @@ class SkillExecutor(
         const val ROW_TOLERANCE_PX = 40
         const val COLUMN_TOLERANCE_PX = 160
         const val MAX_VISUAL_TASK_ACTIONS = 256
+        const val AUTONOMOUS_RECOVERY_ACTION_LIMIT = 64
         const val VISUAL_TASK_MAX_IMAGE_DIMENSION = 1_024
         const val VISUAL_TASK_MAX_OUTPUT_TOKENS = 256
         const val VISUAL_TASK_HISTORY_LIMIT = 12
+        const val VISUAL_TASK_MEMORY_LIMIT = 1_000
         const val VISUAL_ACTION_SETTLE_MS = 180L
+        const val VISUAL_TEXT_FOCUS_SETTLE_MS = 180L
         const val REQUIRED_COMPLETION_CONFIRMATIONS = 2
         const val VISUAL_COMPLETION_RECHECK_MS = 700L
         const val VISUAL_TASK_CONFIDENCE = 0.65f

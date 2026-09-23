@@ -93,6 +93,7 @@ class ExecutionResolver(
         matchByLocator(target, snapshot, usable)?.let { return it }
         matchByText(target, snapshot, usable)?.let { return it }
         if (requireEditable) matchEditableField(snapshot)?.let { return it }
+        if (requireEditable) matchInputBoundsHint(target, snapshot)?.let { return it }
 
         if (!allowInference) {
             return Resolution.NeedsReasoning("No deterministic match for \"${target.intentLabel}\"")
@@ -256,6 +257,33 @@ class ExecutionResolver(
             explanation = "the field on this screen",
             usedCloud = false,
             cloudWasDecisive = false,
+        )
+    }
+
+    /**
+     * Reuses the demonstrated focus point when a rich editor exposes no editable node.
+     *
+     * The hint is normalized to the screen and restricted to the same package and app
+     * content area. It is intentionally only available to text-entry steps: ordinary
+     * navigation must keep using semantic resolution instead of becoming a macro.
+     */
+    private fun matchInputBoundsHint(target: TargetSemantics, snapshot: ScreenSnapshot): Resolution.FoundPoint? {
+        val locator = target.locators
+            .filter { it.kind == LocatorKind.BOUNDS_HINT }
+            .firstOrNull { it.packageName.isNullOrBlank() || it.packageName == snapshot.packageName }
+            ?: return null
+        val parts = locator.value.split(',')
+        if (parts.size != 2) return null
+        val x = parts[0].toFloatOrNull() ?: return null
+        val y = parts[1].toFloatOrNull() ?: return null
+        if (x !in 0.04f..0.96f || y !in MIN_APP_Y_RATIO..MAX_APP_Y_RATIO) return null
+        return Resolution.FoundPoint(
+            xRatio = x,
+            yRatio = y,
+            tier = RuntimeTier.DETERMINISTIC,
+            confidence = locator.strength.coerceIn(0f, 0.5f),
+            explanation = "recorded text focus point",
+            usedCloud = false,
         )
     }
 

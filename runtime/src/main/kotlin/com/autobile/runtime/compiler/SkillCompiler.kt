@@ -334,6 +334,22 @@ class SkillCompiler(
             if (node.indexPath.isNotEmpty()) {
                 add(Locator(LocatorKind.HIERARCHY_PATH, node.hierarchyPath(), strength = 0.3f))
             }
+            val screen = event.before
+            val point = event.coordinates ?: node.bounds.takeUnless { it.isEmpty }?.let {
+                com.autobile.core.model.Point(it.centerX, it.centerY)
+            }
+            if (screen != null && screen.screenWidth > 0 && screen.screenHeight > 0 && point != null) {
+                val x = (point.x.toFloat() / screen.screenWidth).coerceIn(0f, 1f)
+                val y = (point.y.toFloat() / screen.screenHeight).coerceIn(0f, 1f)
+                add(
+                    Locator(
+                        LocatorKind.BOUNDS_HINT,
+                        "%.5f,%.5f".format(java.util.Locale.ROOT, x, y),
+                        node.packageName ?: event.packageName,
+                        strength = 0.2f,
+                    ),
+                )
+            }
         }
         return TargetSemantics(
             intentLabel = label.ifBlank { node.className?.substringAfterLast('.') ?: "element" },
