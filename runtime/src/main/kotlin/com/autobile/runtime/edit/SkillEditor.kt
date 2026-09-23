@@ -15,6 +15,7 @@ import com.autobile.core.data.SkillStore
 import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.ConditionKind
 import com.autobile.core.model.ExpectedState
+import com.autobile.core.model.Direction
 import com.autobile.core.model.InferenceRequirements
 import com.autobile.core.model.LocatorKind
 import com.autobile.core.model.PatchAuthor
@@ -304,6 +305,35 @@ class SkillEditor(
                     description = targetLabel,
                 )
             }
+            EditableStepAction.INPUT_TEXT -> {
+                if (edit.text.isBlank() || targetLabel.isBlank()) return null
+                SkillStep(
+                    id = id,
+                    intent = StepIntent.ENTER_TEXT,
+                    target = TargetSemantics(targetLabel, targetLabel),
+                    preferredResolver = ResolverKind.ACCESSIBILITY_NODE,
+                    action = ActionSpec.InputText(ValueRef.Literal(edit.text), edit.clearExisting),
+                    expectedState = ExpectedState(requiredPackage = packageName),
+                    validation = ValidationSpec(
+                        mode = ValidationMode.SEMANTIC,
+                        expectation = "The requested text is present in $targetLabel",
+                        goalCritical = true,
+                    ),
+                    description = "Enter text in $targetLabel",
+                )
+            }
+            EditableStepAction.SWIPE -> SkillStep(
+                id = id,
+                intent = StepIntent.NAVIGATE,
+                target = TargetSemantics(targetLabel.ifBlank { "Visible content" }),
+                preferredResolver = ResolverKind.GESTURE,
+                action = ActionSpec.Swipe(
+                    direction = runCatching { Direction.valueOf(edit.direction.uppercase()) }.getOrDefault(Direction.UP),
+                    durationMs = edit.durationMs.coerceIn(50L, 2_000L),
+                ),
+                expectedState = ExpectedState(requiredPackage = packageName),
+                description = targetLabel.ifBlank { "Swipe ${edit.direction}" },
+            )
             EditableStepAction.WAIT -> SkillStep(
                 id = id,
                 intent = StepIntent.WAIT,
@@ -312,6 +342,19 @@ class SkillEditor(
                 expectedState = ExpectedState(requiredPackage = packageName),
                 description = targetLabel.ifBlank { "Wait for the app" },
             )
+            EditableStepAction.LAUNCH_APP -> {
+                val targetPackage = edit.packageName.trim().takeIf { it.isNotBlank() } ?: return null
+                SkillStep(
+                    id = id,
+                    intent = StepIntent.LAUNCH_APP,
+                    target = TargetSemantics(targetLabel.ifBlank { targetPackage }),
+                    preferredResolver = ResolverKind.DIRECT_API,
+                    action = ActionSpec.LaunchApp(targetPackage),
+                    expectedState = ExpectedState(requiredPackage = targetPackage),
+                    validation = ValidationSpec(mode = ValidationMode.STRUCTURAL),
+                    description = targetLabel.ifBlank { "Open app" },
+                )
+            }
             EditableStepAction.BACK -> SkillStep(
                 id = id,
                 intent = StepIntent.GO_BACK,

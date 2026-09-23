@@ -56,6 +56,7 @@ import com.autobile.runtime.control.ScreenController
 import com.autobile.runtime.edit.SkillEditor
 import com.autobile.runtime.executor.SkillExecutor
 import com.autobile.runtime.overlay.AgentVisibilityCoordinator
+import com.autobile.runtime.overlay.AgentOverlayController
 import com.autobile.runtime.perception.PerceptionEngine
 import com.autobile.runtime.recovery.SelfHealingEngine
 import com.autobile.runtime.resolver.ExecutionResolver
@@ -152,7 +153,12 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
     )
 
     private val minimizer = ContextMinimizer()
-    private val perception = PerceptionEngine(context)
+    private val overlay = AgentOverlayController(context)
+    private val perception = PerceptionEngine(
+        context,
+        beforeScreenshot = overlay::hideForCapture,
+        afterScreenshot = overlay::restoreAfterCapture,
+    )
     private val runtimeWords = ResourceRuntimeVocabulary(appContext)
     private val controller = ScreenController(context)
     private val resolver = ExecutionResolver(aiRouter, minimizer) { settings.privacy().maskSensitiveFields }
@@ -194,6 +200,8 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         capabilityDetector = capabilityDetector,
         minimizer = minimizer,
         words = runtimeWords,
+        resolveAppPackage = ::resolveAppPackage,
+        ownPackage = context.packageName,
     )
     override val triggerScheduler = TriggerScheduler(context)
     private val segmenter = TraceSegmenter(aiRouter, transitPackages = transitPackages(context))
@@ -206,7 +214,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
     )
     val recorder = DemonstrationRecorder(perception, scope)
     val skillEditor = SkillEditor(aiRouter, skillStore, triggerScheduler)
-    private val visibility = AgentVisibilityCoordinator(context, orchestrator, settings)
+    private val visibility = AgentVisibilityCoordinator(context, orchestrator, settings, overlay)
 
     fun start() {
         AutobileRuntime.install(this)
@@ -237,6 +245,32 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
     private fun hasSomethingToOpen(packageName: String): Boolean = runCatching {
         context.packageManager.getLaunchIntentForPackage(packageName) != null
     }.getOrDefault(true)
+
+    private fun resolveAppPackage(appHint: String): String? {
+        val wanted = appHint.trim().lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
+        if (wanted.isBlank()) return null
+        return runCatching {
+            context.packageManager.getInstalledApplications(0)
+                .asSequence()
+                .map { info ->
+                    val label = context.packageManager.getApplicationLabel(info).toString()
+                    val normalizedLabel = label.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
+                    Triple(info.packageName, normalizedLabel, info.packageName.lowercase())
+                }
+                .sortedByDescending { (_, label, packageName) ->
+                    when {
+                        label == wanted -> 3
+                        label.contains(wanted) || wanted.contains(label) -> 2
+                        packageName.contains(wanted) -> 1
+                        else -> 0
+                    }
+                }
+                .firstOrNull { (_, label, packageName) ->
+                    label == wanted || label.contains(wanted) || wanted.contains(label) || packageName.contains(wanted)
+                }
+                ?.first
+        }.getOrNull()
+    }
 
     private fun transitPackages(context: Context): Set<String> {
         val keyboards = runCatching {

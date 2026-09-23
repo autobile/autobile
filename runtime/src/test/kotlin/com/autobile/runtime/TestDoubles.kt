@@ -36,6 +36,7 @@ class ScriptedProvider(
     val requestedLabels = mutableListOf<String>()
     val requestedMaxOutputTokens = mutableListOf<Int>()
     val requestedImageDimensions = mutableListOf<Pair<Int, Int>>()
+    val requestedPrompts = mutableListOf<String>()
 
     private val failures = mutableMapOf<String, InferenceErrorKind>()
     private val transientFailures = mutableMapOf<String, InferenceErrorKind>()
@@ -75,6 +76,7 @@ class ScriptedProvider(
         requestedLabels += request.label
         requestedMaxOutputTokens += request.maxOutputTokens
         request.image?.let { requestedImageDimensions += it.width to it.height }
+        requestedPrompts += request.prompt
         transientFailures.remove(request.label)?.let { kind ->
             return InferenceResult(
                 value = null,

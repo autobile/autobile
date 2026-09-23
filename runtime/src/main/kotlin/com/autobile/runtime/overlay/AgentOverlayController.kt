@@ -14,6 +14,9 @@ import android.view.WindowManager
 import android.widget.TextView
 import com.autobile.core.common.Logx
 import com.autobile.core.model.Bounds
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 /**
  * Shows what the agent is doing, on top of whatever app it is operating.
@@ -39,6 +42,9 @@ class AgentOverlayController(private val context: Context) {
 
     private var bannerView: TextView? = null
     private var indicatorView: TouchIndicatorView? = null
+    private var desiredBanner: CharSequence? = null
+    private var desiredIndicator: Bounds? = null
+    private var hiddenForCapture = false
 
     /**
      * Runs UI work on the main thread, always by posting.
@@ -67,11 +73,17 @@ class AgentOverlayController(private val context: Context) {
      * itself is about to deliver.
      */
     fun showBanner(text: CharSequence) = onMain {
-        if (!isPermitted) return@onMain
+        desiredBanner = text
+        if (hiddenForCapture) return@onMain
+        showBannerNow(text)
+    }
+
+    private fun showBannerNow(text: CharSequence) {
+        if (!isPermitted) return
         bannerView?.let { existing ->
             existing.text = text
             existing.contentDescription = text
-            return@onMain
+            return
         }
         val view = TextView(context).apply {
             styleAsBanner()
@@ -95,7 +107,10 @@ class AgentOverlayController(private val context: Context) {
             .onFailure { Logx.w("Could not show the agent banner", it) }
     }
 
-    fun hideBanner() = onMain { hideBannerNow() }
+    fun hideBanner() = onMain {
+        desiredBanner = null
+        hideBannerNow()
+    }
 
     private fun hideBannerNow() {
         bannerView?.let { view ->
@@ -106,7 +121,13 @@ class AgentOverlayController(private val context: Context) {
 
     /** Marks the element the agent is about to act on. */
     fun showTouchIndicator(bounds: Bounds) = onMain {
-        if (!isPermitted || bounds.isEmpty) return@onMain
+        desiredIndicator = bounds
+        if (hiddenForCapture) return@onMain
+        showTouchIndicatorNow(bounds)
+    }
+
+    private fun showTouchIndicatorNow(bounds: Bounds) {
+        if (!isPermitted || bounds.isEmpty) return
         val view = indicatorView ?: TouchIndicatorView(context).also { created ->
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -124,7 +145,10 @@ class AgentOverlayController(private val context: Context) {
         view.highlight(bounds)
     }
 
-    fun hideTouchIndicator() = onMain { hideTouchIndicatorNow() }
+    fun hideTouchIndicator() = onMain {
+        desiredIndicator = null
+        hideTouchIndicatorNow()
+    }
 
     private fun hideTouchIndicatorNow() {
         indicatorView?.let { view ->
@@ -135,8 +159,37 @@ class AgentOverlayController(private val context: Context) {
     }
 
     fun dismissAll() = onMain {
+        desiredBanner = null
+        desiredIndicator = null
         hideTouchIndicatorNow()
         hideBannerNow()
+    }
+
+    /** Removes Autobile-owned windows before pixels are captured for reasoning. */
+    suspend fun hideForCapture() {
+        onMainAwait {
+            hiddenForCapture = true
+            hideTouchIndicatorNow()
+            hideBannerNow()
+        }
+        // Window removal is asynchronous at the compositor boundary. One frame keeps
+        // our own status UI out of the screenshot without adding user-visible latency.
+        delay(CAPTURE_FRAME_DELAY_MS)
+    }
+
+    /** Restores the latest requested visibility after a screenshot completes. */
+    suspend fun restoreAfterCapture() = onMainAwait {
+        hiddenForCapture = false
+        desiredBanner?.let(::showBannerNow)
+        desiredIndicator?.let(::showTouchIndicatorNow)
+    }
+
+    private suspend fun onMainAwait(block: () -> Unit) = suspendCancellableCoroutine { continuation ->
+        main.post {
+            runCatching(block)
+                .onFailure { Logx.w("Could not update the agent overlay", it) }
+            if (continuation.isActive) continuation.resume(Unit)
+        }
     }
 
     /**
@@ -157,4 +210,8 @@ class AgentOverlayController(private val context: Context) {
     }
 
     private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).toInt()
+
+    private companion object {
+        const val CAPTURE_FRAME_DELAY_MS = 32L
+    }
 }

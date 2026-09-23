@@ -1,6 +1,8 @@
 package com.autobile.runtime.resolver
 
 import com.autobile.core.model.RuntimeTier
+import com.autobile.core.model.Locator
+import com.autobile.core.model.LocatorKind
 import com.autobile.core.model.TargetSemantics
 import com.autobile.runtime.ScriptedProvider
 import com.autobile.runtime.node
@@ -108,5 +110,27 @@ class EditableFieldResolutionTest {
         val resolution = resolver.resolve(nameless, snapshot, requireEditable = true, allowInference = false)
 
         assertThat(resolution).isNotInstanceOf(Resolution.Found::class.java)
+    }
+
+    @Test
+    fun `a demonstrated rich editor focus point is reused only for text entry`() = runTest {
+        val target = TargetSemantics(
+            intentLabel = "Note body",
+            locators = listOf(
+                Locator(LocatorKind.BOUNDS_HINT, "0.50000,0.42000", "com.example.notes", 0.2f),
+            ),
+        )
+        val snapshot = screen(
+            "com.example.notes",
+            "Note",
+            node("canvas", text = "", editable = false, clickable = false),
+        )
+
+        val typing = resolver.resolve(target, snapshot, requireEditable = true, allowInference = false)
+        val tapping = resolver.resolve(target, snapshot, requireEditable = false, allowInference = false)
+
+        assertThat(typing).isInstanceOf(Resolution.FoundPoint::class.java)
+        assertThat((typing as Resolution.FoundPoint).xRatio).isWithin(0.001f).of(0.5f)
+        assertThat(tapping).isNotInstanceOf(Resolution.FoundPoint::class.java)
     }
 }

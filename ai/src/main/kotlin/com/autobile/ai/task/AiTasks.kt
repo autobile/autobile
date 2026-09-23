@@ -143,17 +143,20 @@ object AiTasks {
         name = "VisualTaskDecision",
         fieldGuide = """
             status: one of act, complete, blocked
-            action: one of tap, long_press, swipe, wait, none
+            action: one of tap, long_press, swipe, input_text, wait, none
             x: start/tap horizontal position from 0 to 1
             y: start/tap vertical position from 0 to 1
             endX: swipe end horizontal position from 0 to 1
             endY: swipe end vertical position from 0 to 1
             durationMs: gesture duration from 50 to 2000
+            text: text to enter when action is input_text, otherwise ""
+            clearExisting: true to replace the focused field, false to append
+            memory: concise task state that must survive to the next screenshot
             confidence: number between 0 and 1
-            safeToAct: true only when the action is in-game and cannot purchase, open an ad, delete, message, or leave the app
+            safeToAct: true only when the action stays inside the controlled app and cannot purchase, open an ad, delete, message, or leave the app
             reason: short visible evidence for this decision
         """.trimIndent(),
-        example = """{"status":"act","action":"tap","x":0.72,"y":0.64,"endX":0.72,"endY":0.64,"durationMs":100,"confidence":0.86,"safeToAct":true,"reason":"matching tile advances the board"}""",
+        example = """{"status":"act","action":"tap","x":0.72,"y":0.64,"endX":0.72,"endY":0.64,"durationMs":100,"text":"","clearExisting":false,"memory":"row 1 still needs 3 and 7","confidence":0.86,"safeToAct":true,"reason":"matching tile advances the board"}""",
         parser = { json ->
             VisualTaskDecision(
                 status = VisualTaskStatus.parse(json.stringOr("status")),
@@ -163,6 +166,9 @@ object AiTasks {
                 endX = json.floatOr("endX", -1f),
                 endY = json.floatOr("endY", -1f),
                 durationMs = json.intOr("durationMs", 100).toLong(),
+                text = json.stringOr("text"),
+                clearExisting = json.boolOr("clearExisting"),
+                memory = json.stringOr("memory"),
                 confidence = json.floatOr("confidence", 0f),
                 safeToAct = json.boolOr("safeToAct"),
                 reason = json.stringOr("reason"),
@@ -177,6 +183,8 @@ object AiTasks {
                     (decision.x !in 0f..1f || decision.y !in 0f..1f) -> "start coordinates out of range"
                 decision.status == VisualTaskStatus.ACT && decision.action == VisualTaskAction.SWIPE &&
                     (decision.endX !in 0f..1f || decision.endY !in 0f..1f) -> "end coordinates out of range"
+                decision.status == VisualTaskStatus.ACT && decision.action == VisualTaskAction.INPUT_TEXT &&
+                    decision.text.isBlank() -> "input_text requires text"
                 else -> null
             }
         },
@@ -188,17 +196,23 @@ object AiTasks {
         screenDescription: String,
         actionNumber: Int,
         recentActions: List<String>,
+        workingMemory: String = "",
+        currentDateTime: String = "",
     ): String = buildString {
         append("Control the visible app to complete this task. Choose exactly one next action from the current screenshot.\n")
         append("Objective: ").append(objective).append('\n')
         append("Completion criteria: ").append(completionCriteria).append('\n')
         append("Action number: ").append(actionNumber).append('\n')
+        if (currentDateTime.isNotBlank()) append("Current local date and time: ").append(currentDateTime).append('\n')
         if (screenDescription.isNotBlank()) append("Visible semantics: ").append(screenDescription).append('\n')
         if (recentActions.isNotEmpty()) append("Recent actions: ").append(recentActions.takeLast(12).joinToString(" | ")).append('\n')
+        if (workingMemory.isNotBlank()) append("Working memory: ").append(workingMemory).append('\n')
         append("Reason from the complete current visual state; the demonstration is evidence of the objective, not a move sequence to copy. ")
         append("Choose a concrete progress action even when it was not demonstrated, and do not repeat an action whose visible result did not advance the task. ")
         append("Use complete only when the screenshot visibly proves every completion criterion. Progress is not completion. ")
         append("Never choose Android Home, Back, Recents, status/navigation bars, ads, purchases, or leaving the app. ")
+        append("Use input_text only for text explicitly required by the objective; provide the target point and exact text. ")
+        append("Update memory with compact facts needed across turns, never with secrets. ")
         append("Set safeToAct false and use blocked when no safe progress action exists. For swipe, provide exact start and end points.")
     }
 
@@ -280,9 +294,10 @@ object AiTasks {
             appHint: the app the task most likely involves, or ""
             parameters: array of {name, value} pairs mentioned in the request
             referencesCurrentScreen: true when the request relies on what is on screen now
+            completionCriteria: visible evidence that proves the goal is finished
             confidence: number between 0 and 1
         """.trimIndent(),
-        example = """{"goal":"Save the attached PDF to the Work folder","appHint":"KakaoTalk","parameters":[{"name":"folder","value":"Work"}],"referencesCurrentScreen":false,"confidence":0.86}""",
+        example = """{"goal":"Save the attached PDF to the Work folder","appHint":"KakaoTalk","parameters":[{"name":"folder","value":"Work"}],"referencesCurrentScreen":false,"completionCriteria":"The PDF is visible in the Work folder","confidence":0.86}""",
         parser = { json ->
             CommandIntent(
                 goal = json.stringOr("goal"),
@@ -291,6 +306,7 @@ object AiTasks {
                     it.stringOr("name") to it.stringOr("value")
                 }.filterKeys { it.isNotBlank() },
                 referencesCurrentScreen = json.boolOr("referencesCurrentScreen"),
+                completionCriteria = json.stringOr("completionCriteria"),
                 confidence = json.floatOr("confidence", 0f),
             )
         },
@@ -546,8 +562,9 @@ object AiTasks {
             exitStepIds: for behavior only, IDs of recorded steps that leave the controlled app
             operations: for step_operations, an ordered array of edits. Each item has:
                         kind (insert_before, insert_after, replace, delete), stepId (the anchor),
-                        action (visual_task, click, long_press, wait, back, home), target,
-                        objective, completionCriteria, durationMs, and packageName.
+                        action (visual_task, click, long_press, input_text, swipe, wait, launch_app, back, home),
+                        target, objective, completionCriteria, text, clearExisting, direction,
+                        durationMs, and packageName.
                         Use visual_task whenever future actions depend on fresh screenshots.
             meaningChanged: true when this changes what the automation does, not just how
             summary: one sentence describing the change
@@ -576,6 +593,9 @@ object AiTasks {
                         completionCriteria = operation.stringOr("completionCriteria"),
                         durationMs = operation.intOr("durationMs", 500).toLong(),
                         packageName = operation.stringOr("packageName"),
+                        text = operation.stringOr("text"),
+                        clearExisting = operation.boolOr("clearExisting"),
+                        direction = operation.stringOr("direction"),
                     )
                 },
             )
@@ -638,6 +658,9 @@ data class VisualTaskDecision(
     val confidence: Float,
     val safeToAct: Boolean,
     val reason: String,
+    val text: String = "",
+    val clearExisting: Boolean = false,
+    val memory: String = "",
 )
 
 enum class VisualTaskStatus {
@@ -658,6 +681,7 @@ enum class VisualTaskAction(val requiresStart: Boolean) {
     TAP(true),
     LONG_PRESS(true),
     SWIPE(true),
+    INPUT_TEXT(true),
     WAIT(false),
     NONE(false);
 
@@ -666,6 +690,7 @@ enum class VisualTaskAction(val requiresStart: Boolean) {
             "tap", "click" -> TAP
             "long_press", "long-press" -> LONG_PRESS
             "swipe", "drag" -> SWIPE
+            "input_text", "type", "enter_text" -> INPUT_TEXT
             "wait" -> WAIT
             else -> NONE
         }
@@ -691,6 +716,7 @@ data class CommandIntent(
     val parameters: Map<String, String>,
     val referencesCurrentScreen: Boolean,
     val confidence: Float,
+    val completionCriteria: String = "",
 )
 
 data class InferredGoal(
@@ -811,6 +837,9 @@ data class SkillStepEdit(
     val completionCriteria: String = "",
     val durationMs: Long = 500,
     val packageName: String = "",
+    val text: String = "",
+    val clearExisting: Boolean = true,
+    val direction: String = "",
 )
 
 enum class SkillStepEditKind {
@@ -828,14 +857,17 @@ enum class SkillStepEditKind {
 }
 
 enum class EditableStepAction {
-    VISUAL_TASK, CLICK, LONG_PRESS, WAIT, BACK, HOME, NONE;
+    VISUAL_TASK, CLICK, LONG_PRESS, INPUT_TEXT, SWIPE, WAIT, LAUNCH_APP, BACK, HOME, NONE;
 
     companion object {
         fun parse(value: String): EditableStepAction = when (value.trim().lowercase()) {
             "visual_task", "visual_agent" -> VISUAL_TASK
             "click", "tap" -> CLICK
             "long_press", "long-press" -> LONG_PRESS
+            "input_text", "type", "enter_text" -> INPUT_TEXT
+            "swipe", "scroll" -> SWIPE
             "wait" -> WAIT
+            "launch_app", "open_app" -> LAUNCH_APP
             "back" -> BACK
             "home" -> HOME
             else -> NONE

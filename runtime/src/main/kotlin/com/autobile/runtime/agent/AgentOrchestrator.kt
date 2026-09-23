@@ -14,17 +14,29 @@ import com.autobile.core.data.MetricsStore
 import com.autobile.core.data.SettingsStore
 import com.autobile.core.data.SkillStore
 import com.autobile.core.model.AgentTask
+import com.autobile.core.model.ActionSpec
+import com.autobile.core.model.AutonomyLevel
 import com.autobile.core.model.EscalationReason
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.ExecutionEventType
 import com.autobile.core.model.InferenceRequirements
+import com.autobile.core.model.ExpectedState
+import com.autobile.core.model.FallbackPolicy
 import com.autobile.core.model.OutcomeStatus
 import com.autobile.core.model.PerceptionResult
 import com.autobile.core.model.RiskDecision
+import com.autobile.core.model.RiskPolicy
+import com.autobile.core.model.ResolverKind
+import com.autobile.core.model.RuntimeRequirements
 import com.autobile.core.model.RuntimeTier
 import com.autobile.core.model.SemanticSkill
 import com.autobile.core.model.SkillConfidence
 import com.autobile.core.model.SkillStep
+import com.autobile.core.model.StepIntent
+import com.autobile.core.model.TargetSemantics
+import com.autobile.core.model.TriggerSpec
+import com.autobile.core.model.ValidationMode
+import com.autobile.core.model.ValidationSpec
 import com.autobile.core.model.TaskOrigin
 import com.autobile.core.model.TaskOutcome
 import com.autobile.core.model.TaskState
@@ -73,6 +85,8 @@ class AgentOrchestrator(
     private val minimizer: ContextMinimizer = ContextMinimizer(),
     private val time: TimeSource = TimeSource.System,
     private val words: RuntimeVocabulary = EnglishRuntimeVocabulary,
+    private val resolveAppPackage: (String) -> String? = { null },
+    private val ownPackage: String = "",
 ) {
 
     private val runLock = Mutex()
@@ -132,6 +146,21 @@ class AgentOrchestrator(
             }
 
             execute(skill, origin, triggerPayload, userInputs, confirmation)
+        }
+    }
+
+    /** Runs a one-off, bounded skill compiled from the user's current command. */
+    suspend fun runAdHoc(
+        skill: SemanticSkill,
+        confirmation: ConfirmationMode = ConfirmationMode.AskUser(),
+    ): RunResult {
+        if (settings.killSwitch().engaged) return RunResult.Rejected("Automation is stopped")
+        if (runLock.isLocked) return RunResult.Rejected("Another automation is already running")
+        return runLock.withLock {
+            val profile = capabilityDetector.detect()
+            val state = executability.evaluate(skill, profile)
+            if (!state.isRunnable) return@withLock RunResult.Rejected("This task cannot run now: ${state.name}")
+            execute(skill, TaskOrigin.MANUAL, emptyMap(), emptyMap(), confirmation)
         }
     }
 
@@ -328,14 +357,17 @@ class AgentOrchestrator(
             "I could not work out what to do with that",
         )
 
-        // A goal that has no learned skill behind it cannot be executed safely, so the
-        // user is offered the teaching path rather than an improvised attempt.
         val candidate = skills.firstOrNull { it.goal.similarityTo(intent.goal) >= GOAL_SIMILARITY_THRESHOLD }
-        return if (candidate != null) {
-            CommandResolution.MatchedSkill(candidate, intent.goal)
-        } else {
-            CommandResolution.NeedsTeaching(intent.goal, intent.appHint, intent.parameters)
+        if (candidate != null) return CommandResolution.MatchedSkill(candidate, intent.goal)
+
+        val currentPackage = screen?.packageName.orEmpty().takeIf { it.isNotBlank() && it != ownPackage }
+        val targetPackage = when {
+            intent.referencesCurrentScreen -> currentPackage ?: resolveAppPackage(intent.appHint)
+            intent.appHint.isNotBlank() -> resolveAppPackage(intent.appHint) ?: currentPackage
+            else -> currentPackage
         }
+        return targetPackage?.let { CommandResolution.ReadyToRun(buildAdHocVisualSkill(intent, it, time.nowMillis())) }
+            ?: CommandResolution.NeedsTeaching(intent.goal, intent.appHint, intent.parameters)
     }
 
     /** Approves or rejects the step currently waiting on the user. */
@@ -358,6 +390,8 @@ class AgentOrchestrator(
      * untouched: the skill worked, and it also told us its recorded path is drifting.
      */
     private suspend fun updateConfidence(skill: SemanticSkill, outcome: TaskOutcome) {
+        // One-off commands deliberately are not persisted as learned automations.
+        if (skillStore.get(skill.id) == null) return
         val current = skill.confidence
         val succeeded = outcome.status == OutcomeStatus.SUCCESS
         val recovered = outcome.stepResults.any { it.recovered }
@@ -605,6 +639,7 @@ sealed interface RunResult {
 
 sealed interface CommandResolution {
     data class MatchedSkill(val skill: SemanticSkill, val goal: String) : CommandResolution
+    data class ReadyToRun(val skill: SemanticSkill) : CommandResolution
     data class NeedsTeaching(
         val goal: String,
         val appHint: String,
@@ -612,6 +647,48 @@ sealed interface CommandResolution {
     ) : CommandResolution
 
     data class NotUnderstood(val reason: String) : CommandResolution
+}
+
+/** Compiles a direct command into a bounded, auditable one-off visual task. */
+internal fun buildAdHocVisualSkill(
+    intent: com.autobile.ai.task.CommandIntent,
+    packageName: String,
+    now: Long,
+): SemanticSkill {
+    val completion = intent.completionCriteria.ifBlank { "The requested outcome is visibly complete" }
+    val visualStep = SkillStep(
+        id = Ids.step(),
+        intent = StepIntent.NAVIGATE,
+        target = TargetSemantics(intent.goal),
+        preferredResolver = ResolverKind.VISION,
+        action = ActionSpec.VisualTask(intent.goal, completion),
+        expectedState = ExpectedState(requiredPackage = packageName),
+        validation = ValidationSpec(
+            mode = ValidationMode.SEMANTIC,
+            expectation = completion,
+            goalCritical = true,
+        ),
+        fallback = FallbackPolicy(),
+        description = intent.goal,
+    )
+    return SemanticSkill(
+        id = Ids.skill(),
+        version = 1,
+        name = intent.goal.take(48),
+        goal = intent.goal,
+        description = "One-time visual task",
+        trigger = TriggerSpec.Manual,
+        steps = listOf(visualStep),
+        riskPolicy = RiskPolicy(requireConfirmation = true, maxAutonomy = AutonomyLevel.L2_ASK_BEFORE_ACTION),
+        autonomyLevel = AutonomyLevel.L2_ASK_BEFORE_ACTION,
+        confidence = SkillConfidence(score = 0.25f),
+        runtimeRequirements = RuntimeRequirements(
+            requiresScreenshot = true,
+            requiredPackages = listOf(packageName),
+        ),
+        createdAt = now,
+        updatedAt = now,
+    )
 }
 
 private fun OutcomeStatus.toTaskState(deferredState: TaskState): TaskState = when (this) {

@@ -140,16 +140,50 @@ class CloudAiProvider(
             )
         }
 
+        val models = currentModels(cfg, needsVision = image != null)
+        if (image != null && models.isEmpty()) {
+            return@withContext failure<String>(
+                InferenceErrorKind.UNSUPPORTED,
+                "The signed-in account has no model advertising image input",
+            )
+        }
+        var last: InferenceResult<String>? = null
+        for ((index, model) in models.withIndex()) {
+            val result = sendOnce(
+                cfg,
+                model,
+                label,
+                systemInstruction,
+                prompt,
+                image,
+                temperature,
+                maxOutputTokens,
+                forceJson,
+            )
+            last = result
+            val retryableModelFailure = image != null && result.error?.kind in setOf(
+                InferenceErrorKind.UNSUPPORTED,
+                InferenceErrorKind.UNAVAILABLE,
+            )
+            if (!retryableModelFailure || index == models.lastIndex) return@withContext result
+        }
+        last ?: failure(InferenceErrorKind.UNAVAILABLE, "No cloud model was available")
+    }
+
+    private fun sendOnce(
+        cfg: CloudConfig,
+        model: String,
+        label: String,
+        systemInstruction: String?,
+        prompt: String,
+        image: Bitmap?,
+        temperature: Float,
+        maxOutputTokens: Int,
+        forceJson: Boolean,
+    ): InferenceResult<String> {
         val startedAt = System.currentTimeMillis()
         var connection: HttpURLConnection? = null
-        try {
-            val model = currentModel(cfg, needsVision = image != null)
-            if (image != null && model.isBlank()) {
-                return@withContext failure<String>(
-                    InferenceErrorKind.UNSUPPORTED,
-                    "The signed-in account has no model advertising image input",
-                )
-            }
+        return try {
             val url = URL(cfg.service.dialect.requestUrl(cfg.endpoint, model))
             connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
@@ -175,7 +209,7 @@ class CloudAiProvider(
                 val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 consecutiveFailures.incrementAndGet()
                 Logx.w("Cloud inference HTTP $status [$label]")
-                return@withContext failure<String>(
+                return failure(
                     CloudHttpErrorClassifier.classify(status, error),
                     "HTTP $status ${Logx.redact(error)}",
                 )
@@ -227,15 +261,15 @@ class CloudAiProvider(
      * Discovery is best-effort: a network failure must not prevent a valid configured
      * model from being attempted.
      */
-    private fun currentModel(cfg: CloudConfig, needsVision: Boolean): String {
+    private fun currentModels(cfg: CloudConfig, needsVision: Boolean): List<String> {
         val requested = cfg.modelFor(tier)
-        if (cfg.service != CloudService.CHATGPT) return requested
+        if (cfg.service != CloudService.CHATGPT) return listOf(requested).filter { it.isNotBlank() }
         val discoveryEnabled = if (tier == RuntimeTier.CLOUD_ADVANCED) {
             cfg.discoverAdvancedModel
         } else {
             cfg.discoverLightModel
         }
-        if (!discoveryEnabled) return requested
+        if (!discoveryEnabled) return listOf(requested).filter { it.isNotBlank() }
         val cacheKey = "${cfg.endpoint.trimEnd('/')}|${cfg.session.accountId}"
         val catalog = chatGptCatalog
             ?.takeIf { it.key == cacheKey }
@@ -243,11 +277,11 @@ class CloudAiProvider(
             ?: discoverChatGptModels(cfg)?.also {
                 chatGptCatalog = CachedChatGptCatalog(cacheKey, it)
             }
-        return catalog?.select(
+        return catalog?.candidates(
             requested,
             needsVision,
             preferAdvanced = tier == RuntimeTier.CLOUD_ADVANCED,
-        ) ?: requested
+        )?.take(MAX_MODEL_CANDIDATES) ?: listOf(requested).filter { it.isNotBlank() }
     }
 
     private fun discoverChatGptModels(cfg: CloudConfig): ChatGptModelCatalog? {
@@ -286,7 +320,8 @@ class CloudAiProvider(
 
     private companion object {
         const val JPEG_QUALITY = 70
-        const val CLIENT_VERSION = "0.9.3"
+        const val CLIENT_VERSION = "0.10.0"
+        const val MAX_MODEL_CANDIDATES = 4
     }
 
     private data class CachedChatGptCatalog(
