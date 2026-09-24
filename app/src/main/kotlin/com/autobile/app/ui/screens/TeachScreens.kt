@@ -231,21 +231,9 @@ fun TeachReviewScreen(state: AppUiState, viewModel: AppViewModel) {
         }
 
         SectionHeading(stringResource(R.string.review_steps))
-        skill.steps.forEachIndexed { index, step ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
-                Text(
-                    text = "${index + 1}",
-                    style = TypeScale.meta,
-                    color = theme.muted,
-                    modifier = Modifier.width(24.dp),
-                )
-                Text(
-                    text = step.description.ifBlank { step.target.intentLabel },
-                    style = TypeScale.body,
-                    color = theme.ink,
-                )
-            }
-        }
+        Statement(stringResource(R.string.steps_hint))
+        Spacer(Modifier.height(8.dp))
+        StepEditor(steps = skill.steps, onChange = viewModel::changeDraftSteps)
 
         SectionHeading(stringResource(R.string.review_correction_heading))
         Statement(stringResource(R.string.review_correction_body))

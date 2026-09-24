@@ -207,6 +207,16 @@ fun SkillDetailScreen(state: AppUiState, viewModel: AppViewModel) {
         }
 
         Column(Modifier.padding(horizontal = Space.gutter)) {
+            SectionHeading(stringResource(R.string.steps_heading))
+            Statement(stringResource(R.string.steps_hint))
+            Spacer(Modifier.height(8.dp))
+            StepEditor(
+                steps = skill.steps,
+                onChange = { changes, summary -> viewModel.changeSteps(skill, changes, summary) },
+            )
+        }
+
+        Column(Modifier.padding(horizontal = Space.gutter)) {
             SectionHeading(stringResource(R.string.skill_edit_heading))
             InstructionField(
                 value = editText,
