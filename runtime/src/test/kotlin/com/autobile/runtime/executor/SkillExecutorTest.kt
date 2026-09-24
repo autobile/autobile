@@ -3,15 +3,16 @@ package com.autobile.runtime.executor
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
+import com.autobile.ai.task.AgentAction
+import com.autobile.ai.task.AgentActionType
+import com.autobile.ai.task.AgentTurn
+import com.autobile.ai.task.AgentTurnStatus
 import com.autobile.ai.task.ElementMatch
 import com.autobile.ai.task.ExtractedValue
 import com.autobile.ai.task.OutcomeCheck
 import com.autobile.ai.task.PointMatch
 import com.autobile.ai.task.RecoveryAction
 import com.autobile.ai.task.RecoveryProposal
-import com.autobile.ai.task.VisualTaskAction
-import com.autobile.ai.task.VisualTaskDecision
-import com.autobile.ai.task.VisualTaskStatus
 import com.autobile.core.data.AppPolicyStore
 import com.autobile.core.data.AutobileDatabase
 import com.autobile.core.data.SettingsStore
@@ -28,6 +29,7 @@ import com.autobile.core.model.ConditionKind
 import com.autobile.core.model.Direction
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.ExecutionEventType
+import com.autobile.core.model.ExecutionStrategy
 import com.autobile.core.model.ExpectedState
 import com.autobile.core.model.FallbackPolicy
 import com.autobile.core.model.InferenceErrorKind
@@ -787,43 +789,10 @@ class SkillExecutorTest {
             nextScreenshot = frame,
         )
         val provider = ScriptedProvider().answerSequence(
-            "visual-task-action",
-            VisualTaskDecision(
-                VisualTaskStatus.ACT,
-                VisualTaskAction.SWIPE,
-                0.25f,
-                0.6f,
-                0.75f,
-                0.6f,
-                300,
-                0.9f,
-                true,
-                "move the piece toward its target",
-            ),
-            VisualTaskDecision(
-                VisualTaskStatus.COMPLETE,
-                VisualTaskAction.NONE,
-                -1f,
-                -1f,
-                -1f,
-                -1f,
-                100,
-                0.9f,
-                true,
-                "victory screen visible",
-            ),
-            VisualTaskDecision(
-                VisualTaskStatus.COMPLETE,
-                VisualTaskAction.NONE,
-                -1f,
-                -1f,
-                -1f,
-                -1f,
-                100,
-                0.92f,
-                true,
-                "victory screen remains visible",
-            ),
+            "agent-turn",
+            act(AgentAction(AgentActionType.SWIPE, x = 0.25f, y = 0.6f, endX = 0.75f, endY = 0.6f, durationMs = 300)),
+            complete("victory screen visible"),
+            complete("victory screen remains visible"),
         )
         val step = SkillStep(
             id = "play",
@@ -846,11 +815,10 @@ class SkillExecutorTest {
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
         assertThat(screen.gestures).containsExactly("swipe_ratio")
-        assertThat(provider.requestedLabels.filter { it == "visual-task-action" }).hasSize(3)
+        assertThat(provider.requestedLabels.filter { it == "agent-turn" }).hasSize(3)
         assertThat(outcome.stepResults.single().validation.reason).contains("two fresh observations")
         assertThat(screen.stableObservationTimeouts).isEmpty()
-        assertThat(screen.observeSettleMs).containsAtLeast(180L, 700L)
-        assertThat(provider.requestedMaxOutputTokens).containsExactly(256, 256, 256)
+        assertThat(provider.requestedMaxOutputTokens).containsExactly(1024, 1024, 1024)
         assertThat(provider.requestedImageDimensions).containsExactly(512 to 1024, 512 to 1024, 512 to 1024)
     }
 
@@ -863,45 +831,12 @@ class SkillExecutorTest {
             nextScreenshot = frame,
         )
         val device = ScriptedProvider(RuntimeTier.DEVICE_AI)
-            .failWith("visual-task-action", InferenceErrorKind.DEVICE_BACKGROUND_RESTRICTED)
+            .failWith("agent-turn", InferenceErrorKind.DEVICE_BACKGROUND_RESTRICTED)
         val cloud = ScriptedProvider(RuntimeTier.CLOUD_ADVANCED).answerSequence(
-            "visual-task-action",
-            VisualTaskDecision(
-                VisualTaskStatus.ACT,
-                VisualTaskAction.TAP,
-                0.5f,
-                0.5f,
-                0.5f,
-                0.5f,
-                100,
-                0.9f,
-                true,
-                "advance",
-            ),
-            VisualTaskDecision(
-                VisualTaskStatus.COMPLETE,
-                VisualTaskAction.NONE,
-                -1f,
-                -1f,
-                -1f,
-                -1f,
-                100,
-                0.9f,
-                true,
-                "victory visible",
-            ),
-            VisualTaskDecision(
-                VisualTaskStatus.COMPLETE,
-                VisualTaskAction.NONE,
-                -1f,
-                -1f,
-                -1f,
-                -1f,
-                100,
-                0.9f,
-                true,
-                "victory remains visible",
-            ),
+            "agent-turn",
+            act(AgentAction(AgentActionType.TAP, x = 0.5f, y = 0.5f)),
+            complete("victory visible"),
+            complete("victory remains visible"),
         )
         val step = SkillStep(
             id = "play",
@@ -919,12 +854,8 @@ class SkillExecutorTest {
         val outcome = executor(screen, device, cloud).execute(automation, task(automation), Recorder())
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
-        assertThat(device.requestedLabels).containsExactly("visual-task-action")
-        assertThat(cloud.requestedLabels).containsExactly(
-            "visual-task-action",
-            "visual-task-action",
-            "visual-task-action",
-        )
+        assertThat(device.requestedLabels).containsExactly("agent-turn")
+        assertThat(cloud.requestedLabels).containsExactly("agent-turn", "agent-turn", "agent-turn")
     }
 
     @Test
@@ -936,46 +867,13 @@ class SkillExecutorTest {
             nextScreenshot = frame,
         )
         val provider = ScriptedProvider().answerSequence(
-            "visual-task-action",
-            VisualTaskDecision(
-                VisualTaskStatus.ACT,
-                VisualTaskAction.INPUT_TEXT,
-                0.5f,
-                0.42f,
-                0.5f,
-                0.42f,
-                100,
-                0.9f,
-                true,
-                "note body is ready",
-                text = "2026-09-23 14:00",
-                clearExisting = true,
+            "agent-turn",
+            act(
+                AgentAction(AgentActionType.INPUT_TEXT, x = 0.5f, y = 0.42f, text = "2026-09-23 14:00"),
                 memory = "date and time entered",
             ),
-            VisualTaskDecision(
-                VisualTaskStatus.COMPLETE,
-                VisualTaskAction.NONE,
-                -1f,
-                -1f,
-                -1f,
-                -1f,
-                100,
-                0.9f,
-                true,
-                "required text is visible",
-            ),
-            VisualTaskDecision(
-                VisualTaskStatus.COMPLETE,
-                VisualTaskAction.NONE,
-                -1f,
-                -1f,
-                -1f,
-                -1f,
-                100,
-                0.9f,
-                true,
-                "required text remains visible",
-            ),
+            complete("required text is visible"),
+            complete("required text remains visible"),
         )
         val step = SkillStep(
             id = "write",
@@ -993,8 +891,8 @@ class SkillExecutorTest {
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
         assertThat(screen.typed).containsExactly("focused" to "2026-09-23 14:00")
-        assertThat(provider.requestedPrompts[1]).contains("Working memory: date and time entered")
-        assertThat(provider.requestedPrompts.first()).contains("Current local date and time:")
+        assertThat(provider.requestedPrompts[1]).contains("Memory: date and time entered")
+        assertThat(provider.requestedPrompts.first()).contains("Now:")
     }
 
     @Test
@@ -1006,31 +904,9 @@ class SkillExecutorTest {
             nextScreenshot = frame,
         )
         val provider = ScriptedProvider().answerSequence(
-            "visual-task-action",
-            VisualTaskDecision(
-                VisualTaskStatus.COMPLETE,
-                VisualTaskAction.NONE,
-                -1f,
-                -1f,
-                -1f,
-                -1f,
-                100,
-                0.9f,
-                true,
-                "solved board visible",
-            ),
-            VisualTaskDecision(
-                VisualTaskStatus.COMPLETE,
-                VisualTaskAction.NONE,
-                -1f,
-                -1f,
-                -1f,
-                -1f,
-                100,
-                0.9f,
-                true,
-                "solved board remains visible",
-            ),
+            "agent-turn",
+            complete("solved board visible"),
+            complete("solved board remains visible"),
         )
         val failedLearnedStep = clickStep(label = "Next move", resourceId = null, retries = 0).copy(
             expectedState = ExpectedState(requiredPackage = "com.example.game"),
@@ -1049,6 +925,136 @@ class SkillExecutorTest {
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
         assertThat(outcome.stepResults.single().recovered).isTrue()
-        assertThat(provider.requestedLabels.filter { it == "visual-task-action" }).hasSize(2)
+        assertThat(provider.requestedLabels.filter { it == "agent-turn" }).hasSize(2)
+        assertThat(provider.requestedPrompts.first { it.contains("Objective:") }).contains("could not be completed as recorded")
     }
+
+    @Test
+    fun `an interruption the demonstration never showed is dismissed and the recorded route resumes`() = runTest {
+        // The recorded button is hidden behind a reward pop-up that did not exist when
+        // the automation was taught. The agent closes it; the next step replays as usual.
+        val close = node("close", text = "Close", resourceId = "com.example:id/close")
+        val start = node("start", text = "Start", resourceId = "com.example:id/start")
+        val board = node("board", text = "Board", resourceId = "com.example:id/board")
+        val screen = FakeScreen(
+            current = screen("com.example.game", "Reward", close),
+            nextScreen = screen("com.example.game", "Home", start, board),
+        )
+        val provider = ScriptedProvider().answerSequence(
+            "agent-turn",
+            act(AgentAction(AgentActionType.TAP, element = 0, label = "Close")),
+            complete("the start button is reachable"),
+            complete("the start button remains reachable"),
+        )
+        val automation = skill(
+            listOf(
+                clickStep(id = "start", label = "Start", resourceId = "com.example:id/start").copy(
+                    expectedState = ExpectedState(requiredPackage = "com.example.game"),
+                ),
+                clickStep(id = "board", label = "Board", resourceId = "com.example:id/board"),
+            ),
+        ).copy(runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")))
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(screen.clicked).contains("close")
+        assertThat(screen.clicked).contains("board")
+        assertThat(outcome.stepResults.first().recovered).isTrue()
+    }
+
+    @Test
+    fun `an instruction for this run drives the goal from the start instead of replaying`() = runTest {
+        val easy = node("easy", text = "Easy", resourceId = "com.example:id/easy")
+        val hard = node("hard", text = "Hard", resourceId = "com.example:id/hard")
+        val screen = FakeScreen(current = screen("com.example.game", "Difficulty", easy, hard))
+        val provider = ScriptedProvider().answerSequence(
+            "agent-turn",
+            act(AgentAction(AgentActionType.TAP, element = 1, label = "Hard")),
+            complete("hard game started"),
+            complete("hard game still showing"),
+        )
+        val automation = skill(
+            listOf(clickStep(id = "easy", label = "Easy", resourceId = "com.example:id/easy")),
+        ).copy(
+            goal = "Start a new game",
+            demonstration = listOf("Tapping Easy"),
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
+        )
+
+        val outcome = executor(screen, provider).execute(
+            automation,
+            task(automation),
+            Recorder(),
+            runInstruction = "Play on hard this time",
+        )
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(screen.clicked).containsExactly("hard")
+        val prompt = provider.requestedPrompts.first()
+        assertThat(prompt).contains("Instruction for this run (takes priority over the recorded route): Play on hard this time")
+        assertThat(prompt).contains("1. Tapping Easy")
+    }
+
+    @Test
+    fun `standing instructions reach every agent turn`() = runTest {
+        val screen = FakeScreen(current = screen("com.example.game", "Board", node("cell", text = "Cell")))
+        val provider = ScriptedProvider().answerSequence(
+            "agent-turn",
+            complete("board solved"),
+            complete("board still solved"),
+        )
+        val automation = skill(emptyList()).copy(
+            goal = "Solve today's puzzle",
+            guidance = listOf("Close the daily reward pop-up if it appears"),
+            strategy = ExecutionStrategy.AGENT_FIRST,
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
+        )
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        assertThat(outcome.goalValidated).isTrue()
+        provider.requestedPrompts.forEach { prompt ->
+            assertThat(prompt).contains("- Close the daily reward pop-up if it appears")
+        }
+    }
+
+    @Test
+    fun `a goal driven run still stops at an app blocked by policy`() = runTest {
+        AppPolicyStore(AutobileDatabase(context)).save(
+            AppPolicy("com.example.bank", AppPolicyMode.BLOCK, AppCategory.BANKING),
+        )
+        val screen = FakeScreen(current = screen("com.example.bank", "Home", node("send", text = "Send")))
+        val provider = ScriptedProvider().answerWith("agent-turn", complete("done"))
+        val automation = skill(emptyList()).copy(
+            strategy = ExecutionStrategy.AGENT_FIRST,
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.bank")),
+        )
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.BLOCKED)
+        assertThat(provider.requestedLabels).doesNotContain("agent-turn")
+    }
+
+    private fun act(vararg actions: AgentAction, memory: String = "") = AgentTurn(
+        status = AgentTurnStatus.ACT,
+        actions = actions.toList(),
+        observation = "",
+        memory = memory,
+        progress = "working",
+        confidence = 0.9f,
+        reason = "advances the task",
+    )
+
+    private fun complete(reason: String) = AgentTurn(
+        status = AgentTurnStatus.COMPLETE,
+        actions = emptyList(),
+        observation = reason,
+        memory = "",
+        progress = "checking",
+        confidence = 0.9f,
+        reason = reason,
+    )
 }

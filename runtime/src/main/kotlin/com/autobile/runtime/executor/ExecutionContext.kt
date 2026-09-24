@@ -95,6 +95,23 @@ class ExecutionContext(
     }
 
     /**
+     * Every value this run can name, for a reasoning turn that has to type or look for
+     * one of them.
+     *
+     * The goal agent works from the screen, not from compiled steps, so it has no other
+     * way to learn that the report goes to `#daily-sales` or that yesterday's figure was
+     * read as `2,481,000`. Values are bounded in length because they end up in a prompt.
+     */
+    fun knownValues(): Map<String, String> = buildMap {
+        constants.values.forEach { put(it.name, it.value) }
+        variables.keys.forEach { name -> resolveVariable(name)?.let { put(name, it) } }
+        putAll(userInputs)
+        putAll(triggerPayload)
+        putAll(extracted)
+    }.filterValues { it.isNotBlank() }
+        .mapValues { (_, value) -> value.take(MAX_KNOWN_VALUE_LENGTH) }
+
+    /**
      * Substitutes `{name}` placeholders.
      *
      * An unresolvable placeholder is left in place rather than blanked: a message that
@@ -116,5 +133,6 @@ class ExecutionContext(
 
     private companion object {
         val PLACEHOLDER = Regex("\\{([A-Za-z0-9_]+)\\}")
+        const val MAX_KNOWN_VALUE_LENGTH = 200
     }
 }

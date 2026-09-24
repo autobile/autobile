@@ -34,6 +34,14 @@ interface ExecutionObserver {
      */
     suspend fun requestConfirmation(step: SkillStep, decision: RiskDecision): Boolean
 
+    /**
+     * The goal agent says what it is doing now, in a few words.
+     *
+     * An agent turn can run for many actions without a step boundary, so without this the
+     * person watching sees one unchanging line while the screen does a dozen things.
+     */
+    suspend fun onAgentProgress(index: Int, note: String) = Unit
+
     /** A repair was found and stored as a proposed new version of the skill. */
     suspend fun onPatchProposed(patchId: String, summary: String, needsConfirmation: Boolean) = Unit
 

@@ -14,29 +14,23 @@ import com.autobile.core.data.MetricsStore
 import com.autobile.core.data.SettingsStore
 import com.autobile.core.data.SkillStore
 import com.autobile.core.model.AgentTask
-import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AutonomyLevel
+import com.autobile.core.model.Condition
 import com.autobile.core.model.EscalationReason
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.ExecutionEventType
+import com.autobile.core.model.ExecutionStrategy
 import com.autobile.core.model.InferenceRequirements
-import com.autobile.core.model.ExpectedState
-import com.autobile.core.model.FallbackPolicy
 import com.autobile.core.model.OutcomeStatus
 import com.autobile.core.model.PerceptionResult
 import com.autobile.core.model.RiskDecision
 import com.autobile.core.model.RiskPolicy
-import com.autobile.core.model.ResolverKind
 import com.autobile.core.model.RuntimeRequirements
 import com.autobile.core.model.RuntimeTier
 import com.autobile.core.model.SemanticSkill
 import com.autobile.core.model.SkillConfidence
 import com.autobile.core.model.SkillStep
-import com.autobile.core.model.StepIntent
-import com.autobile.core.model.TargetSemantics
 import com.autobile.core.model.TriggerSpec
-import com.autobile.core.model.ValidationMode
-import com.autobile.core.model.ValidationSpec
 import com.autobile.core.model.TaskOrigin
 import com.autobile.core.model.TaskOutcome
 import com.autobile.core.model.TaskState
@@ -45,6 +39,7 @@ import com.autobile.runtime.EnglishRuntimeVocabulary
 import com.autobile.runtime.RuntimeVocabulary
 import com.autobile.runtime.background.ExecutabilityEvaluator
 import com.autobile.runtime.capability.CapabilityDetector
+import com.autobile.runtime.executor.GoalAgent
 import com.autobile.runtime.executor.SkillExecutor
 import com.autobile.runtime.executor.ExecutionObserver
 import com.autobile.runtime.executor.describeForUser
@@ -111,6 +106,7 @@ class AgentOrchestrator(
         triggerPayload: Map<String, String> = emptyMap(),
         userInputs: Map<String, String> = emptyMap(),
         confirmation: ConfirmationMode = ConfirmationMode.AskUser(),
+        runInstruction: String = "",
     ): RunResult {
         if (settings.killSwitch().engaged) {
             return RunResult.Rejected("Automation is stopped")
@@ -145,11 +141,17 @@ class AgentOrchestrator(
                 return@withLock RunResult.Deferred(task, state)
             }
 
-            execute(skill, origin, triggerPayload, userInputs, confirmation)
+            execute(skill, origin, triggerPayload, userInputs, confirmation, runInstruction)
         }
     }
 
-    /** Runs a one-off, bounded skill compiled from the user's current command. */
+    /**
+     * Runs a skill compiled from the user's current command, which is never saved.
+     *
+     * A one-off command has no recorded route, so the goal agent drives it from the first
+     * action, with the same kill switch, app policy, confirmation and history as a saved
+     * automation.
+     */
     suspend fun runAdHoc(
         skill: SemanticSkill,
         confirmation: ConfirmationMode = ConfirmationMode.AskUser(),
@@ -170,6 +172,7 @@ class AgentOrchestrator(
         triggerPayload: Map<String, String>,
         userInputs: Map<String, String>,
         confirmation: ConfirmationMode,
+        runInstruction: String = "",
     ): RunResult {
         cancelled.set(false)
         val startedAt = time.nowMillis()
@@ -260,6 +263,7 @@ class AgentOrchestrator(
                 observer = observer,
                 localOnly = !settings.privacy().cloudEnabled,
                 userInputs = userInputs,
+                runInstruction = runInstruction,
             )
         } catch (e: Throwable) {
             Logx.e("Run failed for ${skill.name}", e)
@@ -337,7 +341,9 @@ class AgentOrchestrator(
      */
     suspend fun interpretCommand(command: String): CommandResolution {
         val skills = skillStore.listEnabledSkills()
-        matchExistingSkill(command, skills)?.let { return CommandResolution.MatchedSkill(it, command) }
+        matchExistingSkill(command, skills)?.let { (skill, instruction) ->
+            return CommandResolution.MatchedSkill(skill, command, instruction)
+        }
 
         val screen = (perception.observe() as? PerceptionResult.Success)?.snapshot
         val description = screen?.let { minimizer.describeScreen(it) }
@@ -358,7 +364,12 @@ class AgentOrchestrator(
         )
 
         val candidate = skills.firstOrNull { it.goal.similarityTo(intent.goal) >= GOAL_SIMILARITY_THRESHOLD }
-        if (candidate != null) return CommandResolution.MatchedSkill(candidate, intent.goal)
+        if (candidate != null) {
+            // A matched automation replays what it was taught. Anything the request adds
+            // on top, such as a different option, rides along as this run's instruction.
+            val instruction = command.trim().takeIf { intent.parameters.isNotEmpty() }.orEmpty()
+            return CommandResolution.MatchedSkill(candidate, intent.goal, instruction)
+        }
 
         val currentPackage = screen?.packageName.orEmpty().takeIf { it.isNotBlank() && it != ownPackage }
         val targetPackage = when {
@@ -366,8 +377,11 @@ class AgentOrchestrator(
             intent.appHint.isNotBlank() -> resolveAppPackage(intent.appHint) ?: currentPackage
             else -> currentPackage
         }
-        return targetPackage?.let { CommandResolution.ReadyToRun(buildAdHocVisualSkill(intent, it, time.nowMillis())) }
-            ?: CommandResolution.NeedsTeaching(intent.goal, intent.appHint, intent.parameters)
+        // Nothing needs to have been taught. When no app could be pinned down here the
+        // agent starts from the screen in front and opens the app the request names.
+        return CommandResolution.ReadyToRun(
+            buildAdHocAgentSkill(intent, targetPackage, command.trim(), time.nowMillis()),
+        )
     }
 
     /** Approves or rejects the step currently waiting on the user. */
@@ -473,12 +487,13 @@ class AgentOrchestrator(
      * automation, and the cost of that is far higher than the cost of falling through to
      * interpretation.
      */
-    private fun matchExistingSkill(command: String, skills: List<SemanticSkill>): SemanticSkill? {
+    private fun matchExistingSkill(command: String, skills: List<SemanticSkill>): Pair<SemanticSkill, String>? {
         val normalised = command.trim().lowercase()
         if (normalised.isEmpty()) return null
-        skills.firstOrNull { it.name.lowercase() == normalised }?.let { return it }
+        skills.firstOrNull { it.name.lowercase() == normalised }?.let { return it to "" }
         val containing = skills.filter { normalised.contains(it.name.lowercase()) && it.name.length >= MIN_NAME_MATCH }
-        return containing.singleOrNull()
+        val skill = containing.singleOrNull() ?: return null
+        return skill to instructionBeyondName(command, skill.name)
     }
 
     /** Progress reporter that persists events and drives the on-screen indicator. */
@@ -524,6 +539,16 @@ class AgentOrchestrator(
             return approved
         }
 
+        override suspend fun onAgentProgress(index: Int, note: String) {
+            _activity.update { current ->
+                if (current is AgentActivity.Running && current.taskId == taskId) {
+                    current.copy(stepDescription = note.take(MAX_PROGRESS_NOTE_LENGTH))
+                } else {
+                    current
+                }
+            }
+        }
+
         override suspend fun onPatchProposed(patchId: String, summary: String, needsConfirmation: Boolean) {
             _activity.value = (_activity.value as? AgentActivity.Running)?.copy(
                 repairNote = summary,
@@ -540,7 +565,10 @@ class AgentOrchestrator(
         const val COMMAND_CONFIDENCE_THRESHOLD = 0.5f
         const val GOAL_SIMILARITY_THRESHOLD = 0.55f
         const val MIN_NAME_MATCH = 4
+
+        const val MAX_PROGRESS_NOTE_LENGTH = 80
         val EXECUTION_ROUTING_LABELS = setOf(
+            GoalAgent.LABEL,
             "element-match",
             "element-match-visual",
             "value-extraction",
@@ -638,58 +666,91 @@ sealed interface RunResult {
 }
 
 sealed interface CommandResolution {
-    data class MatchedSkill(val skill: SemanticSkill, val goal: String) : CommandResolution
-    data class ReadyToRun(val skill: SemanticSkill) : CommandResolution
-    data class NeedsTeaching(
+    /**
+     * @property instruction what the command asked beyond naming the automation, passed
+     *   to that run; empty when the command only named it.
+     */
+    data class MatchedSkill(
+        val skill: SemanticSkill,
         val goal: String,
-        val appHint: String,
-        val parameters: Map<String, String>,
+        val instruction: String = "",
     ) : CommandResolution
+    data class ReadyToRun(val skill: SemanticSkill) : CommandResolution
 
     data class NotUnderstood(val reason: String) : CommandResolution
 }
 
-/** Compiles a direct command into a bounded, auditable one-off visual task. */
-internal fun buildAdHocVisualSkill(
+/**
+ * Compiles a direct command into a one-off, goal-driven task.
+ *
+ * There are no steps: the goal agent works from the screen. The completion criteria the
+ * command was interpreted with become the post-condition the agent has to see twice
+ * before it may report success, and the task starts at ask-first autonomy, so the user
+ * approves it before the first action and approves anything that commits separately.
+ *
+ * @param packageName the app to start in, when one could be identified. Without one the
+ *   agent is told which app the request names and opens it itself.
+ */
+internal fun buildAdHocAgentSkill(
     intent: com.autobile.ai.task.CommandIntent,
-    packageName: String,
+    packageName: String?,
+    command: String,
     now: Long,
 ): SemanticSkill {
     val completion = intent.completionCriteria.ifBlank { "The requested outcome is visibly complete" }
-    val visualStep = SkillStep(
-        id = Ids.step(),
-        intent = StepIntent.NAVIGATE,
-        target = TargetSemantics(intent.goal),
-        preferredResolver = ResolverKind.VISION,
-        action = ActionSpec.VisualTask(intent.goal, completion),
-        expectedState = ExpectedState(requiredPackage = packageName),
-        validation = ValidationSpec(
-            mode = ValidationMode.SEMANTIC,
-            expectation = completion,
-            goalCritical = true,
-        ),
-        fallback = FallbackPolicy(),
-        description = intent.goal,
-    )
+    val appNote = intent.appHint.takeIf { it.isNotBlank() && packageName == null }
+        ?.let { "Use the $it app." }
+        .orEmpty()
     return SemanticSkill(
         id = Ids.skill(),
         version = 1,
         name = intent.goal.take(48),
         goal = intent.goal,
-        description = "One-time visual task",
+        description = appNote,
         trigger = TriggerSpec.Manual,
-        steps = listOf(visualStep),
+        steps = emptyList(),
+        postconditions = listOf(Condition(description = completion)),
+        // The words the user typed are kept alongside the interpreted goal. An
+        // interpretation loses detail, and the detail is usually what the user meant.
+        guidance = listOf(command).filter { it.isNotBlank() && !it.equals(intent.goal, ignoreCase = true) },
+        strategy = ExecutionStrategy.AGENT_FIRST,
         riskPolicy = RiskPolicy(requireConfirmation = true, maxAutonomy = AutonomyLevel.L2_ASK_BEFORE_ACTION),
         autonomyLevel = AutonomyLevel.L2_ASK_BEFORE_ACTION,
         confidence = SkillConfidence(score = 0.25f),
         runtimeRequirements = RuntimeRequirements(
-            requiresScreenshot = true,
-            requiredPackages = listOf(packageName),
+            requiredPackages = listOfNotNull(packageName),
         ),
         createdAt = now,
         updatedAt = now,
     )
 }
+
+/**
+ * What a command asks of this run beyond naming the automation, or "" when nothing.
+ *
+ * "Sudoku on hard" names the automation and says something about this run; the words
+ * around the name are the part the recorded steps do not already know. "Run Sudoku now"
+ * says nothing more, and must keep replaying what was taught rather than hand the run to
+ * the agent. The whole command is returned, because the words only make sense together.
+ */
+internal fun instructionBeyondName(command: String, name: String): String {
+    val remainder = command.trim().lowercase()
+        .replace(name.trim().lowercase(), " ")
+        .split(WORD_SEPARATOR)
+        .filter { it.isNotBlank() && it !in RUN_FILLER_WORDS }
+        .joinToString("")
+    return if (remainder.length >= MIN_INSTRUCTION_LENGTH) command.trim() else ""
+}
+
+private const val MIN_INSTRUCTION_LENGTH = 2
+private val WORD_SEPARATOR = Regex("[^\\p{L}\\p{N}]+")
+
+/** Words that only ask for a run, in the languages the app ships. */
+private val RUN_FILLER_WORDS = setOf(
+    "run", "start", "do", "it", "now", "please", "execute", "launch", "go", "the", "again",
+    "실행", "실행해", "실행해줘", "실행해주세요", "실행하기", "시작", "시작해", "시작해줘",
+    "돌려", "돌려줘", "해", "해줘", "해주세요", "줘", "지금", "좀", "다시", "부탁해",
+)
 
 private fun OutcomeStatus.toTaskState(deferredState: TaskState): TaskState = when (this) {
     OutcomeStatus.SUCCESS -> TaskState.COMPLETED

@@ -32,6 +32,26 @@ data class SemanticSkill(
     val confidence: SkillConfidence = SkillConfidence(),
     val runtimeRequirements: RuntimeRequirements = RuntimeRequirements(),
     val history: List<SkillVersionRecord> = emptyList(),
+    /**
+     * Plain-language instructions the user gave about how this automation should
+     * behave, kept verbatim and in the order they were given.
+     *
+     * Recorded steps can only say what happened once. "Pick the hard difficulty" or
+     * "close the daily reward if it shows up" are things the user knows and the
+     * demonstration never showed, and they only take effect if every reasoning turn is
+     * handed them. Nothing here is executed directly: it is context for the agent, which
+     * still acts through the same audited action vocabulary and risk gate.
+     */
+    val guidance: List<String> = emptyList(),
+    /**
+     * What the user actually did during the demonstration, one line per action, kept
+     * after compilation even when the executable steps were rewritten or replaced.
+     *
+     * The agent reads this as evidence of the route the user took, not as a script. It
+     * is what lets a run that has left the recorded path still know where it was going.
+     */
+    val demonstration: List<String> = emptyList(),
+    val strategy: ExecutionStrategy = ExecutionStrategy.STEPS_FIRST,
     val enabled: Boolean = true,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
@@ -60,6 +80,27 @@ data class SemanticSkill(
     }
 
     fun step(id: String): SkillStep? = steps.firstOrNull { it.id == id }
+}
+
+/**
+ * How a run turns a skill into screen actions.
+ *
+ * Both strategies pursue the same goal under the same risk gate; they differ in what is
+ * trusted first.
+ */
+enum class ExecutionStrategy {
+    /**
+     * Replay the recorded steps, which needs no inference when nothing changed, and hand
+     * control to the goal agent only when a step cannot be completed.
+     */
+    STEPS_FIRST,
+
+    /**
+     * Let the goal agent drive from the first action, using the recorded steps as a
+     * reference route. Chosen when the user's instructions change what the run has to do
+     * in a way the recorded steps cannot express.
+     */
+    AGENT_FIRST,
 }
 
 @Serializable

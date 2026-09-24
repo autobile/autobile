@@ -398,11 +398,16 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
         }
     }
 
-    fun runSkill(skillId: String, replay: Boolean = false) = launchAction {
+    /**
+     * @param instruction something the user asked for this run only. It is given to the
+     *   agent alongside the recorded route and is not saved into the automation.
+     */
+    fun runSkill(skillId: String, replay: Boolean = false, instruction: String = "") = launchAction {
         when (val result = graph.orchestrator.runSkill(
             skillId = skillId,
             origin = if (replay) TaskOrigin.REPLAY else TaskOrigin.MANUAL,
             confirmation = ConfirmationMode.AskUser(),
+            runInstruction = instruction.trim(),
         )) {
             is RunResult.Completed -> {
                 _state.update {
@@ -428,7 +433,7 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
         when (val resolution = graph.orchestrator.interpretCommand(command)) {
             is CommandResolution.MatchedSkill -> {
                 _state.update { it.copy(loading = false) }
-                runSkill(resolution.skill.id)
+                runSkill(resolution.skill.id, instruction = resolution.instruction)
             }
             is CommandResolution.ReadyToRun -> {
                 _state.update { it.copy(loading = false) }
@@ -437,14 +442,6 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
                     is RunResult.Deferred -> showMessageRes(result.state.labelRes())
                     is RunResult.Rejected -> showMessage(result.reason)
                 }
-            }
-            is CommandResolution.NeedsTeaching -> _state.update {
-                it.copy(
-                    loading = false,
-                    message = graph.appContext.getString(R.string.msg_show_me_how, resolution.goal),
-                    teachLabel = resolution.goal,
-                    screen = AppScreen.TEACH,
-                )
             }
             is CommandResolution.NotUnderstood -> _state.update {
                 it.copy(loading = false, message = resolution.reason)

@@ -4,8 +4,6 @@ import android.graphics.Bitmap
 import com.autobile.ai.context.ContextMinimizer
 import com.autobile.ai.router.AiRuntimeRouter
 import com.autobile.ai.task.AiTasks
-import com.autobile.ai.task.VisualTaskAction
-import com.autobile.ai.task.VisualTaskStatus
 import com.autobile.core.common.Ids
 import com.autobile.core.common.Logx
 import com.autobile.core.common.TimeSource
@@ -16,6 +14,7 @@ import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AgentTask
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.ExecutionEventType
+import com.autobile.core.model.ExecutionStrategy
 import com.autobile.core.model.ExpectedState
 import com.autobile.core.model.InferenceRequirements
 import com.autobile.core.model.OutcomeStatus
@@ -32,12 +31,12 @@ import com.autobile.core.model.TargetSemantics
 import com.autobile.core.model.TaskOutcome
 import com.autobile.core.model.ValidationMode
 import com.autobile.core.model.ValidationOutcome
+import com.autobile.core.model.ValidationSpec
 import com.autobile.core.model.ValueType
 import com.autobile.runtime.control.ActionResult
 import com.autobile.runtime.control.ScreenActuator
 import com.autobile.runtime.perception.ScreenObserver
 import com.autobile.runtime.perception.ScreenshotCapture
-import com.autobile.runtime.perception.ScreenshotMasking
 import com.autobile.runtime.perception.VisualChangeDetector
 import com.autobile.runtime.recovery.RecoveryMove
 import com.autobile.runtime.recovery.SelfHealingEngine
@@ -46,17 +45,18 @@ import com.autobile.runtime.resolver.Resolution
 import com.autobile.runtime.risk.RiskEngine
 import com.autobile.runtime.validation.ValidationEngine
 import kotlinx.coroutines.delay
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 /**
- * Runs a compiled skill, step by step.
+ * Runs a compiled skill.
  *
- * Each step follows the same cycle: observe, check risk, resolve the target, act,
- * validate, and recover if validation failed. The executor owns that loop deliberately —
- * no model is ever handed the whole run — which is what makes execution auditable,
- * interruptible, and cheap when nothing has changed.
+ * A recorded route runs step by step. Each step follows the same cycle: observe, check
+ * risk, resolve the target, act, validate, and recover if validation failed. That keeps
+ * the ordinary run auditable, interruptible, and free of inference when nothing changed.
+ *
+ * When the route stops fitting the screen, or the user asked for something it cannot
+ * express, the [GoalAgent] works toward the goal instead. The executor still owns that
+ * loop: the model proposes a few actions per turn, and every one of them is checked
+ * against the screen, the app policy and the risk engine before it is performed.
  *
  * Progress is reported through [ExecutionObserver] as it happens rather than returned at
  * the end, because a user watching their phone operate itself needs to see what it is
@@ -83,22 +83,52 @@ class SkillExecutor(
      * that must not happen next is the agent driving its own interface.
      */
     private val ownPackage: String = "com.autobile",
+    /** Maps an app name to an installed package, for a goal that names another app. */
+    private val resolveApp: (String) -> String? = { null },
 ) {
 
+    /**
+     * The loop that takes over when a recorded route stops matching the screen, and the
+     * one that drives a run outright when there is no route worth replaying.
+     */
+    private val agent = GoalAgent(
+        perception = perception,
+        controller = controller,
+        router = router,
+        riskEngine = riskEngine,
+        minimizer = minimizer,
+        maskScreenshots = maskScreenshots,
+        time = time,
+        ownPackage = ownPackage,
+        resolveApp = resolveApp,
+    )
+
+    /**
+     * @param runInstruction something the user asked for this run only. Recorded steps
+     *   cannot honour an instruction they were not recorded with, so a run that carries
+     *   one is driven by the goal agent from the start.
+     */
     suspend fun execute(
         skill: SemanticSkill,
         task: AgentTask,
         observer: ExecutionObserver,
         localOnly: Boolean = false,
         userInputs: Map<String, String> = emptyMap(),
+        runInstruction: String = "",
     ): TaskOutcome {
         val context = ExecutionContext(skill, task.triggerPayload, userInputs)
+        observer.onEvent(event(task.id, ExecutionEventType.SKILL_MATCHED, message = skill.name))
+
+        val goalDriven = skill.strategy == ExecutionStrategy.AGENT_FIRST ||
+            runInstruction.isNotBlank() ||
+            skill.steps.isEmpty()
+        if (goalDriven) return executeGoal(skill, task, observer, localOnly, context, runInstruction.trim())
+
         val results = mutableListOf<StepResult>()
         var cloudCalls = 0
         var deviceAiCalls = 0
         var confirmedThisRun = false
-
-        observer.onEvent(event(task.id, ExecutionEventType.SKILL_MATCHED, message = skill.name))
+        var agentRecoveries = 0
 
         preconditionFailure(skill, localOnly)?.let { reason ->
             observer.onEvent(
@@ -158,121 +188,73 @@ class SkillExecutor(
                 }
             }
 
-            val decision = riskEngine.evaluate(skill, step, snapshot.packageName, confirmedThisRun)
-            observer.onEvent(
-                event(
-                    task.id,
-                    ExecutionEventType.RISK_DECISION,
-                    step.id,
-                    index,
-                    words.riskDecision(decision.verdict.name, decision.reason),
-                ),
-            )
-            when (decision.verdict) {
-                RiskVerdict.DENY -> {
-                    results += failedStep(step, index, startedAt, decision.reason, ValidationMode.NONE)
-                    return partial(
-                        task,
-                        skill,
-                        results,
-                        cloudCalls,
-                        deviceAiCalls,
-                        decision.reason,
-                        OutcomeStatus.BLOCKED,
-                    )
+            when (val gate = gateStep(skill, step, index, snapshot.packageName, confirmedThisRun, task, observer)) {
+                is StepGate.Stop -> {
+                    results += failedStep(step, index, startedAt, gate.reason, ValidationMode.NONE)
+                    return partial(task, skill, results, cloudCalls, deviceAiCalls, gate.reason, gate.status)
                 }
-
-                RiskVerdict.CONFIRM -> {
-                    val approved = observer.requestConfirmation(step, decision)
-                    observer.onEvent(
-                        event(
-                            task.id,
-                            ExecutionEventType.USER_CONFIRMATION,
-                            step.id,
-                            index,
-                            if (approved) "approved" else "declined",
-                            success = approved,
-                        ),
-                    )
-                    if (!approved) {
-                        results += failedStep(step, index, startedAt, "You declined this step", ValidationMode.NONE)
-                        return partial(
-                            task,
-                            skill,
-                            results,
-                            cloudCalls,
-                            deviceAiCalls,
-                            "You declined this step",
-                            OutcomeStatus.CANCELLED,
-                        )
-                    }
-                    confirmedThisRun = true
-                }
-
-                RiskVerdict.ALLOW -> Unit
+                is StepGate.Proceed -> confirmedThisRun = confirmedThisRun || gate.confirmed
             }
 
             var outcome = runStep(skill, step, index, snapshot, context, task, observer, localOnly)
-            if (shouldAutonomouslyReplan(skill, step, outcome)) {
+            if (shouldHandToAgent(step, outcome)) {
+                agentRecoveries++
+                // The first failure is usually an interruption: a pop-up, a reward, a
+                // moved button. Get past it and go back to the recorded route, which is
+                // cheaper and more predictable. A second failure says the route itself no
+                // longer fits, so the agent finishes the goal instead of limping step by
+                // step through a path that has stopped existing.
+                val takeOver = agentRecoveries > 1
                 observer.onEvent(
                     event(
                         task.id,
                         ExecutionEventType.RECOVERY_STARTED,
                         step.id,
                         index,
-                        "replanning the failed step from the current screen",
+                        if (takeOver) {
+                            "handing the rest of the goal to the agent"
+                        } else {
+                            "recovering this step with the agent from the current screen"
+                        },
                     ),
                 )
-                val targetPackage = step.interactionPackage(skill)
-                var current = (perception.observe(VISUAL_ACTION_SETTLE_MS) as? PerceptionResult.Success)?.snapshot
-                if (targetPackage != null && current?.packageName != targetPackage) {
-                    val opened = performContextFree(ActionSpec.LaunchApp(targetPackage), context)
-                    observer.onEvent(
-                        event(
-                            task.id,
-                            ExecutionEventType.ACTION_EXECUTED,
-                            step.id,
-                            index,
-                            opened.describe,
-                            success = opened.succeeded,
-                        ),
-                    )
-                    if (opened.succeeded) {
-                        current = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)
-                            ?.snapshot
-                    }
+                val mission = if (takeOver) {
+                    goalMission(skill, context, runInstruction = "", completedSteps = index)
+                } else {
+                    stepRecoveryMission(skill, step, index, context)
                 }
-                if (current != null && targetPackage != null && current.packageName == targetPackage) {
-                    val rescueStep = autonomousRecoveryStep(skill, step, targetPackage)
-                    val rescue = runVisualTask(
-                        skill,
-                        rescueStep,
-                        rescueStep.action as ActionSpec.VisualTask,
+                val rescue = agent.pursue(mission, skill, step, index, observer, localOnly)
+                val rescued = rescue.toStepOutcome(step, index, startedAt, recovered = true)
+                val replaced = if (rescue.decided || rescue.blocked || rescue.cancelled) rescued else outcome
+                outcome = replaced.copy(
+                    cloudCalls = outcome.cloudCalls + rescued.cloudCalls,
+                    deviceAiCalls = outcome.deviceAiCalls + rescued.deviceAiCalls,
+                )
+                observer.onEvent(
+                    event(
+                        task.id,
+                        ExecutionEventType.RECOVERY_COMPLETED,
+                        step.id,
                         index,
-                        current,
-                        task,
-                        observer,
-                        localOnly,
-                        time.nowMillis(),
+                        rescue.message,
+                        success = rescue.completed,
+                    ),
+                )
+                if (takeOver && rescue.completed) {
+                    cloudCalls += outcome.cloudCalls
+                    deviceAiCalls += outcome.deviceAiCalls
+                    results += outcome.result
+                    return TaskOutcome(
+                        taskId = task.id,
+                        status = OutcomeStatus.SUCCESS,
+                        goalValidated = true,
+                        completedSteps = skill.steps.size,
+                        totalSteps = skill.steps.size,
+                        cloudCalls = cloudCalls,
+                        deviceAiCalls = deviceAiCalls,
+                        message = rescue.message,
+                        stepResults = results,
                     )
-                    outcome = if (rescue.result.success) {
-                        StepOutcome(
-                            result = rescue.result.copy(
-                                stepId = step.id,
-                                intent = step.intent,
-                                targetLabel = step.target.intentLabel,
-                                recovered = true,
-                                message = "Recovered with a fresh visual plan",
-                            ),
-                            cloudCalls = outcome.cloudCalls + rescue.cloudCalls,
-                            deviceAiCalls = outcome.deviceAiCalls + rescue.deviceAiCalls,
-                        )
-                    } else {
-                        rescue.copy(
-                            cloudCalls = outcome.cloudCalls + rescue.cloudCalls,
-                            deviceAiCalls = outcome.deviceAiCalls + rescue.deviceAiCalls,
-                        )
-                    }
                 }
             }
             cloudCalls += outcome.cloudCalls
@@ -288,6 +270,7 @@ class SkillExecutor(
                 // than failed: the steps completed so far remain valid and the same
                 // automation will succeed once a runtime is reachable again.
                 val status = when {
+                    outcome.cancelled -> OutcomeStatus.CANCELLED
                     outcome.blocked -> OutcomeStatus.BLOCKED
                     outcome.awaitingReasoning -> OutcomeStatus.DEFERRED
                     else -> OutcomeStatus.PARTIAL
@@ -336,45 +319,279 @@ class SkillExecutor(
         )
     }
 
-    private fun shouldAutonomouslyReplan(
+    /**
+     * Runs the whole goal through the agent, with the recorded steps as a reference route.
+     *
+     * The same risk gate a recorded step passes is applied once to the run as a whole, so
+     * a blocked app, a watch-only automation and an ask-first automation behave exactly as
+     * they do when replayed; every individual action is then gated again by the agent.
+     */
+    private suspend fun executeGoal(
         skill: SemanticSkill,
-        step: SkillStep,
-        outcome: StepOutcome,
-    ): Boolean {
-        if (outcome.result.success || outcome.blocked || !step.fallback.allowVision) return false
-        if (step.action is ActionSpec.VisualTask || step.action.asContextFreeAction() != null) return false
-        if (riskEngine.categorise(step).isNotEmpty()) return false
-        return step.interactionPackage(skill) != null
+        task: AgentTask,
+        observer: ExecutionObserver,
+        localOnly: Boolean,
+        context: ExecutionContext,
+        runInstruction: String,
+    ): TaskOutcome {
+        val mission = goalMission(skill, context, runInstruction, completedSteps = 0)
+        val step = SkillStep(
+            id = GOAL_STEP_ID,
+            intent = StepIntent.NAVIGATE,
+            target = TargetSemantics(intentLabel = skill.goal),
+            preferredResolver = ResolverKind.VISION,
+            action = ActionSpec.VisualTask(mission.objective, mission.completionCriteria, mission.maxActions),
+            validation = ValidationSpec(mode = ValidationMode.SEMANTIC, expectation = mission.completionCriteria, goalCritical = true),
+            description = skill.goal,
+        )
+        val startedAt = time.nowMillis()
+        observer.onEvent(event(task.id, ExecutionEventType.STEP_STARTED, step.id, 0, step.describeForUser()))
+        observer.onStepStarted(0, step)
+
+        fun finish(status: OutcomeStatus, message: String, result: StepResult, cloud: Int = 0, device: Int = 0) =
+            TaskOutcome(
+                taskId = task.id,
+                status = status,
+                goalValidated = status == OutcomeStatus.SUCCESS,
+                completedSteps = if (result.success) 1 else 0,
+                totalSteps = 1,
+                cloudCalls = cloud,
+                deviceAiCalls = device,
+                message = message,
+                stepResults = listOf(result),
+            )
+
+        val snapshot = when (val observed = perception.observe(step.validation.settleMs)) {
+            is PerceptionResult.Success -> observed.snapshot
+            is PerceptionResult.BlockedSecureWindow -> {
+                val message = words.screenProtected()
+                return finish(OutcomeStatus.BLOCKED, message, failedStep(step, 0, startedAt, message, ValidationMode.NONE))
+            }
+            is PerceptionResult.Unavailable ->
+                return finish(OutcomeStatus.BLOCKED, observed.reason, failedStep(step, 0, startedAt, observed.reason, ValidationMode.NONE))
+        }
+        val gatedPackage = mission.taskApps.firstOrNull() ?: snapshot.packageName
+        when (val gate = gateStep(skill, step, 0, gatedPackage, false, task, observer)) {
+            is StepGate.Stop ->
+                return finish(gate.status, gate.reason, failedStep(step, 0, startedAt, gate.reason, ValidationMode.NONE))
+            is StepGate.Proceed -> Unit
+        }
+
+        val outcome = agent.pursue(mission, skill, step, 0, observer, localOnly)
+            .toStepOutcome(step, 0, startedAt, recovered = false)
+        val status = when {
+            outcome.result.success -> OutcomeStatus.SUCCESS
+            outcome.cancelled -> OutcomeStatus.CANCELLED
+            outcome.blocked -> OutcomeStatus.BLOCKED
+            outcome.awaitingReasoning -> OutcomeStatus.DEFERRED
+            else -> OutcomeStatus.PARTIAL
+        }
+        observer.onEvent(
+            event(
+                task.id,
+                if (outcome.result.success) ExecutionEventType.VALIDATION_RESULT else ExecutionEventType.STEP_FAILED,
+                step.id,
+                0,
+                outcome.result.message,
+                success = outcome.result.success,
+            ),
+        )
+        return finish(status, outcome.result.message, outcome.result, outcome.cloudCalls, outcome.deviceAiCalls)
     }
 
-    private fun autonomousRecoveryStep(
+    /** Applies the risk engine to a step before it runs, asking the user when it says to. */
+    private suspend fun gateStep(
+        skill: SemanticSkill,
+        step: SkillStep,
+        index: Int,
+        packageName: String,
+        confirmedThisRun: Boolean,
+        task: AgentTask,
+        observer: ExecutionObserver,
+    ): StepGate {
+        val decision = riskEngine.evaluate(skill, step, packageName, confirmedThisRun)
+        observer.onEvent(
+            event(
+                task.id,
+                ExecutionEventType.RISK_DECISION,
+                step.id,
+                index,
+                words.riskDecision(decision.verdict.name, decision.reason),
+            ),
+        )
+        return when (decision.verdict) {
+            RiskVerdict.DENY -> StepGate.Stop(decision.reason, OutcomeStatus.BLOCKED)
+            RiskVerdict.CONFIRM -> {
+                val approved = observer.requestConfirmation(step, decision)
+                observer.onEvent(
+                    event(
+                        task.id,
+                        ExecutionEventType.USER_CONFIRMATION,
+                        step.id,
+                        index,
+                        if (approved) "approved" else "declined",
+                        success = approved,
+                    ),
+                )
+                if (approved) StepGate.Proceed(confirmed = true) else StepGate.Stop("You declined this step", OutcomeStatus.CANCELLED)
+            }
+            RiskVerdict.ALLOW -> StepGate.Proceed(confirmed = false)
+        }
+    }
+
+    /**
+     * Whether a step that could not be completed on its own should be handed to the agent.
+     *
+     * Almost always. A demonstration is one route through an app on one day; the agent is
+     * what gets a run past everything the route did not contain. The exceptions are the
+     * steps whose failure the agent cannot change: an app that does not open, an exit that
+     * is its own outcome, a protected screen, and a run the user stopped.
+     */
+    private fun shouldHandToAgent(step: SkillStep, outcome: StepOutcome): Boolean {
+        // A step that stalled for want of one runtime is still worth handing over: the
+        // agent asks its own question, and reports awaiting reasoning itself if nothing
+        // at all can answer it.
+        if (outcome.result.success || outcome.blocked || outcome.cancelled) return false
+        if (!step.fallback.allowDeviceAi && !step.fallback.allowCloudAi) return false
+        if (step.fallback.onFailure == com.autobile.core.model.FailureAction.ABORT) return false
+        return when (step.action) {
+            is ActionSpec.VisualTask, is ActionSpec.LaunchApp, ActionSpec.Home -> false
+            else -> true
+        }
+    }
+
+    /** A mission that gets one recorded step done and hands back to the route. */
+    private fun stepRecoveryMission(
         skill: SemanticSkill,
         failed: SkillStep,
-        packageName: String,
-    ): SkillStep {
+        index: Int,
+        context: ExecutionContext,
+    ): AgentMission {
+        val stepDescription = failed.describeForUser()
         val completion = sequenceOf(
             failed.validation.expectation,
             failed.expectedState.description,
-            skill.postconditions.joinToString("; ") { it.description },
-        ).firstOrNull { it.isNotBlank() } ?: "The failed step and automation goal are visibly complete"
-        val objective = buildString {
-            append("Complete this automation goal: ").append(skill.goal)
-            failed.description.takeIf { it.isNotBlank() }?.let { append(". Recover the current step: ").append(it) }
-        }
-        return failed.copy(
-            id = "${failed.id}-visual-recovery",
-            target = TargetSemantics(objective),
-            preferredResolver = ResolverKind.VISION,
-            action = ActionSpec.VisualTask(objective, completion, AUTONOMOUS_RECOVERY_ACTION_LIMIT),
-            expectedState = ExpectedState(requiredPackage = packageName, description = completion),
-            validation = failed.validation.copy(
-                mode = ValidationMode.SEMANTIC,
-                expectation = completion,
-                goalCritical = true,
-            ),
-            description = objective,
+        ).firstOrNull { it.isNotBlank() }
+            ?: "The result of \"$stepDescription\" is visible on screen"
+        return AgentMission(
+            objective = skill.goal,
+            completionCriteria = completion,
+            taskApps = taskAppsFor(skill, failed),
+            guidance = skill.guidance,
+            referenceRoute = routeFor(skill, completedSteps = index, current = index),
+            focus = "Recorded step ${index + 1}, \"$stepDescription\", could not be completed as recorded. " +
+                "Get it done from the current screen, handling whatever is in the way, then report complete. " +
+                "The steps after it are replayed automatically.",
+            knownValues = context.knownValues(),
+            maxActions = STEP_RECOVERY_ACTION_BUDGET,
+            allowCloud = failed.fallback.allowCloudAi,
+            allowVision = failed.fallback.allowVision,
         )
     }
+
+    /** A mission for the whole goal, as far as it has not been done already. */
+    private fun goalMission(
+        skill: SemanticSkill,
+        context: ExecutionContext,
+        runInstruction: String,
+        completedSteps: Int,
+    ): AgentMission {
+        val visualTasks = skill.steps.mapNotNull { it.action as? ActionSpec.VisualTask }
+        val completion = buildList {
+            visualTasks.mapTo(this) { it.completionCriteria }
+            skill.postconditions.mapTo(this) { condition ->
+                buildString {
+                    append(condition.description)
+                    if (condition.requiredTexts.isNotEmpty()) {
+                        append(" (showing ").append(condition.requiredTexts.joinToString()).append(')')
+                    }
+                }
+            }
+        }.filter { it.isNotBlank() }.distinct().joinToString("; ")
+            .ifBlank { "The outcome of \"${skill.goal}\" is visible on screen" }
+        val objective = buildString {
+            append(skill.goal)
+            skill.description.takeIf { it.isNotBlank() && !it.equals(skill.goal, ignoreCase = true) }
+                ?.let { append(". ").append(it) }
+        }
+        return AgentMission(
+            objective = objective,
+            completionCriteria = completion,
+            taskApps = taskAppsFor(skill, null),
+            guidance = skill.guidance,
+            runInstruction = runInstruction,
+            referenceRoute = routeFor(skill, completedSteps = completedSteps, current = -1),
+            knownValues = context.knownValues(),
+            maxActions = visualTasks.maxOfOrNull { it.maxActions }?.coerceAtLeast(GoalAgent.DEFAULT_ACTION_BUDGET)
+                ?: GoalAgent.DEFAULT_ACTION_BUDGET,
+            allowCloud = skill.steps.all { it.fallback.allowCloudAi },
+            allowVision = skill.steps.all { it.fallback.allowVision },
+        )
+    }
+
+    /** Apps a mission may act in: the step's own first, then the skill's. */
+    private fun taskAppsFor(skill: SemanticSkill, step: SkillStep?): List<String> = buildList {
+        step?.interactionPackage(skill)?.let(::add)
+        step?.appToOpen(skill)?.let(::add)
+        skill.steps.forEach { candidate ->
+            (candidate.action as? ActionSpec.LaunchApp)?.packageName?.let(::add)
+            candidate.expectedState.requiredPackage?.let(::add)
+        }
+        addAll(skill.runtimeRequirements.requiredPackages)
+    }.filter { it.isNotBlank() && it != ownPackage }.distinct()
+
+    /**
+     * The demonstrated route as the agent reads it, marked with how far this run got.
+     *
+     * The words the user saw are preferred: steps may have been rewritten into a single
+     * visual task by compilation or an edit, and the agent needs the route that was
+     * actually shown to it.
+     */
+    private fun routeFor(skill: SemanticSkill, completedSteps: Int, current: Int): List<String> {
+        if (skill.demonstration.isNotEmpty() && current < 0 && completedSteps == 0) {
+            return skill.demonstration.take(MAX_ROUTE_LINES)
+        }
+        return skill.steps.take(MAX_ROUTE_LINES).mapIndexed { position, candidate ->
+            val line = (candidate.action as? ActionSpec.VisualTask)?.objective ?: candidate.describeForUser()
+            when {
+                position == current -> "$line  <- current step"
+                position < completedSteps -> "$line  (done)"
+                else -> line
+            }
+        }
+    }
+
+    private fun AgentOutcome.toStepOutcome(
+        step: SkillStep,
+        index: Int,
+        startedAt: Long,
+        recovered: Boolean,
+    ): StepOutcome = StepOutcome(
+        result = StepResult(
+            stepId = step.id,
+            stepIndex = index,
+            intent = step.intent,
+            targetLabel = step.target.intentLabel,
+            resolver = ResolverKind.VISION,
+            tier = tier,
+            success = completed,
+            validation = ValidationOutcome(
+                step.validation.mode,
+                passed = completed,
+                reason = message,
+                confidence = confidence,
+            ),
+            startedAt = startedAt,
+            finishedAt = time.nowMillis(),
+            recovered = recovered && completed,
+            message = message,
+        ),
+        cloudCalls = cloudCalls,
+        deviceAiCalls = deviceAiCalls,
+        awaitingReasoning = awaitingReasoning,
+        blocked = blocked,
+        cancelled = cancelled,
+    )
 
     private suspend fun runStep(
         skill: SemanticSkill,
@@ -393,7 +610,19 @@ class SkillExecutor(
         var recovered = false
 
         (step.action as? ActionSpec.VisualTask)?.let { visualTask ->
-            return runVisualTask(skill, step, visualTask, index, snapshot, task, observer, localOnly, startedAt)
+            val mission = AgentMission(
+                objective = visualTask.objective,
+                completionCriteria = visualTask.completionCriteria,
+                taskApps = taskAppsFor(skill, step),
+                guidance = skill.guidance,
+                referenceRoute = skill.demonstration.take(MAX_ROUTE_LINES),
+                knownValues = context.knownValues(),
+                maxActions = visualTask.maxActions,
+                allowCloud = step.fallback.allowCloudAi,
+                allowVision = step.fallback.allowVision,
+            )
+            return agent.pursue(mission, skill, step, index, observer, localOnly)
+                .toStepOutcome(step, index, startedAt, recovered = false)
         }
 
         // Steps that do not act on an element bypass resolution entirely.
@@ -1161,308 +1390,6 @@ class SkillExecutor(
             else -> ActionResult.Failed(words.unsupportedAction())
         }
 
-    /**
-     * Runs a genuine visual control loop for interfaces whose next action is not known
-     * when the skill is compiled. Every iteration captures fresh pixels, asks for one
-     * bounded gesture, performs it, and observes again. Completion must be independently
-     * returned on two stable observations; a changed frame or successful gesture alone
-     * can never finish the task.
-     */
-    private suspend fun runVisualTask(
-        skill: SemanticSkill,
-        step: SkillStep,
-        action: ActionSpec.VisualTask,
-        index: Int,
-        initialSnapshot: ScreenSnapshot,
-        task: AgentTask,
-        observer: ExecutionObserver,
-        localOnly: Boolean,
-        startedAt: Long,
-    ): StepOutcome {
-        val requiredPackage = step.interactionPackage(skill)
-            ?: step.expectedState.requiredPackage
-            ?: return failedOutcome(step, index, startedAt, "Visual task has no target app", 0, 0)
-        var snapshot = initialSnapshot
-        var cloudCalls = 0
-        var deviceAiCalls = 0
-        var completionConfirmations = 0
-        var lastTier = RuntimeTier.DETERMINISTIC
-        var preferredTier: RuntimeTier? = null
-        var workingMemory = ""
-        var frameBeforeLastAction: Bitmap? = null
-        val recentActions = mutableListOf<String>()
-
-        if (snapshot.packageName != requiredPackage) {
-            val launched = controller.launchApp(requiredPackage)
-            observer.onEvent(event(task.id, ExecutionEventType.ACTION_EXECUTED, step.id, index, launched.describe, launched.succeeded))
-            if (!launched.succeeded) {
-                return failedOutcome(step, index, startedAt, launched.describe, cloudCalls, deviceAiCalls)
-            }
-            snapshot = (perception.observeStable(step.validation.timeoutMs) as? PerceptionResult.Success)?.snapshot
-                ?: snapshot
-        }
-
-        repeat(action.maxActions.coerceIn(1, MAX_VISUAL_TASK_ACTIONS)) { actionIndex ->
-            if (observer.isCancelled()) {
-                return failedOutcome(step, index, startedAt, words.stopped(), cloudCalls, deviceAiCalls)
-            }
-            if (snapshot.packageName != requiredPackage) {
-                return failedOutcome(
-                    step,
-                    index,
-                    startedAt,
-                    words.wrongApp(requiredPackage, snapshot.packageName),
-                    cloudCalls,
-                    deviceAiCalls,
-                )
-            }
-
-            val capture = perception.captureScreenshot()
-            when (capture) {
-                is ScreenshotCapture.SecureWindowBlocked -> return StepOutcome(
-                    failedStep(step, index, startedAt, words.screenProtected(), step.validation.mode),
-                    cloudCalls,
-                    deviceAiCalls,
-                    blocked = true,
-                )
-                is ScreenshotCapture.Unavailable -> return StepOutcome(
-                    failedStep(step, index, startedAt, capture.reason, step.validation.mode),
-                    cloudCalls,
-                    deviceAiCalls,
-                    awaitingReasoning = true,
-                )
-                is ScreenshotCapture.Success -> observer.onEvent(
-                    event(
-                        task.id,
-                        ExecutionEventType.SCREEN_CAPTURED,
-                        step.id,
-                        index,
-                        "fresh screenshot captured (${capture.bitmap.width}x${capture.bitmap.height})",
-                        success = true,
-                        resolver = ResolverKind.VISION,
-                    ),
-                )
-            }
-            val bitmap = capture.bitmap
-            frameBeforeLastAction?.let { previous ->
-                if (recentActions.isNotEmpty()) {
-                    val result = if (VisualChangeDetector.changed(previous, bitmap)) {
-                        "visible state changed"
-                    } else {
-                        "no visible progress"
-                    }
-                    recentActions[recentActions.lastIndex] = "${recentActions.last()} => $result"
-                }
-                frameBeforeLastAction = null
-            }
-            val routed = router.infer(
-                label = "visual-task-action",
-                schema = AiTasks.visualTaskDecision,
-                prompt = AiTasks.visualTaskPrompt(
-                    action.objective,
-                    action.completionCriteria,
-                    minimizer.describeScreen(snapshot),
-                    actionIndex + 1,
-                    recentActions,
-                    workingMemory,
-                    currentDateTime(),
-                ),
-                systemInstruction = AiTasks.SYSTEM_INSTRUCTION,
-                image = minimizer.cropForInference(
-                    if (maskScreenshots()) ScreenshotMasking.mask(bitmap, snapshot) else bitmap,
-                    null,
-                    maxDimension = VISUAL_TASK_MAX_IMAGE_DIMENSION,
-                ),
-                requirements = InferenceRequirements(
-                    needsVision = true,
-                    minConfidence = VISUAL_TASK_CONFIDENCE,
-                    localOnly = localOnly || !step.fallback.allowCloudAi,
-                ),
-                maxOutputTokens = VISUAL_TASK_MAX_OUTPUT_TOKENS,
-                preferredTier = preferredTier,
-            )
-            if (routed.usedCloud) cloudCalls++
-            if (routed.tier == RuntimeTier.DEVICE_AI) deviceAiCalls++
-            lastTier = routed.tier
-            preferredTier = routed.tier.takeUnless { it == RuntimeTier.DETERMINISTIC }
-            val decision = routed.value ?: return StepOutcome(
-                failedStep(
-                    step,
-                    index,
-                    startedAt,
-                    routed.result.error?.message ?: "No image-capable runtime could inspect the game",
-                    step.validation.mode,
-                ),
-                cloudCalls,
-                deviceAiCalls,
-                awaitingReasoning = true,
-            )
-            if (decision.memory.isNotBlank()) {
-                workingMemory = decision.memory.take(VISUAL_TASK_MEMORY_LIMIT)
-            }
-            observer.onEvent(
-                event(
-                    task.id,
-                    ExecutionEventType.RESOLVER_SELECTED,
-                    step.id,
-                    index,
-                    "visual agent via ${routed.tier.diagnosticName}: ${decision.reason}",
-                    tier = routed.tier,
-                    resolver = ResolverKind.VISION,
-                ),
-            )
-
-            when (decision.status) {
-                VisualTaskStatus.COMPLETE -> {
-                    completionConfirmations++
-                    observer.onEvent(
-                        event(
-                            task.id,
-                            ExecutionEventType.VALIDATION_RESULT,
-                            step.id,
-                            index,
-                            "visual completion confirmation $completionConfirmations/$REQUIRED_COMPLETION_CONFIRMATIONS",
-                            success = completionConfirmations >= REQUIRED_COMPLETION_CONFIRMATIONS,
-                        ),
-                    )
-                    if (completionConfirmations >= REQUIRED_COMPLETION_CONFIRMATIONS) {
-                        val validation = ValidationOutcome(
-                            step.validation.mode,
-                            passed = true,
-                            reason = "visual task completion confirmed on two fresh observations",
-                            observed = decision.reason,
-                            confidence = decision.confidence,
-                        )
-                        return StepOutcome(
-                            StepResult(
-                                step.id,
-                                index,
-                                step.intent,
-                                step.target.intentLabel,
-                                ResolverKind.VISION,
-                                lastTier,
-                                success = true,
-                                validation = validation,
-                                startedAt = startedAt,
-                                finishedAt = time.nowMillis(),
-                                recovered = actionIndex > 0,
-                                message = validation.reason,
-                            ),
-                            cloudCalls,
-                            deviceAiCalls,
-                        )
-                    }
-                    // A visual task's next screenshot is the authoritative observation.
-                    // Waiting for the accessibility tree to become equivalent is both
-                    // redundant and pathological on games with timers or animations:
-                    // the tree may never settle, costing the full 5-8 second validation
-                    // timeout on every turn.
-                    snapshot = (perception.observe(VISUAL_COMPLETION_RECHECK_MS) as? PerceptionResult.Success)?.snapshot
-                        ?: snapshot
-                }
-
-                VisualTaskStatus.BLOCKED -> return failedOutcome(
-                    step,
-                    index,
-                    startedAt,
-                    decision.reason.ifBlank { "Visual agent found no safe progress action" },
-                    cloudCalls,
-                    deviceAiCalls,
-                )
-
-                VisualTaskStatus.ACT -> {
-                    completionConfirmations = 0
-                    if (!decision.safeToAct) {
-                        return failedOutcome(
-                            step,
-                            index,
-                            startedAt,
-                            decision.reason.ifBlank { "Visual action was not proven safe" },
-                            cloudCalls,
-                            deviceAiCalls,
-                        )
-                    }
-                    if (!decision.isInsideAppContent()) {
-                        return failedOutcome(step, index, startedAt, "Visual action targeted a system edge", cloudCalls, deviceAiCalls)
-                    }
-                    val performed = when (decision.action) {
-                        VisualTaskAction.TAP -> controller.tapRatio(decision.x, decision.y)
-                        VisualTaskAction.LONG_PRESS -> controller.longPressRatio(
-                            decision.x,
-                            decision.y,
-                            decision.durationMs.coerceIn(200L, 2_000L),
-                        )
-                        VisualTaskAction.SWIPE -> controller.swipeRatio(
-                            decision.x,
-                            decision.y,
-                            decision.endX,
-                            decision.endY,
-                            decision.durationMs.coerceIn(50L, 2_000L),
-                        )
-                        VisualTaskAction.INPUT_TEXT -> {
-                            val focused = controller.tapRatio(decision.x, decision.y)
-                            if (!focused.succeeded) {
-                                focused
-                            } else {
-                                delay(VISUAL_TEXT_FOCUS_SETTLE_MS)
-                                controller.inputTextAtFocus(decision.text, decision.clearExisting)
-                            }
-                        }
-                        VisualTaskAction.WAIT -> {
-                            delay(decision.durationMs.coerceIn(100L, 2_000L))
-                            ActionResult.Performed("visual wait")
-                        }
-                        VisualTaskAction.NONE -> ActionResult.Failed("Visual agent returned no action")
-                    }
-                    observer.onEvent(
-                        event(task.id, ExecutionEventType.ACTION_EXECUTED, step.id, index, performed.describe, performed.succeeded),
-                    )
-                    if (!performed.succeeded) {
-                        return failedOutcome(step, index, startedAt, performed.describe, cloudCalls, deviceAiCalls)
-                    }
-                    frameBeforeLastAction = bitmap
-                    recentActions += buildString {
-                        append(decision.action.name.lowercase())
-                        if (decision.action.requiresStart) {
-                            append("@(").append("%.3f".format(decision.x)).append(',')
-                                .append("%.3f".format(decision.y)).append(')')
-                        }
-                        if (decision.action == VisualTaskAction.SWIPE) {
-                            append("→(").append("%.3f".format(decision.endX)).append(',')
-                                .append("%.3f".format(decision.endY)).append(')')
-                        }
-                        append(": ").append(decision.reason)
-                    }
-                    while (recentActions.size > VISUAL_TASK_HISTORY_LIMIT) recentActions.removeAt(0)
-                    // Observe package identity once after a short animation allowance.
-                    // Fresh pixels are captured at the top of the next turn, so a
-                    // multi-sample accessibility stability loop adds latency without
-                    // improving visual correctness.
-                    snapshot = (perception.observe(VISUAL_ACTION_SETTLE_MS) as? PerceptionResult.Success)?.snapshot
-                        ?: snapshot
-                }
-            }
-        }
-        return failedOutcome(
-            step,
-            index,
-            startedAt,
-            "Visual task reached its ${action.maxActions.coerceIn(1, MAX_VISUAL_TASK_ACTIONS)}-action limit without confirmed completion",
-            cloudCalls,
-            deviceAiCalls,
-        )
-    }
-
-    private fun com.autobile.ai.task.VisualTaskDecision.isInsideAppContent(): Boolean {
-        if (action == VisualTaskAction.WAIT) return true
-        fun pointIsSafe(x: Float, y: Float) = x in 0.04f..0.96f && y in 0.06f..0.92f
-        return pointIsSafe(x, y) && (action != VisualTaskAction.SWIPE || pointIsSafe(endX, endY))
-    }
-
-    private fun currentDateTime(): String = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(
-        Instant.ofEpochMilli(time.nowMillis()).atZone(ZoneId.systemDefault()),
-    )
-
     /** Checks the skill's preconditions, returning the reason it cannot start. */
     private suspend fun preconditionFailure(skill: SemanticSkill, localOnly: Boolean): String? {
         if (skill.preconditions.isEmpty()) return null
@@ -1541,18 +1468,16 @@ class SkillExecutor(
         const val APP_LAUNCH_SETTLE_MS = 1_200L
         const val ROW_TOLERANCE_PX = 40
         const val COLUMN_TOLERANCE_PX = 160
-        const val MAX_VISUAL_TASK_ACTIONS = 256
-        const val AUTONOMOUS_RECOVERY_ACTION_LIMIT = 64
-        const val VISUAL_TASK_MAX_IMAGE_DIMENSION = 1_024
-        const val VISUAL_TASK_MAX_OUTPUT_TOKENS = 256
-        const val VISUAL_TASK_HISTORY_LIMIT = 12
-        const val VISUAL_TASK_MEMORY_LIMIT = 1_000
-        const val VISUAL_ACTION_SETTLE_MS = 180L
-        const val VISUAL_TEXT_FOCUS_SETTLE_MS = 180L
-        const val REQUIRED_COMPLETION_CONFIRMATIONS = 2
-        const val VISUAL_COMPLETION_RECHECK_MS = 700L
-        const val VISUAL_TASK_CONFIDENCE = 0.65f
+        const val GOAL_STEP_ID = "goal"
+        /** Enough to close a few dialogs and redo one step, not to wander. */
+        const val STEP_RECOVERY_ACTION_BUDGET = 40
+        const val MAX_ROUTE_LINES = 40
     }
+}
+
+private sealed interface StepGate {
+    data class Proceed(val confirmed: Boolean) : StepGate
+    data class Stop(val reason: String, val status: OutcomeStatus) : StepGate
 }
 
 private data class StepOutcome(
@@ -1563,6 +1488,8 @@ private data class StepOutcome(
     val awaitingReasoning: Boolean = false,
     /** True when Android explicitly blocked the perception needed for this step. */
     val blocked: Boolean = false,
+    /** True when the user stopped the run while this step was in progress. */
+    val cancelled: Boolean = false,
 )
 
 private data class ValueReading(

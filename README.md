@@ -2,8 +2,9 @@
 
 **English** · [한국어](README.ko.md)
 
-Autobile learns a routine on your Android phone by watching you do it once, then repeats
-it for you — on a schedule, when a notification arrives, or whenever you ask.
+Autobile operates your Android phone for you. Tell it what you want in plain words, or
+show it once, and it does the task — on a schedule, when a notification arrives, or
+whenever you ask.
 
 It is not a macro recorder. A recorder replays taps at fixed coordinates and breaks the
 moment an app moves a button. Autobile records what each control *meant* — "the daily
@@ -29,7 +30,7 @@ A few things people actually repeat every day:
 - **Anything fiddly you do the same way every time.** Five taps buried three menus deep,
   done for you.
 
-You teach it once. After that it runs without you, and shows you what it did.
+You teach it once, or just ask. After that it runs without you, and shows you what it did.
 
 ## Getting started
 
@@ -78,6 +79,22 @@ Read it carefully. This is the moment to catch a misunderstanding, and it is muc
 than catching it a week later. If something is wrong, type the correction in your own
 words — "send net sales, not gross" — and the steps get rewritten, not just the label.
 
+Not every correction is a step. "Always pick the hard difficulty" or "close the daily
+reward if it shows up" are things you know and the demonstration never showed. When a
+correction cannot be expressed as recorded steps, Autobile keeps it as an instruction and
+follows it on every run, with the demonstration as the route it was shown rather than a
+script it must replay. You can add more the same way from the automation's page later.
+
+### Or just ask
+
+Type what you want on the home screen — "finish today's sudoku", "turn on dark mode in
+Settings". A request that matches something you taught runs that automation. Anything
+else runs as a one-off task: Autobile opens the app you named and works toward the goal
+from what is on screen, asking you before it starts. Nothing is saved unless you teach it.
+
+On an automation's page you can also give an instruction for one run only — "on hard this
+time" — without changing what it normally does.
+
 ### 5. Decide when it runs
 
 On the automation's page you set:
@@ -90,17 +107,42 @@ freedom you granted, until you explicitly trust that automation.
 
 ## How the AI part works
 
-Autobile tries the cheapest thing that can answer, and only escalates when it has to:
+Two things decide what happens on screen: the route you showed, and an agent that works
+toward the goal from what it sees.
+
+**The route comes first.** A taught step is found again by the id or label recorded when
+you taught it, which needs no inference and no network. Most runs of a stable automation
+end here.
+
+**The agent takes over when the route stops fitting.** A reward pop-up that did not exist
+when you taught it, a tutorial after an update, a puzzle whose next move depends on the
+board, a button that moved three screens deeper. Each turn the agent looks at the screen,
+chooses the next few actions — tap, long-press, swipe, type, scroll, back, wait, or open
+an app — and is told on the next turn what they did. The first failure is treated as an
+interruption: the agent gets past it and hands back to the route. A second one means the
+route no longer fits, and the agent finishes the goal itself. Automations with
+instructions the route cannot express, and requests you only typed, are driven by the
+agent from the start.
+
+The agent is never given the run. Every action it proposes is checked before it happens:
+
+- It cannot touch the status bar, the navigation bar or Home, or act on Autobile itself
+- It stays in the apps the task is about, and returns there when something else opens
+- Anything that buys, pays, transfers or subscribes — whether the agent says so or the
+  control's words do — waits for your approval, as does anything it declares as sending,
+  posting or deleting
+- A rejected or failed action is reported back to it instead of ending the run; running
+  out of budget, making no visible progress, a protected screen, or your stop button do
+- It may only report success after two consecutive fresh looks at the screen agree
+
+Reasoning runs on the cheapest runtime that can answer:
 
 | | What it does | Needs |
 |---|---|---|
 | **1. Rules** | Finds the control by the id or label recorded when you taught it | Nothing |
 | **2. On-device AI** | Works out which control means the same thing when the app changed | A phone with on-device AI |
 | **3. Local model** | Same job, using a model you downloaded | Optional, off by default |
-| **4. Cloud** | Harder problems: a redesigned screen, a new path to the same goal | Your own API key |
-
-**Most runs never get past step 1.** A stable automation doing a familiar task completes
-with no inference and no network at all. Steps 2 to 4 exist for the day the app updates.
+| **4. Cloud** | The agent's turns, a redesigned screen, a new path to the same goal | Your own API key or subscription |
 
 ### When the screen cannot be read
 
@@ -157,6 +199,8 @@ Deliberate limits, not missing features:
 - **Password managers and authenticators are blocked**, and cannot be unblocked by an
   automation
 - **Financial and health apps ask first**, as does any app Autobile does not recognise
+- **Nothing is bought, paid or subscribed without you.** The agent's actions go through the
+  same risk gate as taught steps, and it cannot approve its own request
 - **A protected screen stops the run.** If Android refuses a screenshot because the window
   holds sensitive content, Autobile reports that and stops rather than working around it
 - **A partial run is reported as partial.** If some steps worked and the goal was not
