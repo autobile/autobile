@@ -54,6 +54,7 @@ import com.autobile.app.ui.labelRes
 import com.autobile.core.data.PatchStatus
 import com.autobile.core.data.SkillPatchCandidate
 import com.autobile.core.model.AutonomyLevel
+import com.autobile.core.model.ExecutionStrategy
 import com.autobile.core.model.SemanticSkill
 
 @Composable
@@ -70,6 +71,7 @@ fun SkillDetailScreen(state: AppUiState, viewModel: AppViewModel) {
     // A successful edit changes the version. Clearing then makes the committed state
     // visible instead of leaving the old request in the field as if nothing happened.
     var editText by remember(skill.id, skill.version) { mutableStateOf("") }
+    var runInstruction by remember(skill.id) { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
 
     Column(
@@ -105,11 +107,39 @@ fun SkillDetailScreen(state: AppUiState, viewModel: AppViewModel) {
             )
         }
 
+        // Something that only applies to this run: "on hard this time". It is handed to
+        // the agent with the recorded route instead of being saved into the automation.
+        Column(Modifier.padding(horizontal = Space.gutter).padding(top = 16.dp)) {
+            InstructionField(
+                value = runInstruction,
+                onValueChange = { runInstruction = it },
+                placeholder = stringResource(R.string.skill_run_instruction_hint),
+            )
+            Spacer(Modifier.height(12.dp))
+            QuietButton(
+                text = stringResource(R.string.skill_run_with_instruction),
+                onClick = { viewModel.runSkill(skill.id, instruction = runInstruction) },
+                enabled = skill.enabled && runInstruction.isNotBlank(),
+                icon = Icons.Outlined.PlayArrow,
+            )
+        }
+
         Spacer(Modifier.height(28.dp))
         Hairline(Modifier.padding(horizontal = Space.gutter))
         FieldRow(stringResource(R.string.skill_trigger), skill.trigger.describe())
         Hairline(Modifier.padding(horizontal = Space.gutter))
         FieldRow(stringResource(R.string.skill_autonomy), stringResource(skill.effectiveAutonomy().labelRes()))
+        Hairline(Modifier.padding(horizontal = Space.gutter))
+        FieldRow(
+            label = stringResource(R.string.skill_strategy),
+            value = stringResource(
+                if (skill.strategy == ExecutionStrategy.AGENT_FIRST) {
+                    R.string.skill_strategy_agent_first
+                } else {
+                    R.string.skill_strategy_steps_first
+                },
+            ),
+        )
         Hairline(Modifier.padding(horizontal = Space.gutter))
         FieldRow(stringResource(R.string.skill_runtime_requirements), skill.requirementSummary())
         Hairline(Modifier.padding(horizontal = Space.gutter))
@@ -165,22 +195,23 @@ fun SkillDetailScreen(state: AppUiState, viewModel: AppViewModel) {
             }
         }
 
+        if (skill.guidance.isNotEmpty()) {
+            Column(Modifier.padding(horizontal = Space.gutter)) {
+                SectionHeading(stringResource(R.string.skill_guidance_heading))
+                skill.guidance.forEach { instruction ->
+                    Statement("• $instruction", color = theme.ink)
+                    Spacer(Modifier.height(6.dp))
+                }
+                Statement(stringResource(R.string.skill_guidance_detail))
+            }
+        }
+
         Column(Modifier.padding(horizontal = Space.gutter)) {
             SectionHeading(stringResource(R.string.skill_edit_heading))
-            OutlinedTextField(
+            InstructionField(
                 value = editText,
                 onValueChange = { editText = it },
-                placeholder = { Text(stringResource(R.string.skill_edit_hint), style = TypeScale.body, color = theme.muted) },
-                textStyle = TypeScale.body,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = theme.ink,
-                    unfocusedBorderColor = theme.line,
-                    focusedTextColor = theme.ink,
-                    unfocusedTextColor = theme.ink,
-                    cursorColor = theme.ink,
-                ),
+                placeholder = stringResource(R.string.skill_edit_hint),
             )
             Spacer(Modifier.height(12.dp))
             QuietButton(
@@ -293,6 +324,26 @@ private fun RepairPanel(candidate: SkillPatchCandidate, viewModel: AppViewModel)
             }
         }
     }
+}
+
+/** A free-text field for something said to the automation in the user's own words. */
+@Composable
+private fun InstructionField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = { Text(placeholder, style = TypeScale.body, color = theme.muted) },
+        textStyle = TypeScale.body,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = theme.ink,
+            unfocusedBorderColor = theme.line,
+            focusedTextColor = theme.ink,
+            unfocusedTextColor = theme.ink,
+            cursorColor = theme.ink,
+        ),
+    )
 }
 
 /** What a skill needs before it can run, as a short readable list. */

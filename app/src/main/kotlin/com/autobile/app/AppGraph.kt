@@ -48,6 +48,7 @@ import com.autobile.core.model.ValidationSpec
 import com.autobile.runtime.AutobileRuntime
 import com.autobile.runtime.AutobileServices
 import com.autobile.runtime.agent.AgentOrchestrator
+import com.autobile.runtime.agent.AppNameMatcher
 import com.autobile.runtime.agent.ConfirmationMode
 import com.autobile.runtime.background.ExecutabilityEvaluator
 import com.autobile.runtime.capability.CapabilityDetector
@@ -180,6 +181,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         maskScreenshots = { settings.privacy().maskSensitiveFields },
         words = runtimeWords,
         ownPackage = appContext.packageName,
+        resolveApp = ::resolveAppPackage,
     )
     val capabilityDetector = CapabilityDetector(
         context = context,
@@ -246,29 +248,29 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
         context.packageManager.getLaunchIntentForPackage(packageName) != null
     }.getOrDefault(true)
 
+    /**
+     * The launchable app a name refers to, for a command or an agent that names one.
+     *
+     * Only apps with a launcher entry are candidates: they are the ones a person means by
+     * a name, and the only ones the agent could open anyway. Autobile itself is excluded.
+     */
     private fun resolveAppPackage(appHint: String): String? {
-        val wanted = appHint.trim().lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
-        if (wanted.isBlank()) return null
+        if (appHint.isBlank()) return null
         return runCatching {
-            context.packageManager.getInstalledApplications(0)
-                .asSequence()
-                .map { info ->
-                    val label = context.packageManager.getApplicationLabel(info).toString()
-                    val normalizedLabel = label.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
-                    Triple(info.packageName, normalizedLabel, info.packageName.lowercase())
-                }
-                .sortedByDescending { (_, label, packageName) ->
-                    when {
-                        label == wanted -> 3
-                        label.contains(wanted) || wanted.contains(label) -> 2
-                        packageName.contains(wanted) -> 1
-                        else -> 0
-                    }
-                }
-                .firstOrNull { (_, label, packageName) ->
-                    label == wanted || label.contains(wanted) || wanted.contains(label) || packageName.contains(wanted)
-                }
-                ?.first
+            val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val packages = context.packageManager
+            val activities = if (Build.VERSION.SDK_INT >= 33) {
+                packages.queryIntentActivities(launcher, PackageManager.ResolveInfoFlags.of(0L))
+            } else {
+                @Suppress("DEPRECATION")
+                packages.queryIntentActivities(launcher, 0)
+            }
+            val candidates = activities
+                .map { it.activityInfo.applicationInfo }
+                .distinctBy { it.packageName }
+                .filter { it.packageName != context.packageName }
+                .map { AppNameMatcher.Candidate(it.packageName, packages.getApplicationLabel(it).toString()) }
+            AppNameMatcher.bestMatch(appHint, candidates)
         }.getOrNull()
     }
 

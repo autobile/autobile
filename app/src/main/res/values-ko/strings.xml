@@ -92,6 +92,13 @@
     <string name="skill_edit_heading">직접 말로 바꾸기</string>
     <string name="skill_edit_hint">9시 말고 8시 30분에</string>
     <string name="skill_edit_review">변경 내용 확인</string>
+    <string name="skill_run_instruction_hint">이번 실행에만 적용, 예: 어려움 난이도로</string>
+    <string name="skill_run_with_instruction">이 지시대로 실행</string>
+    <string name="skill_strategy">실행 방식</string>
+    <string name="skill_strategy_steps_first">보여준 동작을 재현하고, 화면이 다르면 스스로 대응</string>
+    <string name="skill_strategy_agent_first">목표를 향해 스스로 조작하고, 보여준 동작은 참고로만 사용</string>
+    <string name="skill_guidance_heading">따르는 지시사항</string>
+    <string name="skill_guidance_detail">매 실행마다 에이전트에게 전달됩니다. 지우려면 이전 버전으로 되돌리세요.</string>
     <string name="skill_repairs">확인할 수리 제안</string>
     <string name="skill_repair_meaning_warning">이 수리는 자동화가 하는 일 자체를 바꿉니다. 자세히 읽어 보세요.</string>
     <string name="skill_repair_apply">적용</string>
@@ -139,7 +146,7 @@
     <string name="review_minute">분</string>
     <string name="review_autonomy">어디까지 맡길지</string>
     <string name="review_correction_heading">잘못 이해했나요?</string>
-    <string name="review_correction_body">바로잡을 내용을 적으면 문구만이 아니라 단계 자체를 다시 씁니다.</string>
+    <string name="review_correction_body">바로잡을 내용을 적어 주세요. 단계로 표현할 수 있으면 단계를 다시 쓰고, 그렇지 않은 내용은 매 실행마다 따르는 지시사항이 됩니다.</string>
     <string name="review_correction_hint">총매출 말고 순매출을 보내기</string>
     <string name="review_correction_action">이해 바로잡기</string>
     <string name="review_used_cloud">이 시연을 읽는 데 클라우드를 사용했습니다.</string>
@@ -348,7 +355,6 @@
     <string name="msg_first_run_unverified">단계는 실행됐지만 결과를 확인하지 못했습니다</string>
     <string name="msg_version_unavailable">그 버전은 더 이상 남아 있지 않습니다</string>
     <string name="msg_version_restored">버전 %1$d(으)로 되돌렸습니다</string>
-    <string name="msg_show_me_how">%1$s 방법을 보여주세요</string>
     <string name="msg_change_applied">변경을 적용했습니다</string>
     <string name="msg_repair_applied">버전 %1$d(으)로 복구를 적용했습니다</string>
     <string name="msg_repair_dismissed">복구를 무시했습니다</string>

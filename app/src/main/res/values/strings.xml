@@ -92,6 +92,13 @@
     <string name="skill_edit_heading">Change it in your own words</string>
     <string name="skill_edit_hint">Run at 8:30 instead</string>
     <string name="skill_edit_review">Review change</string>
+    <string name="skill_run_instruction_hint">Only for this run, e.g. play on hard</string>
+    <string name="skill_run_with_instruction">Run with this instruction</string>
+    <string name="skill_strategy">Runs by</string>
+    <string name="skill_strategy_steps_first">Replaying what you showed, adapting when the screen differs</string>
+    <string name="skill_strategy_agent_first">Working toward the goal, using what you showed as a guide</string>
+    <string name="skill_guidance_heading">Instructions it follows</string>
+    <string name="skill_guidance_detail">Given to the agent on every run. Restore an earlier version to remove one.</string>
     <string name="skill_repairs">Repairs to review</string>
     <string name="skill_repair_meaning_warning">This repair changes what the automation does. Read it closely.</string>
     <string name="skill_repair_apply">Apply</string>
@@ -139,7 +146,7 @@
     <string name="review_minute">Minute</string>
     <string name="review_autonomy">How much freedom it has</string>
     <string name="review_correction_heading">Something not right?</string>
-    <string name="review_correction_body">Describe the correction and the steps are rewritten, not just the wording.</string>
+    <string name="review_correction_body">Describe the correction. The steps are rewritten where they can be, and anything they cannot express becomes an instruction it follows on every run.</string>
     <string name="review_correction_hint">Send net sales, not gross</string>
     <string name="review_correction_action">Correct my understanding</string>
     <string name="review_used_cloud">The cloud helped read this demonstration.</string>
@@ -349,7 +356,6 @@
     <string name="msg_first_run_unverified">The steps ran, but the result could not be confirmed</string>
     <string name="msg_version_unavailable">That version is no longer available</string>
     <string name="msg_version_restored">Restored as version %1$d</string>
-    <string name="msg_show_me_how">Show me how to %1$s</string>
     <string name="msg_change_applied">Change applied</string>
     <string name="msg_repair_applied">Repair applied as version %1$d</string>
     <string name="msg_repair_dismissed">Repair dismissed</string>
