@@ -7,6 +7,7 @@ import com.autobile.ai.task.AiTasks
 import com.autobile.core.common.Ids
 import com.autobile.core.common.Logx
 import com.autobile.core.common.TimeSource
+import com.autobile.core.data.SkillPatchCandidate
 import com.autobile.core.data.SkillStore
 import com.autobile.runtime.EnglishRuntimeVocabulary
 import com.autobile.runtime.RuntimeVocabulary
@@ -14,7 +15,10 @@ import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AgentTask
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.ExecutionEventType
+import com.autobile.core.model.AutonomyLevel
 import com.autobile.core.model.ExecutionStrategy
+import com.autobile.core.model.PatchAuthor
+import com.autobile.core.model.SkillVersionRecord
 import com.autobile.core.model.ExpectedState
 import com.autobile.core.model.InferenceRequirements
 import com.autobile.core.model.OutcomeStatus
@@ -35,6 +39,8 @@ import com.autobile.core.model.ValidationSpec
 import com.autobile.core.model.ValueType
 import com.autobile.runtime.control.ActionResult
 import com.autobile.runtime.control.ScreenActuator
+import com.autobile.runtime.edit.StepChange
+import com.autobile.runtime.edit.applyStepChanges
 import com.autobile.runtime.perception.ScreenObserver
 import com.autobile.runtime.perception.ScreenshotCapture
 import com.autobile.runtime.perception.VisualChangeDetector
@@ -129,6 +135,7 @@ class SkillExecutor(
         var deviceAiCalls = 0
         var confirmedThisRun = false
         var agentRecoveries = 0
+        val learned = mutableListOf<StepChange>()
 
         preconditionFailure(skill, localOnly)?.let { reason ->
             observer.onEvent(
@@ -240,7 +247,15 @@ class SkillExecutor(
                         success = rescue.completed,
                     ),
                 )
+                if (rescue.completed) {
+                    learned += if (takeOver) {
+                        takeOverChanges(skill, index, rescue.learnedRoute)
+                    } else {
+                        recoveryChanges(step, rescue.learnedRoute)
+                    }
+                }
                 if (takeOver && rescue.completed) {
+                    adoptLearnedRoute(skill, learned, observer)
                     cloudCalls += outcome.cloudCalls
                     deviceAiCalls += outcome.deviceAiCalls
                     results += outcome.result
@@ -306,6 +321,7 @@ class SkillExecutor(
             !goalOutcome.evaluated && everyStepWorked -> OutcomeStatus.SUCCESS
             else -> OutcomeStatus.PARTIAL
         }
+        if (status == OutcomeStatus.SUCCESS) adoptLearnedRoute(skill, learned, observer)
         return TaskOutcome(
             taskId = task.id,
             status = status,
@@ -377,8 +393,20 @@ class SkillExecutor(
             is StepGate.Proceed -> Unit
         }
 
-        val outcome = agent.pursue(mission, skill, step, 0, observer, localOnly)
-            .toStepOutcome(step, 0, startedAt, recovered = false)
+        val pursuit = agent.pursue(mission, skill, step, 0, observer, localOnly)
+        // An instruction for one run is not how the automation normally works, so the
+        // route it produced is not one to keep.
+        if (pursuit.completed && runInstruction.isBlank() && pursuit.learnedRoute.isNotEmpty()) {
+            val launch = mission.taskApps.firstOrNull()
+                ?.takeIf { (pursuit.learnedRoute.first().action as? ActionSpec.LaunchApp) == null }
+                ?.let { RouteLearner.launchStep(it) }
+            adoptLearnedRoute(
+                skill,
+                listOf(StepChange.ReplaceAll(listOfNotNull(launch) + pursuit.learnedRoute, ExecutionStrategy.STEPS_FIRST)),
+                observer,
+            )
+        }
+        val outcome = pursuit.toStepOutcome(step, 0, startedAt, recovered = false)
         val status = when {
             outcome.result.success -> OutcomeStatus.SUCCESS
             outcome.cancelled -> OutcomeStatus.CANCELLED
@@ -559,6 +587,92 @@ class SkillExecutor(
                 else -> line
             }
         }
+    }
+
+    /**
+     * What a recovery taught about one recorded step.
+     *
+     * Whatever the agent did before acting on the step's own target was in the way — a
+     * pop-up, a tutorial, a sign-in sheet — and is kept in front of the step as optional,
+     * reasoning-free steps, so the next run gets past it by replay and pays nothing when
+     * it does not appear. The recorded step itself is kept: one recovery is not evidence
+     * that its target moved, and a moved target is repaired by relocation, which already
+     * proposes its own change.
+     */
+    private fun recoveryChanges(step: SkillStep, route: List<SkillStep>): List<StepChange> {
+        val own = route.indexOfFirst { it.actsOnSameTargetAs(step) }
+        // Only steps that look for something can be skipped when it is absent. A back
+        // press or a wait always runs, so written down as "if shown" it would run on
+        // every later replay whether anything was shown or not.
+        val before = (if (own >= 0) route.take(own) else route)
+            .filter { it.target.locators.isNotEmpty() }
+            .map(RouteLearner::asInterruption)
+        return if (before.isEmpty()) emptyList() else listOf(StepChange.InsertSteps(step.id, after = false, steps = before))
+    }
+
+    /** The agent finished the goal from [index]: its route replaces the rest of the steps. */
+    private fun takeOverChanges(skill: SemanticSkill, index: Int, route: List<SkillStep>): List<StepChange> {
+        if (route.isEmpty()) return emptyList()
+        val failed = skill.steps.getOrNull(index) ?: return emptyList()
+        return listOf(StepChange.ReplaceStep(failed.id, route)) +
+            skill.steps.drop(index + 1).map { StepChange.Delete(it.id) }
+    }
+
+    /**
+     * Writes a route the agent proved back into the automation, so the next run replays
+     * it without a model.
+     *
+     * Applied straight away where the user has already trusted the automation to act on
+     * its own and nothing in the route commits anything; otherwise kept as a proposal on
+     * the automation's page, like any other repair. Skipped when the automation changed
+     * while it ran, because the route was learned against a version that no longer exists.
+     */
+    private suspend fun adoptLearnedRoute(
+        skill: SemanticSkill,
+        changes: List<StepChange>,
+        observer: ExecutionObserver,
+    ) {
+        if (changes.isEmpty()) return
+        val current = skillStore.get(skill.id)?.takeIf { it.version == skill.version } ?: return
+        val patched = applyStepChanges(current, changes) ?: return
+        val learnedSteps = changes.flatMap { change ->
+            when (change) {
+                is StepChange.InsertSteps -> change.steps
+                is StepChange.ReplaceStep -> change.steps
+                is StepChange.ReplaceAll -> change.steps
+                else -> emptyList()
+            }
+        }
+        val summary = words.learnedRoute(learnedSteps.size)
+        val commits = learnedSteps.any { riskEngine.categorise(it).isNotEmpty() }
+        val version = current.version + 1
+        val changedStepIds = learnedSteps.map { it.id }
+        if (!commits && current.effectiveAutonomy() >= AutonomyLevel.L3_AUTONOMOUS_LOW_RISK) {
+            skillStore.save(
+                patched.copy(version = version),
+                SkillVersionRecord(
+                    version = version,
+                    createdAt = time.nowMillis(),
+                    author = PatchAuthor.SELF_HEAL,
+                    reason = summary,
+                    summary = summary,
+                    changedStepIds = changedStepIds,
+                ),
+            )
+            observer.onEvent(event(observer.taskId, ExecutionEventType.SKILL_PATCH_PROPOSED, message = "applied: $summary"))
+            return
+        }
+        val candidate = SkillPatchCandidate(
+            skillId = current.id,
+            baseVersion = current.version,
+            patchedSkill = patched.copy(version = version),
+            summary = summary,
+            createdAt = time.nowMillis(),
+            requiresUserConfirmation = commits,
+        )
+        skillStore.savePatchCandidate(candidate)
+        observer.onEvent(event(observer.taskId, ExecutionEventType.SKILL_PATCH_PROPOSED, message = summary))
+        observer.onPatchProposed(candidate.id, summary, candidate.requiresUserConfirmation)
     }
 
     private fun AgentOutcome.toStepOutcome(
@@ -1478,6 +1592,15 @@ class SkillExecutor(
 private sealed interface StepGate {
     data class Proceed(val confirmed: Boolean) : StepGate
     data class Stop(val reason: String, val status: OutcomeStatus) : StepGate
+}
+
+/** Whether a learned step acts on the same element a recorded step was taught on. */
+private fun SkillStep.actsOnSameTargetAs(other: SkillStep): Boolean {
+    val ids = target.locators.filter { it.kind == com.autobile.core.model.LocatorKind.RESOURCE_ID }.map { it.value }
+    val otherIds = other.target.locators.filter { it.kind == com.autobile.core.model.LocatorKind.RESOURCE_ID }.map { it.value }
+    if (ids.any { it in otherIds }) return true
+    val label = target.intentLabel.trim()
+    return label.isNotEmpty() && label.equals(other.target.intentLabel.trim(), ignoreCase = true)
 }
 
 private data class StepOutcome(

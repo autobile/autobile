@@ -434,6 +434,7 @@
     <string name="compiled_step_go_home">홈 화면으로 이동</string>
     <string name="compiled_step_wait">기다리기</string>
     <string name="run_stopped">중지됨</string>
+    <string name="run_learned_route">이번 실행에서 %1$d개 단계를 학습했습니다. 다음 실행은 모델 없이 재생합니다</string>
     <string name="run_step_failed">단계 실패</string>
     <string name="run_screen_protected">보호된 화면이라 읽을 수 없습니다</string>
     <string name="run_no_text">무엇을 입력할지 판단하지 못했습니다</string>

@@ -437,6 +437,7 @@
     <string name="compiled_step_wait">Wait</string>
     <!-- How a run explains itself in the execution timeline. -->
     <string name="run_stopped">Stopped</string>
+    <string name="run_learned_route">Learned %1$d steps from this run; the next run replays them without a model</string>
     <string name="run_step_failed">Step failed</string>
     <string name="run_screen_protected">This screen is protected and cannot be read</string>
     <string name="run_no_text">Could not determine what to type</string>

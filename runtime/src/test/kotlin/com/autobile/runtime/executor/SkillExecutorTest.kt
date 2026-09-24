@@ -781,7 +781,7 @@ class SkillExecutorTest {
     }
 
     @Test
-    fun `visual task observes chooses gestures and requires repeated completion evidence`() = runTest {
+    fun `visual task observes chooses gestures and confirms completion on a fresh unchanged frame`() = runTest {
         val frame = ScreenshotCapture.Success(Bitmap.createBitmap(600, 1200, Bitmap.Config.ARGB_8888))
         val screen = FakeScreen(
             current = screen(packageName = "com.example.game", windowTitle = "Game"),
@@ -815,11 +815,13 @@ class SkillExecutorTest {
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
         assertThat(screen.gestures).containsExactly("swipe_ratio")
-        assertThat(provider.requestedLabels.filter { it == "agent-turn" }).hasSize(3)
+        // Act, then report completion; the unchanged frame that follows confirms it
+        // without asking the model a second time.
+        assertThat(provider.requestedLabels.filter { it == "agent-turn" }).hasSize(2)
         assertThat(outcome.stepResults.single().validation.reason).contains("two fresh observations")
         assertThat(screen.stableObservationTimeouts).isEmpty()
-        assertThat(provider.requestedMaxOutputTokens).containsExactly(1024, 1024, 1024)
-        assertThat(provider.requestedImageDimensions).containsExactly(512 to 1024, 512 to 1024, 512 to 1024)
+        assertThat(provider.requestedMaxOutputTokens).containsExactly(1024, 1024)
+        assertThat(provider.requestedImageDimensions).containsExactly(512 to 1024, 512 to 1024)
     }
 
     @Test
@@ -855,7 +857,7 @@ class SkillExecutorTest {
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
         assertThat(device.requestedLabels).containsExactly("agent-turn")
-        assertThat(cloud.requestedLabels).containsExactly("agent-turn", "agent-turn", "agent-turn")
+        assertThat(cloud.requestedLabels).containsExactly("agent-turn", "agent-turn")
     }
 
     @Test
@@ -925,7 +927,7 @@ class SkillExecutorTest {
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
         assertThat(outcome.stepResults.single().recovered).isTrue()
-        assertThat(provider.requestedLabels.filter { it == "agent-turn" }).hasSize(2)
+        assertThat(provider.requestedLabels.filter { it == "agent-turn" }).hasSize(1)
         assertThat(provider.requestedPrompts.first { it.contains("Objective:") }).contains("could not be completed as recorded")
     }
 
@@ -1036,6 +1038,118 @@ class SkillExecutorTest {
 
         assertThat(outcome.status).isEqualTo(OutcomeStatus.BLOCKED)
         assertThat(provider.requestedLabels).doesNotContain("agent-turn")
+    }
+
+    @Test
+    fun `a route the agent proved is written back so the next run replays it without a model`() = runTest {
+        val easy = node("easy", text = "Easy", resourceId = "com.example.game:id/easy")
+        val hard = node("hard", text = "Hard", resourceId = "com.example.game:id/hard")
+        val screen = FakeScreen(current = screen("com.example.game", "Difficulty", easy, hard))
+        val provider = ScriptedProvider().answerSequence(
+            "agent-turn",
+            act(AgentAction(AgentActionType.TAP, element = 1, label = "Hard")),
+            complete("hard game started"),
+        )
+        val automation = skill(listOf(clickStep(id = "easy", label = "Easy", resourceId = "com.example.game:id/easy")))
+            .copy(
+                goal = "Start a hard game",
+                guidance = listOf("Always pick the hard difficulty"),
+                strategy = ExecutionStrategy.AGENT_FIRST,
+                runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
+            )
+        skillStore.save(automation)
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        val learned = skillStore.get("skill")!!
+        assertThat(learned.version).isEqualTo(automation.version + 1)
+        assertThat(learned.strategy).isEqualTo(ExecutionStrategy.STEPS_FIRST)
+        assertThat(learned.steps.map { it.action }).containsExactly(
+            ActionSpec.LaunchApp("com.example.game"),
+            ActionSpec.Click,
+        ).inOrder()
+        assertThat(learned.steps.last().target.locators.first().value).isEqualTo("com.example.game:id/hard")
+        assertThat(learned.guidance).containsExactly("Always pick the hard difficulty")
+    }
+
+    @Test
+    fun `a learned route waits for review on an automation that asks first`() = runTest {
+        val hard = node("hard", text = "Hard", resourceId = "com.example.game:id/hard")
+        val screen = FakeScreen(current = screen("com.example.game", "Difficulty", hard))
+        val provider = ScriptedProvider().answerSequence(
+            "agent-turn",
+            act(AgentAction(AgentActionType.TAP, element = 0, label = "Hard")),
+            complete("hard game started"),
+        )
+        val automation = skill(
+            listOf(clickStep(id = "easy", label = "Easy", resourceId = "com.example.game:id/easy")),
+            autonomy = AutonomyLevel.L2_ASK_BEFORE_ACTION,
+        ).copy(
+            strategy = ExecutionStrategy.AGENT_FIRST,
+            runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")),
+        )
+        skillStore.save(automation)
+        val recorder = Recorder()
+
+        executor(screen, provider).execute(automation, task(automation), recorder)
+
+        assertThat(skillStore.get("skill")!!.version).isEqualTo(automation.version)
+        val proposal = skillStore.pendingPatches().single { it.skillId == "skill" }
+        assertThat(proposal.patchedSkill.steps.last().target.intentLabel).isEqualTo("Hard")
+        assertThat(recorder.patches).isNotEmpty()
+    }
+
+    @Test
+    fun `a one-off instruction never rewrites the automation`() = runTest {
+        val hard = node("hard", text = "Hard", resourceId = "com.example.game:id/hard")
+        val screen = FakeScreen(current = screen("com.example.game", "Difficulty", hard))
+        val provider = ScriptedProvider().answerSequence(
+            "agent-turn",
+            act(AgentAction(AgentActionType.TAP, element = 0, label = "Hard")),
+            complete("hard game started"),
+        )
+        val automation = skill(listOf(clickStep(id = "easy", label = "Easy", resourceId = "com.example.game:id/easy")))
+            .copy(runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")))
+        skillStore.save(automation)
+
+        executor(screen, provider).execute(automation, task(automation), Recorder(), runInstruction = "Hard this time")
+
+        assertThat(skillStore.get("skill")!!.steps.map { it.id }).containsExactly("easy")
+        assertThat(skillStore.pendingPatches().filter { it.skillId == "skill" }).isEmpty()
+    }
+
+    @Test
+    fun `an interruption the agent cleared is kept in front of the step as an optional check`() = runTest {
+        val close = node("close", text = "Close", resourceId = "com.example:id/close")
+        val start = node("start", text = "Start", resourceId = "com.example:id/start")
+        val screen = FakeScreen(
+            current = screen("com.example.game", "Reward", close),
+            nextScreen = screen("com.example.game", "Home", start),
+        )
+        val provider = ScriptedProvider().answerSequence(
+            "agent-turn",
+            act(AgentAction(AgentActionType.TAP, element = 0, label = "Close")),
+            complete("the start button is reachable"),
+        )
+        val automation = skill(
+            listOf(
+                clickStep(id = "start", label = "Start", resourceId = "com.example:id/start").copy(
+                    expectedState = ExpectedState(requiredPackage = "com.example.game"),
+                ),
+            ),
+        ).copy(runtimeRequirements = RuntimeRequirements(requiredPackages = listOf("com.example.game")))
+        skillStore.save(automation)
+
+        val outcome = executor(screen, provider).execute(automation, task(automation), Recorder())
+
+        assertThat(outcome.status).isEqualTo(OutcomeStatus.SUCCESS)
+        val learned = skillStore.get("skill")!!.steps
+        assertThat(learned.map { it.target.intentLabel }).containsExactly("Close", "Start").inOrder()
+        assertThat(learned.first().optional).isTrue()
+        assertThat(learned.first().fallback.allowCloudAi).isFalse()
+        assertThat(learned.first().fallback.allowDeviceAi).isFalse()
+        assertThat(learned.last().id).isEqualTo("start")
     }
 
     private fun act(vararg actions: AgentAction, memory: String = "") = AgentTurn(
