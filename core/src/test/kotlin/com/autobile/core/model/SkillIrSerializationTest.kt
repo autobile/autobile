@@ -93,4 +93,32 @@ class SkillIrSerializationTest {
         val binding = decoded.variables.first { it.name == "date" }.binding
         assertThat(binding).isEqualTo(VariableBinding.RelativeDate(offsetDays = -1))
     }
+
+    @Test
+    fun `instructions, the demonstrated route and the strategy survive a round trip`() {
+        val skill = sampleSkill().copy(
+            guidance = listOf("Close the daily reward if it appears", "난이도는 어려움으로"),
+            demonstration = listOf("Opening Sudoku", "Tapping New game"),
+            strategy = ExecutionStrategy.AGENT_FIRST,
+        )
+
+        val decoded = AutobileJson.decodeFromString<SemanticSkill>(AutobileJson.encodeToString(skill))
+
+        assertThat(decoded).isEqualTo(skill)
+    }
+
+    @Test
+    fun `an automation saved before instructions existed still replays its steps`() {
+        val stored = AutobileJson.encodeToString(sampleSkill())
+            .replace(Regex(",\"guidance\":\\[[^\\]]*\\]"), "")
+            .replace(Regex(",\"demonstration\":\\[[^\\]]*\\]"), "")
+            .replace(Regex(",\"strategy\":\"[A-Z_]+\""), "")
+        assertThat(stored).doesNotContain("strategy")
+
+        val decoded = AutobileJson.decodeFromString<SemanticSkill>(stored)
+
+        assertThat(decoded.guidance).isEmpty()
+        assertThat(decoded.demonstration).isEmpty()
+        assertThat(decoded.strategy).isEqualTo(ExecutionStrategy.STEPS_FIRST)
+    }
 }

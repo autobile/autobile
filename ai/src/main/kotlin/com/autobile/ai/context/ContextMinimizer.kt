@@ -104,6 +104,61 @@ class ContextMinimizer(
             }
         }.joinToString("\n")
 
+    /**
+     * The elements the goal agent may choose from, in reading order.
+     *
+     * Unlike [relevantNodes] there is no search term to rank by: the agent has to see the
+     * whole screen, including the close button of a pop-up nobody asked about. Reading
+     * order keeps a dialog's controls next to its text, and the cap keeps a long list
+     * from crowding the rest of the prompt out of a small context window.
+     */
+    fun agentElements(snapshot: ScreenSnapshot, limit: Int = DEFAULT_AGENT_ELEMENTS): List<UiNode> =
+        snapshot.nodes
+            .asSequence()
+            .filter { it.visible && !it.bounds.isEmpty }
+            .filter { it.isActionable() || !it.visibleText().isNullOrBlank() }
+            .distinctBy { Triple(it.bounds, it.label(), it.clickable) }
+            .sortedWith(compareBy<UiNode>({ it.bounds.top / ROW_BUCKET_PX }, { it.bounds.left }))
+            .take(limit)
+            .toList()
+
+    /**
+     * Renders [nodes] with their centres as fractions of the screen.
+     *
+     * The position is what lets a model that can also see the screenshot tie a listed
+     * element to what it sees, and it is the fallback when a node action is refused.
+     */
+    fun renderAgentElements(
+        nodes: List<UiNode>,
+        screenWidth: Int,
+        screenHeight: Int,
+        maskSensitive: Boolean = true,
+    ): String {
+        val width = screenWidth.takeIf { it > 0 } ?: nodes.maxOfOrNull { it.bounds.right } ?: 0
+        val height = screenHeight.takeIf { it > 0 } ?: nodes.maxOfOrNull { it.bounds.bottom } ?: 0
+        return nodes.mapIndexed { index, node ->
+            val label = node.label().let { if (maskSensitive) Logx.redact(it) else it }.take(maxTextLength)
+            val traits = buildList {
+                if (node.clickable) add("clickable")
+                if (node.longClickable) add("long-clickable")
+                if (node.editable) add("editable")
+                if (node.scrollable) add("scrollable")
+                if (node.checked) add("checked")
+                if (node.selected) add("selected")
+                if (node.focused) add("focused")
+                if (!node.enabled) add("disabled")
+            }
+            buildString {
+                append(index).append(". \"").append(label).append('"')
+                if (traits.isNotEmpty()) append(" [").append(traits.joinToString(",")).append(']')
+                if (width > 0 && height > 0) {
+                    append(" @").append("%.2f".format(java.util.Locale.ROOT, node.bounds.centerX.toFloat() / width))
+                    append(',').append("%.2f".format(java.util.Locale.ROOT, node.bounds.centerY.toFloat() / height))
+                }
+            }
+        }.joinToString("\n")
+    }
+
     /** One-line summary of a screen, used where the full node list is unnecessary. */
     fun describeScreen(snapshot: ScreenSnapshot, maskSensitive: Boolean = true): String {
         val texts = snapshot.allText()
@@ -162,12 +217,14 @@ class ContextMinimizer(
         const val DEFAULT_MAX_NODES = 24
         const val DEFAULT_MAX_TEXT_LENGTH = 80
         const val DEFAULT_MAX_IMAGE_DIMENSION = 768
+        const val DEFAULT_AGENT_ELEMENTS = 48
 
         private const val SCREEN_SUMMARY_TEXTS = 20
         private const val MIN_USEFUL_AREA = 400
         private const val MAX_USEFUL_AREA = 1_500_000
         private const val CROP_PADDING_RATIO = 0.35
         private const val CHARS_PER_TOKEN = 4
+        private const val ROW_BUCKET_PX = 24
         private val TOKEN_SPLIT = Regex("[^\\p{L}\\p{N}]+")
     }
 }

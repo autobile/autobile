@@ -7,15 +7,19 @@ import com.autobile.ai.provider.intOr
 import com.autobile.ai.provider.objectList
 import com.autobile.ai.provider.stringList
 import com.autobile.ai.provider.stringOr
+import kotlinx.serialization.json.JsonObject
 
 /**
  * The catalogue of questions Autobile asks a model.
  *
- * Every entry is deliberately narrow: identify one element, classify one screen, read
- * one value. Autobile never asks a model to "figure out the rest" — the application
- * owns the loop and the model answers bounded questions inside it. That is what makes
- * the same skill runnable on a small on-device model and on a large hosted one, and
- * what makes each answer cheap enough to validate before acting on it.
+ * Almost every entry is deliberately narrow: identify one element, classify one screen,
+ * read one value. That is what makes the same skill runnable on a small on-device model
+ * and on a large hosted one, and what makes each answer cheap enough to validate before
+ * acting on it.
+ *
+ * The exception is [agentTurn], which asks for the next few actions toward a goal. Even
+ * there the application owns the loop: the model answers one turn at a time, and every
+ * action it names is checked before anything is performed.
  */
 object AiTasks {
 
@@ -138,83 +142,153 @@ object AiTasks {
         append("If the screen does not offer this action, answer with found false.")
     }
 
-    /** Chooses one bounded action from a fresh screenshot for a visual-only task. */
-    val visualTaskDecision = ResponseSchema(
-        name = "VisualTaskDecision",
+    // -- Goal agent -------------------------------------------------------------
+
+    /**
+     * One turn of the goal agent: what the screen shows, and the next few actions.
+     *
+     * This is the one task that is not a narrow classification. It exists because a
+     * recorded route cannot anticipate a reward pop-up, a new tutorial or a puzzle whose
+     * next move depends on the board, and refusing to act on those is what made runs
+     * fail. The application still owns the loop: every action named here is checked
+     * against the screen, the system bars, the app policy and the risk gate before it
+     * is performed, and anything rejected is reported back on the next turn rather than
+     * ending the run.
+     */
+    val agentTurn = ResponseSchema(
+        name = "AgentTurn",
         fieldGuide = """
-            status: one of act, complete, blocked
-            action: one of tap, long_press, swipe, input_text, wait, none
-            x: start/tap horizontal position from 0 to 1
-            y: start/tap vertical position from 0 to 1
-            endX: swipe end horizontal position from 0 to 1
-            endY: swipe end vertical position from 0 to 1
-            durationMs: gesture duration from 50 to 2000
-            text: text to enter when action is input_text, otherwise ""
-            clearExisting: true to replace the focused field, false to append
-            memory: concise task state that must survive to the next screenshot
+            status: act, complete, or blocked
+            observation: what the screen shows now, naming any pop-up, reward, ad, tutorial or dialog, at most 25 words
+            actions: for act, 1 to $MAX_AGENT_BATCH actions performed in order. Each action has:
+                     type: tap, long_press, swipe, input_text, scroll, back, wait, or open_app
+                     element: number of a listed element to act on, or -1 to use x and y
+                     x, y: target point as fractions of screen width and height from the top-left, when element is -1
+                     endX, endY: swipe end point as fractions
+                     durationMs: gesture or wait duration in milliseconds
+                     text: exact text for input_text, otherwise ""
+                     clearExisting: true to replace the field contents, false to append
+                     direction: up, down, left or right for scroll
+                     app: app name for open_app
+                     label: the visible text or icon meaning of the control acted on
+                     risk: none, or one of purchase, payment, transfer, subscription, booking, cancellation, delete, message_send, external_post, permission_change, account_change when the action commits one
+            memory: compact facts that must survive to the next turn, such as progress or board state
+            progress: what you are doing now, for the person watching, at most 12 words
             confidence: number between 0 and 1
-            safeToAct: true only when the action stays inside the controlled app and cannot purchase, open an ad, delete, message, or leave the app
             reason: short visible evidence for this decision
         """.trimIndent(),
-        example = """{"status":"act","action":"tap","x":0.72,"y":0.64,"endX":0.72,"endY":0.64,"durationMs":100,"text":"","clearExisting":false,"memory":"row 1 still needs 3 and 7","confidence":0.86,"safeToAct":true,"reason":"matching tile advances the board"}""",
+        example = """{"status":"act","observation":"daily reward pop-up covers the board","actions":[{"type":"tap","element":4,"x":-1,"y":-1,"label":"Close","risk":"none"}],"memory":"row 1 needs 3 and 7","progress":"Closing the reward pop-up","confidence":0.84,"reason":"pop-up blocks the puzzle"}""",
         parser = { json ->
-            VisualTaskDecision(
-                status = VisualTaskStatus.parse(json.stringOr("status")),
-                action = VisualTaskAction.parse(json.stringOr("action")),
-                x = json.floatOr("x", -1f),
-                y = json.floatOr("y", -1f),
-                endX = json.floatOr("endX", -1f),
-                endY = json.floatOr("endY", -1f),
-                durationMs = json.intOr("durationMs", 100).toLong(),
-                text = json.stringOr("text"),
-                clearExisting = json.boolOr("clearExisting"),
+            val listed = json.objectList("actions").map(::parseAgentAction)
+            // Smaller models often answer with a single flat action instead of a list.
+            // Reading that shape costs nothing and saves a whole turn.
+            val flat = json.stringOr("type").ifBlank { json.stringOr("action") }
+                .takeIf { listed.isEmpty() && it.isNotBlank() }
+                ?.let { parseAgentAction(json) }
+            AgentTurn(
+                status = AgentTurnStatus.parse(json.stringOr("status")),
+                actions = (listed.ifEmpty { listOfNotNull(flat) }).take(MAX_AGENT_BATCH),
+                observation = json.stringOr("observation"),
                 memory = json.stringOr("memory"),
-                confidence = json.floatOr("confidence", 0f),
-                safeToAct = json.boolOr("safeToAct"),
+                progress = json.stringOr("progress"),
+                confidence = json.floatOr("confidence", 0.5f),
                 reason = json.stringOr("reason"),
             )
         },
-        validator = { decision ->
+        validator = { turn ->
             when {
-                decision.confidence !in 0f..1f -> "confidence out of range"
-                decision.status == VisualTaskStatus.ACT && decision.action == VisualTaskAction.NONE ->
-                    "an action is required"
-                decision.status == VisualTaskStatus.ACT && decision.action.requiresStart &&
-                    (decision.x !in 0f..1f || decision.y !in 0f..1f) -> "start coordinates out of range"
-                decision.status == VisualTaskStatus.ACT && decision.action == VisualTaskAction.SWIPE &&
-                    (decision.endX !in 0f..1f || decision.endY !in 0f..1f) -> "end coordinates out of range"
-                decision.status == VisualTaskStatus.ACT && decision.action == VisualTaskAction.INPUT_TEXT &&
-                    decision.text.isBlank() -> "input_text requires text"
+                turn.confidence !in 0f..1f -> "confidence out of range"
+                turn.status == AgentTurnStatus.ACT && turn.actions.none { it.type != AgentActionType.NONE } ->
+                    "act requires at least one recognised action"
                 else -> null
             }
         },
     )
 
-    fun visualTaskPrompt(
-        objective: String,
-        completionCriteria: String,
-        screenDescription: String,
-        actionNumber: Int,
-        recentActions: List<String>,
-        workingMemory: String = "",
-        currentDateTime: String = "",
-    ): String = buildString {
-        append("Control the visible app to complete this task. Choose exactly one next action from the current screenshot.\n")
-        append("Objective: ").append(objective).append('\n')
-        append("Completion criteria: ").append(completionCriteria).append('\n')
-        append("Action number: ").append(actionNumber).append('\n')
-        if (currentDateTime.isNotBlank()) append("Current local date and time: ").append(currentDateTime).append('\n')
-        if (screenDescription.isNotBlank()) append("Visible semantics: ").append(screenDescription).append('\n')
-        if (recentActions.isNotEmpty()) append("Recent actions: ").append(recentActions.takeLast(12).joinToString(" | ")).append('\n')
-        if (workingMemory.isNotBlank()) append("Working memory: ").append(workingMemory).append('\n')
-        append("Reason from the complete current visual state; the demonstration is evidence of the objective, not a move sequence to copy. ")
-        append("Choose a concrete progress action even when it was not demonstrated, and do not repeat an action whose visible result did not advance the task. ")
-        append("Use complete only when the screenshot visibly proves every completion criterion. Progress is not completion. ")
-        append("Never choose Android Home, Back, Recents, status/navigation bars, ads, purchases, or leaving the app. ")
-        append("Use input_text only for text explicitly required by the objective; provide the target point and exact text. ")
-        append("Update memory with compact facts needed across turns, never with secrets. ")
-        append("Set safeToAct false and use blocked when no safe progress action exists. For swipe, provide exact start and end points.")
+    fun agentTurnPrompt(turn: AgentTurnContext): String = buildString {
+        append("You operate an Android phone for the user. Decide the next actions from the current screen.\n")
+        append("Objective: ").append(turn.objective).append('\n')
+        append("Done when: ").append(turn.completionCriteria).append('\n')
+        if (turn.runInstruction.isNotBlank()) {
+            append("Instruction for this run (takes priority over the recorded route): ")
+                .append(turn.runInstruction).append('\n')
+        }
+        if (turn.guidance.isNotEmpty()) {
+            append("Standing instructions from the user:\n")
+            turn.guidance.forEach { append("- ").append(it).append('\n') }
+        }
+        if (turn.referenceRoute.isNotEmpty()) {
+            append("Route the user demonstrated (evidence of intent, not a script; skip or change steps when the screen differs):\n")
+            turn.referenceRoute.forEachIndexed { index, line -> append(index + 1).append(". ").append(line).append('\n') }
+        }
+        if (turn.focus.isNotBlank()) append("Current focus: ").append(turn.focus).append('\n')
+        if (turn.knownValues.isNotEmpty()) {
+            append("Known values: ")
+            append(turn.knownValues.entries.joinToString("; ") { (name, value) -> "$name=$value" })
+            append('\n')
+        }
+        if (turn.currentDateTime.isNotBlank()) append("Now: ").append(turn.currentDateTime).append('\n')
+        append("Turn ").append(turn.turnNumber).append(", actions left: ").append(turn.actionsLeft).append('\n')
+        append("Foreground app: ").append(turn.foregroundApp)
+        when {
+            turn.isAutobile -> append(" (this is the assistant itself: never act on it; use open_app)")
+            !turn.inTaskApp && turn.taskApps.isNotEmpty() ->
+                append(" (outside the task apps ").append(turn.taskApps.joinToString())
+                    .append("; use back or open_app to return unless this app is needed)")
+        }
+        append('\n')
+        if (turn.recentActions.isNotEmpty()) {
+            append("Recent actions and their visible effect:\n")
+            turn.recentActions.forEach { append("- ").append(it).append('\n') }
+        }
+        if (turn.memory.isNotBlank()) append("Memory: ").append(turn.memory).append('\n')
+        if (turn.feedback.isNotEmpty()) {
+            append("Feedback from the executor about your previous answer:\n")
+            turn.feedback.forEach { append("- ").append(it).append('\n') }
+        }
+        if (turn.elements.isNotBlank()) {
+            append("Elements on screen (number, text, traits, centre as x,y fractions):\n").append(turn.elements).append('\n')
+        } else {
+            append("No accessible elements are listed for this screen")
+            append(if (turn.hasImage) "; locate targets in the screenshot.\n" else ".\n")
+        }
+        if (turn.hasImage) append("The attached screenshot is the current screen.\n")
+        append("Rules:\n")
+        append("- Work toward the objective from what is visible now. Pop-ups, login or daily rewards, tutorials, ")
+        append("rating prompts, ads and dialogs are normal: dismiss or accept them with the control that keeps the task going ")
+        append("(close, X, skip, later, OK, collect), then continue.\n")
+        append("- Prefer an element number when the control is listed; use x and y only for things drawn on a canvas or image.\n")
+        append("- Return several actions only when none of them changes the screen layout for the next one, ")
+        append("for example selecting a cell and then a number. Otherwise return one action and look again.\n")
+        append("- Never repeat an action whose effect was 'no visible change'; choose a different control or approach.\n")
+        append("- For puzzles and board games, read the whole board, keep its state in memory, ")
+        append("and only play moves you can justify from that state.\n")
+        append("- back is allowed for closing dialogs and returning; Home, Recents and the status or navigation bars are not.\n")
+        append("- Do not buy, pay, subscribe, delete the user's data, send or post unless the objective requires it, and then set risk. ")
+        append("Game moves, erasing a puzzle cell, and closing or cancelling a dialog are not risks.\n")
+        append("- complete only when the screenshot or elements visibly prove every part of 'Done when'. Progress is not completion.\n")
+        append("- blocked only when nothing on screen can move the task forward, such as a required password or a protected screen.\n")
+        append("- Keep memory short, factual and free of secrets.")
     }
+
+    private fun parseAgentAction(entry: JsonObject): AgentAction = AgentAction(
+        type = AgentActionType.parse(entry.stringOr("type").ifBlank { entry.stringOr("action") }),
+        element = entry.intOr("element", -1),
+        x = entry.floatOr("x", -1f),
+        y = entry.floatOr("y", -1f),
+        endX = entry.floatOr("endX", -1f),
+        endY = entry.floatOr("endY", -1f),
+        durationMs = entry.intOr("durationMs", 0).toLong(),
+        text = entry.stringOr("text"),
+        clearExisting = entry.boolOr("clearExisting", true),
+        direction = entry.stringOr("direction"),
+        app = entry.stringOr("app"),
+        label = entry.stringOr("label"),
+        risk = entry.stringOr("risk"),
+    )
+
+    /** More actions than this per turn stops being a plan and starts being a macro. */
+    const val MAX_AGENT_BATCH: Int = 6
 
     // -- Screen classification ------------------------------------------------
 
@@ -552,8 +626,10 @@ object AiTasks {
     val skillEdit = ResponseSchema(
         name = "SkillEdit",
         fieldGuide = """
-            field: one of trigger_time, trigger_notification, destination, value_field, input_text, name, behavior, unknown
+            field: one of trigger_time, trigger_notification, destination, value_field, input_text, name, behavior, guidance, unknown
             Use behavior for a request that adds, removes, or changes what execution steps do.
+            Use guidance for a standing instruction about how to act during a run that the steps need not encode,
+            such as handling pop-ups or rewards, preferring an option, or a condition to watch for.
             newValue: the replacement value as the user stated it
             behaviorMode: for behavior only, one of visual_until_complete, stay_in_app, step_operations, unsupported
             objective: for visual_until_complete, the language-independent task objective
@@ -647,51 +723,96 @@ data class PointMatch(
     val reason: String,
 )
 
-data class VisualTaskDecision(
-    val status: VisualTaskStatus,
-    val action: VisualTaskAction,
-    val x: Float,
-    val y: Float,
-    val endX: Float,
-    val endY: Float,
-    val durationMs: Long,
-    val confidence: Float,
-    val safeToAct: Boolean,
-    val reason: String,
-    val text: String = "",
-    val clearExisting: Boolean = false,
+/** Everything the goal agent is told on one turn. Prompt rendering stays in [AiTasks]. */
+data class AgentTurnContext(
+    val objective: String,
+    val completionCriteria: String,
+    val foregroundApp: String,
+    val inTaskApp: Boolean,
+    val taskApps: List<String>,
+    val turnNumber: Int,
+    val actionsLeft: Int,
+    val elements: String,
+    val hasImage: Boolean,
+    val isAutobile: Boolean = false,
+    val runInstruction: String = "",
+    val guidance: List<String> = emptyList(),
+    val referenceRoute: List<String> = emptyList(),
+    val focus: String = "",
+    val knownValues: Map<String, String> = emptyMap(),
+    val recentActions: List<String> = emptyList(),
     val memory: String = "",
+    val feedback: List<String> = emptyList(),
+    val currentDateTime: String = "",
 )
 
-enum class VisualTaskStatus {
+data class AgentTurn(
+    val status: AgentTurnStatus,
+    val actions: List<AgentAction>,
+    val observation: String,
+    val memory: String,
+    val progress: String,
+    val confidence: Float,
+    val reason: String,
+)
+
+enum class AgentTurnStatus {
     ACT,
     COMPLETE,
     BLOCKED;
 
     companion object {
-        fun parse(value: String): VisualTaskStatus = when (value.trim().lowercase()) {
-            "act" -> ACT
-            "complete" -> COMPLETE
+        fun parse(value: String): AgentTurnStatus = when (value.trim().lowercase()) {
+            "act", "continue", "action" -> ACT
+            "complete", "completed", "done" -> COMPLETE
+            // Anything unrecognised is treated as the model being stuck, which the
+            // executor answers with feedback rather than an action it did not ask for.
             else -> BLOCKED
         }
     }
 }
 
-enum class VisualTaskAction(val requiresStart: Boolean) {
-    TAP(true),
-    LONG_PRESS(true),
-    SWIPE(true),
-    INPUT_TEXT(true),
-    WAIT(false),
-    NONE(false);
+data class AgentAction(
+    val type: AgentActionType,
+    val element: Int = -1,
+    val x: Float = -1f,
+    val y: Float = -1f,
+    val endX: Float = -1f,
+    val endY: Float = -1f,
+    val durationMs: Long = 0,
+    val text: String = "",
+    val clearExisting: Boolean = true,
+    val direction: String = "",
+    val app: String = "",
+    val label: String = "",
+    val risk: String = "",
+) {
+    val hasPoint: Boolean get() = x in 0f..1f && y in 0f..1f
+    val hasEndPoint: Boolean get() = endX in 0f..1f && endY in 0f..1f
+}
+
+enum class AgentActionType {
+    TAP,
+    LONG_PRESS,
+    SWIPE,
+    INPUT_TEXT,
+    SCROLL,
+    BACK,
+    WAIT,
+    OPEN_APP,
+    NONE;
 
     companion object {
-        fun parse(value: String): VisualTaskAction = when (value.trim().lowercase()) {
-            "tap", "click" -> TAP
-            "long_press", "long-press" -> LONG_PRESS
+        fun parse(value: String): AgentActionType = when (value.trim().lowercase().replace('-', '_')) {
+            "tap", "click", "press" -> TAP
+            "long_press", "longpress", "long_click" -> LONG_PRESS
             "swipe", "drag" -> SWIPE
-            "input_text", "type", "enter_text" -> INPUT_TEXT
+            "input_text", "type", "enter_text", "input" -> INPUT_TEXT
+            "scroll" -> SCROLL
+            "back", "go_back" -> BACK
             "wait" -> WAIT
+            "open_app", "launch_app", "launch" -> OPEN_APP
+            // Home, recents and anything invented stay unperformable.
             else -> NONE
         }
     }
@@ -899,6 +1020,7 @@ enum class SkillEditField {
     INPUT_TEXT,
     NAME,
     BEHAVIOR,
+    GUIDANCE,
     UNKNOWN;
 
     companion object {
@@ -910,6 +1032,7 @@ enum class SkillEditField {
             "input_text" -> INPUT_TEXT
             "name" -> NAME
             "behavior" -> BEHAVIOR
+            "guidance", "instruction" -> GUIDANCE
             else -> UNKNOWN
         }
     }

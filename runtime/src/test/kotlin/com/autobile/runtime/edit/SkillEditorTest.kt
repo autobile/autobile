@@ -14,6 +14,7 @@ import com.autobile.core.data.AutobileDatabase
 import com.autobile.core.data.SkillStore
 import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.Condition
+import com.autobile.core.model.ExecutionStrategy
 import com.autobile.core.model.ConditionKind
 import com.autobile.core.model.Locator
 import com.autobile.core.model.LocatorKind
@@ -496,6 +497,58 @@ class SkillEditorTest {
             .containsExactly("LaunchApp", "Wait", "InputText", "Swipe").inOrder()
         assertThat((preview.updated.steps[2].action as ActionSpec.InputText).value)
             .isEqualTo(ValueRef.Literal("Current date and time"))
+    }
+
+    @Test
+    fun `a correction the steps cannot express becomes an instruction the agent follows`() = runTest {
+        // "Play on hard" cannot be compiled into the recorded taps on "Easy". Rejecting
+        // it left an automation that kept doing what the user had just said was wrong.
+        val editor = SkillEditor(
+            router = routerWith(
+                ScriptedProvider().answerWith("skill-edit", edit(SkillEditField.UNKNOWN, "hard")),
+            ),
+            skillStore = store,
+            scheduler = TriggerScheduler(context),
+        )
+
+        val preview = editor.preview(skill(), "난이도는 항상 어려움으로 해줘", localOnly = true)
+
+        assertThat(preview).isInstanceOf(SkillEditPreview.Ready::class.java)
+        val ready = preview as SkillEditPreview.Ready
+        assertThat(ready.updated.guidance).containsExactly("난이도는 항상 어려움으로 해줘")
+        assertThat(ready.updated.strategy).isEqualTo(ExecutionStrategy.AGENT_FIRST)
+        assertThat(ready.meaningChanged).isTrue()
+        assertThat(ready.updated.version).isEqualTo(skill().version + 1)
+    }
+
+    @Test
+    fun `a standing instruction keeps the recorded route in charge`() = runTest {
+        val editor = SkillEditor(
+            router = routerWith(
+                ScriptedProvider().answerWith("skill-edit", edit(SkillEditField.GUIDANCE, "")),
+            ),
+            skillStore = store,
+            scheduler = TriggerScheduler(context),
+        )
+
+        val preview = editor.preview(skill(), "접속 보상 팝업이 뜨면 닫고 진행해", localOnly = true)
+            as SkillEditPreview.Ready
+
+        assertThat(preview.updated.guidance).containsExactly("접속 보상 팝업이 뜨면 닫고 진행해")
+        assertThat(preview.updated.strategy).isEqualTo(ExecutionStrategy.STEPS_FIRST)
+    }
+
+    @Test
+    fun `without any runtime an unreadable correction is still rejected`() = runTest {
+        val editor = SkillEditor(
+            router = routerWith(ScriptedProvider(available = false)),
+            skillStore = store,
+            scheduler = TriggerScheduler(context),
+        )
+
+        val preview = editor.preview(skill(), "난이도는 항상 어려움으로 해줘", localOnly = true)
+
+        assertThat(preview).isInstanceOf(SkillEditPreview.Rejected::class.java)
     }
 
     private fun noteSkill(): SemanticSkill {

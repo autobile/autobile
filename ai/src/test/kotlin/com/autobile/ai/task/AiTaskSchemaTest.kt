@@ -154,4 +154,83 @@ class AiTaskSchemaTest {
         assertThat(contract).contains("JSON only")
         assertThat(contract).contains("index")
     }
+
+    @Test
+    fun `agent turn reads a batch of actions in order`() {
+        val turn = parse(
+            AiTasks.agentTurn,
+            """{"status":"act","observation":"board","actions":[{"type":"tap","element":-1,"x":0.31,"y":0.42,"label":"r3c2"},{"type":"tap","x":0.55,"y":0.86,"label":"7"}],"memory":"r3c2=7","progress":"Filling row 3","confidence":0.7,"reason":"only 7 fits"}""",
+        )!!
+        assertThat(AiTasks.agentTurn.validate(turn)).isNull()
+        assertThat(turn.status).isEqualTo(AgentTurnStatus.ACT)
+        assertThat(turn.actions.map { it.label }).containsExactly("r3c2", "7").inOrder()
+        assertThat(turn.actions.first().hasPoint).isTrue()
+        assertThat(turn.memory).isEqualTo("r3c2=7")
+    }
+
+    @Test
+    fun `agent turn accepts a single flat action from a smaller model`() {
+        val turn = parse(
+            AiTasks.agentTurn,
+            """{"status":"act","action":"click","element":4,"label":"Close","confidence":0.8}""",
+        )!!
+        assertThat(AiTasks.agentTurn.validate(turn)).isNull()
+        assertThat(turn.actions.single().type).isEqualTo(AgentActionType.TAP)
+        assertThat(turn.actions.single().element).isEqualTo(4)
+    }
+
+    @Test
+    fun `agent turn rejects acting without a recognised action`() {
+        val turn = parse(AiTasks.agentTurn, """{"status":"act","actions":[{"type":"home"}],"confidence":0.8}""")!!
+        assertThat(AiTasks.agentTurn.validate(turn)).isNotNull()
+    }
+
+    @Test
+    fun `agent turn caps how many actions one answer may carry`() {
+        val many = (1..20).joinToString(",") { """{"type":"wait","durationMs":100}""" }
+        val turn = parse(AiTasks.agentTurn, """{"status":"act","actions":[$many],"confidence":0.8}""")!!
+        assertThat(turn.actions).hasSize(AiTasks.MAX_AGENT_BATCH)
+    }
+
+    @Test
+    fun `an unrecognised agent status is read as stuck rather than as an action`() {
+        val turn = parse(AiTasks.agentTurn, """{"status":"thinking","confidence":0.5}""")!!
+        assertThat(turn.status).isEqualTo(AgentTurnStatus.BLOCKED)
+    }
+
+    @Test
+    fun `agent prompt carries the user's instructions and the demonstrated route`() {
+        val prompt = AiTasks.agentTurnPrompt(
+            AgentTurnContext(
+                objective = "Solve today's sudoku",
+                completionCriteria = "Solved board visible",
+                foregroundApp = "com.example.sudoku",
+                inTaskApp = true,
+                taskApps = listOf("com.example.sudoku"),
+                turnNumber = 3,
+                actionsLeft = 97,
+                elements = "0. \"Close\" [clickable] @0.90,0.12",
+                hasImage = true,
+                runInstruction = "Play on hard",
+                guidance = listOf("Close the daily reward if it appears"),
+                referenceRoute = listOf("Opening Sudoku", "Tapping New game"),
+                feedback = listOf("Not performed: tap @0.50,0.99: system bar"),
+            ),
+        )
+        assertThat(prompt).contains("Instruction for this run (takes priority over the recorded route): Play on hard")
+        assertThat(prompt).contains("- Close the daily reward if it appears")
+        assertThat(prompt).contains("2. Tapping New game")
+        assertThat(prompt).contains("Not performed: tap @0.50,0.99: system bar")
+        assertThat(prompt).contains("0. \"Close\" [clickable] @0.90,0.12")
+        assertThat(prompt).contains("The attached screenshot is the current screen.")
+    }
+
+    @Test
+    fun `skill edits can be kept as standing guidance`() {
+        val edit = parse(
+            AiTasks.skillEdit,
+            """{"field":"guidance","newValue":"Close reward pop-ups","meaningChanged":false,"summary":"Handle pop-ups","confidence":0.9}""",
+        )!!
+        assertThat(edit.field).isEqualTo(SkillEditField.GUIDANCE)
+    }
 }

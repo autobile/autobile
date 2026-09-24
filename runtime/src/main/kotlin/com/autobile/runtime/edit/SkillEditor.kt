@@ -14,6 +14,7 @@ import com.autobile.core.common.TimeSource
 import com.autobile.core.data.SkillStore
 import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.ConditionKind
+import com.autobile.core.model.ExecutionStrategy
 import com.autobile.core.model.ExpectedState
 import com.autobile.core.model.Direction
 import com.autobile.core.model.InferenceRequirements
@@ -72,10 +73,64 @@ class SkillEditor(
                 localOnly = localOnly,
             ),
         )
-        val edit = routed.value ?: return SkillEditPreview.Rejected(
-            "The change could not be understood safely",
+        val edit = routed.value?.let { parsed ->
+            if (parsed.field == SkillEditField.GUIDANCE && parsed.newValue.isBlank()) {
+                parsed.copy(newValue = request.trim())
+            } else {
+                parsed
+            }
+        }
+        val structured = edit?.let { buildPreview(skill, it) }
+        if (edit != null && structured is SkillEditPreview.Ready) {
+            return if (edit.field in FIELDS_WORTH_REMEMBERING) structured.remembering(request) else structured
+        }
+        return instructionPreview(skill, request, localOnly)
+            ?: structured
+            ?: SkillEditPreview.Rejected("The change could not be understood safely")
+    }
+
+    /**
+     * Keeps a request the recorded steps cannot express as an instruction the agent
+     * follows, and lets the agent drive the run.
+     *
+     * Rejecting it was the old answer, and it left the user with an automation that kept
+     * doing the thing they had just said was wrong. Replaying the recorded steps would do
+     * the same, so the steps become the reference route instead of the script. Only
+     * offered where something can actually reason at run time: without a runtime the
+     * agent could never act on the instruction, and the recorded replay is the better
+     * automation.
+     */
+    private suspend fun instructionPreview(
+        skill: SemanticSkill,
+        request: String,
+        localOnly: Boolean,
+    ): SkillEditPreview.Ready? {
+        val instruction = request.trim().take(MAX_GUIDANCE_LENGTH)
+        if (instruction.isEmpty()) return null
+        if (!router.hasRuntimeFor(InferenceRequirements(localOnly = localOnly))) return null
+        val updated = skill.copy(
+            guidance = (skill.guidance + instruction).distinct().takeLast(MAX_GUIDANCE_ENTRIES),
+            strategy = ExecutionStrategy.AGENT_FIRST,
         )
-        return buildPreview(skill, edit)
+        if (updated == skill) return null
+        return SkillEditPreview.Ready(
+            original = skill,
+            updated = updated.copy(version = skill.version + 1),
+            summary = "Follow on every run: \"$instruction\"",
+            meaningChanged = true,
+            changedStepIds = emptyList(),
+        )
+    }
+
+    /** Adds the words of the request to the standing instructions of a structural edit. */
+    private fun SkillEditPreview.Ready.remembering(request: String): SkillEditPreview.Ready {
+        val instruction = request.trim().take(MAX_GUIDANCE_LENGTH)
+        if (instruction.isEmpty() || instruction in updated.guidance) return this
+        return copy(
+            updated = updated.copy(
+                guidance = (updated.guidance + instruction).distinct().takeLast(MAX_GUIDANCE_ENTRIES),
+            ),
+        )
     }
 
     /** Handles obvious time changes without spending battery or exposing text to a model. */
@@ -136,6 +191,9 @@ class SkillEditor(
             SkillEditField.INPUT_TEXT -> patchCurrentMoment(skill, value)
             SkillEditField.NAME -> skill.copy(name = value.take(MAX_NAME_LENGTH))
             SkillEditField.BEHAVIOR -> patchBehavior(skill, edit)
+            SkillEditField.GUIDANCE -> skill.copy(
+                guidance = (skill.guidance + value.take(MAX_GUIDANCE_LENGTH)).distinct().takeLast(MAX_GUIDANCE_ENTRIES),
+            )
             SkillEditField.UNKNOWN -> null
         } ?: return SkillEditPreview.Rejected("That kind of change is not supported yet")
 
@@ -489,7 +547,11 @@ class SkillEditor(
         step.action is ActionSpec.Home || step.intent == StepIntent.GO_HOME || step.action is ActionSpec.Back
 
     private fun SemanticSkill.editableSummary(): String = buildString {
-        append(summary()).append("\nStep IDs and actions:\n")
+        append(summary())
+        if (guidance.isNotEmpty()) {
+            append("\nStanding instructions: ").append(guidance.joinToString(" | "))
+        }
+        append("\nStep IDs and actions:\n")
         steps.forEach { step ->
             append('[').append(step.id).append("] intent=").append(step.intent.name)
             append(" action=").append(step.action::class.simpleName)
@@ -601,6 +663,18 @@ class SkillEditor(
 
     private companion object {
         const val MIN_EDIT_CONFIDENCE = 0.65f
+        const val MAX_GUIDANCE_ENTRIES = 12
+        const val MAX_GUIDANCE_LENGTH = 500
+        /**
+         * Edits whose request says something about how to act, which the agent should
+         * still know when it has to improvise. A new name or schedule does not.
+         */
+        val FIELDS_WORTH_REMEMBERING = setOf(
+            SkillEditField.BEHAVIOR,
+            SkillEditField.DESTINATION,
+            SkillEditField.VALUE_FIELD,
+            SkillEditField.INPUT_TEXT,
+        )
         const val MAX_NAME_LENGTH = 60
         val TIME_PATTERN = Regex("(?:^|\\s)([01]?\\d|2[0-3]):([0-5]\\d)(?:\\s|$)")
         val KOREAN_TIME_PATTERN = Regex("(?:^|\\s)([01]?\\d|2[0-3])\\s*시(?:\\s*([0-5]?\\d)\\s*분)?")

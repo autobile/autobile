@@ -140,6 +140,11 @@ class SkillCompiler(
             preconditions = buildPreconditions(compilable),
             steps = steps,
             postconditions = buildPostconditions(steps),
+            // Kept as the user saw it, before a dynamic task replaces the recorded
+            // actions: the agent needs the route that was shown, not the plan it became.
+            demonstration = recordedSteps.map { step ->
+                step.description.ifBlank { step.target.description.ifBlank { step.target.intentLabel } }
+            }.filter { it.isNotBlank() },
             riskPolicy = RiskPolicy(
                 categories = riskCategories,
                 requireConfirmation = riskCategories.isNotEmpty(),
