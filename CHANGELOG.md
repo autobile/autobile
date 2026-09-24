@@ -2,6 +2,89 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.11.0] - 2026-09-24
+
+### Added
+
+- Add a goal agent that operates the phone from what is on screen. Each turn it observes
+  the accessibility tree and, where screenshots are allowed, the screen, then proposes up
+  to six actions: tap, long press, swipe, text entry, scroll, back, wait, or opening an
+  app by name. Elements are offered by number with their on-screen position, so ordinary
+  apps are driven through node actions and canvases through coordinates.
+- Run natural-language requests without a demonstration. A request that does not match a
+  saved automation becomes a confirmed one-off task that starts from the current screen
+  and opens the app the request names.
+- Keep corrections that recorded steps cannot express as standing instructions. Such
+  automations switch to agent-first execution, with the demonstration kept as the
+  reference route. Corrections that do map to steps are applied as before, and their
+  wording is kept for the agent.
+- Accept an instruction for a single run from an automation's page or from a typed
+  command that names the automation. The run is agent-driven and nothing is saved.
+- Record the demonstrated route on the automation so the agent can follow it even after
+  compilation replaced the recorded actions with a visual task.
+- Show the execution strategy and standing instructions on the automation's page.
+
+### Changed
+
+- A step that cannot be completed as recorded is handed to the agent. The first handoff
+  gets past the interruption and returns to the recorded route; a second one lets the
+  agent finish the goal. Previously recovery was limited to low-risk steps in apps with a
+  known package and a screenshot runtime.
+- Rejected, failed or unsafe proposals, a transient runtime error, and an unparseable
+  reply are reported back to the agent instead of ending the run. A pursuit ends on
+  confirmed completion, its action budget, eight turns without visible change, repeated
+  refusals, a protected screen, or the user stopping it.
+- A step whose recovery never reached a decision keeps its original failure reason and
+  status.
+- Agent turns no longer require a model-reported confidence of 0.65. Self-reported
+  certainty stopped cautious but correct moves; the per-action checks decide instead.
+- Tap targets may now reach 3%–94.5% of the screen height, which admits pop-up close
+  buttons and bottom tab bars while still excluding the system bars.
+- App names resolve against launchable apps only, prefer exact labels, and no longer match
+  every request against an app whose label has no letters.
+
+### Fixed
+
+- Send OpenAI reasoning models (`gpt-5*`, `o1`, `o3`, `o4`) `reasoning_effort` instead of
+  a temperature they reject, and reserve room for hidden reasoning in
+  `max_completion_tokens`. Structured answers from these models previously arrived empty.
+- Give Gemini 2.5 Flash and Pro an explicit thinking budget on top of the answer's output
+  budget. Their thinking previously consumed the whole budget of short structured calls.
+- Record agent deliberation in the run's history and in the on-screen progress banner.
+
+### Safety
+
+- Every agent action passes app policy and the risk engine. Purchases, payments,
+  transfers and subscriptions are detected from the control's words as well as from the
+  model's own declaration and always need the user's approval; sending, posting, deleting
+  and other declared risks need it unless the automation is explicitly trusted.
+- Status and navigation bars, Home and Recents, Autobile's own interface, and apps outside
+  the task stay unreachable. A task that drifts to another app is returned to its own.
+- One-off commands start at ask-first autonomy and are never saved as automations.
+- Completion still requires two consecutive fresh observations.
+
+### Privacy
+
+- Agent prompts include the automation's goal, standing instructions, the instruction
+  for the run, the demonstrated route, and values the run already knows (constants,
+  inputs, trigger payload, values read earlier), each capped at 200 characters. Element
+  labels are masked as before; screenshots are still sent only with their separate
+  consent.
+
+## [0.10.0] - 2026-09-23
+
+### Added
+
+- Run a natural-language request immediately in the current or named app when an
+  image-capable runtime is available.
+- Let visual tasks enter text and keep compact working memory across turns.
+
+### Changed
+
+- Record whether each visual action produced a visible change, and hide Autobile's own
+  overlays from capture frames.
+- Retry a different subscription model when one rejects image input.
+
 ## [0.9.3] - 2026-09-18
 
 ### Performance

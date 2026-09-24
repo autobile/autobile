@@ -320,7 +320,7 @@ class CloudAiProvider(
 
     private companion object {
         const val JPEG_QUALITY = 70
-        const val CLIENT_VERSION = "0.10.0"
+        const val CLIENT_VERSION = "0.11.0"
         const val MAX_MODEL_CANDIDATES = 4
     }
 
