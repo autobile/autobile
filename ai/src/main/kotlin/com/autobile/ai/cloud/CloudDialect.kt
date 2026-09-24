@@ -93,7 +93,7 @@ enum class CloudDialect {
         maxOutputTokens: Int,
         forceJson: Boolean,
     ): String = when (this) {
-        GEMINI -> gemini(systemInstruction, prompt, imageBase64, temperature, maxOutputTokens, forceJson)
+        GEMINI -> gemini(model, systemInstruction, prompt, imageBase64, temperature, maxOutputTokens, forceJson)
         OPENAI -> openAi(model, systemInstruction, prompt, imageBase64, temperature, maxOutputTokens, forceJson)
         ANTHROPIC -> anthropic(model, systemInstruction, prompt, imageBase64, temperature, maxOutputTokens)
         CHATGPT -> chatGpt(model, systemInstruction, prompt, imageBase64)
@@ -131,6 +131,7 @@ enum class CloudDialect {
     }
 
     private fun gemini(
+        model: String,
         systemInstruction: String?,
         prompt: String,
         imageBase64: String?,
@@ -165,9 +166,14 @@ enum class CloudDialect {
         }
         putJsonObject("generationConfig") {
             put("temperature", temperature)
-            put("maxOutputTokens", maxOutputTokens)
+            // Thinking models spend part of this budget before the first visible token.
+            // Capped at the answer's own size, a thinking model routinely returns
+            // nothing at all, which read as the model failing every visual turn.
+            val thinking = geminiThinking(model)
+            put("maxOutputTokens", maxOutputTokens + (thinking?.allowance ?: 0))
             put("candidateCount", 1)
             if (forceJson) put("responseMimeType", "application/json")
+            thinking?.budget?.let { budget -> putJsonObject("thinkingConfig") { put("thinkingBudget", budget) } }
         }
     }.toString()
 
@@ -181,8 +187,16 @@ enum class CloudDialect {
         forceJson: Boolean,
     ) = buildJsonObject {
         put("model", model)
-        put("temperature", temperature)
-        put("max_completion_tokens", maxOutputTokens)
+        if (isOpenAiReasoningModel(model)) {
+            // Reasoning models reject any temperature but the default, and count their
+            // hidden reasoning against max_completion_tokens. Sending the answer's own
+            // size as the cap produced an empty reply with finish_reason "length".
+            put("reasoning_effort", "low")
+            put("max_completion_tokens", maxOutputTokens + REASONING_ALLOWANCE_TOKENS)
+        } else {
+            put("temperature", temperature)
+            put("max_completion_tokens", maxOutputTokens)
+        }
         if (forceJson) putJsonObject("response_format") { put("type", "json_object") }
         putJsonArray("messages") {
             if (!systemInstruction.isNullOrBlank()) {
@@ -332,6 +346,41 @@ enum class CloudDialect {
 
     companion object {
         /**
+         * Whether an OpenAI-compatible model is a reasoning model.
+         *
+         * Matched on the published family prefixes. A chat snapshot of a reasoning
+         * family is served without reasoning and still accepts sampling controls.
+         */
+        internal fun isOpenAiReasoningModel(model: String): Boolean {
+            val name = model.substringAfterLast('/').lowercase()
+            if ("chat" in name) return false
+            return REASONING_FAMILIES.any { name.startsWith(it) }
+        }
+
+        /**
+         * Thinking settings for a Gemini model, or null when it does not think.
+         *
+         * 2.5 Flash and Pro think by default and share the output budget with the
+         * answer, so they get an explicit, bounded budget. Lite models only think when
+         * asked to. Later families take a thinking level instead of a budget, so they
+         * keep their default and only receive the extra room.
+         */
+        internal fun geminiThinking(model: String): GeminiThinking? {
+            val name = model.substringAfterLast('/').lowercase()
+            return when {
+                !name.startsWith("gemini-") -> null
+                "lite" in name -> null
+                name.startsWith("gemini-2.5") -> GeminiThinking(GEMINI_THINKING_BUDGET, GEMINI_THINKING_BUDGET)
+                name.startsWith("gemini-1") || name.startsWith("gemini-2.0") -> null
+                else -> GeminiThinking(budget = null, allowance = REASONING_ALLOWANCE_TOKENS)
+            }
+        }
+
+        private val REASONING_FAMILIES = listOf("gpt-5", "o1", "o3", "o4")
+        private const val REASONING_ALLOWANCE_TOKENS = 4_096
+        private const val GEMINI_THINKING_BUDGET = 1_024
+
+        /**
          * Sent when the caller supplies no system prompt.
          *
          * The field cannot be empty — this surface rejects a blank instruction rather
@@ -351,3 +400,6 @@ enum class CloudDialect {
         private val USER_AGENT: String = "autobile (Android ${android.os.Build.VERSION.RELEASE})"
     }
 }
+
+/** How much of a Gemini output budget thinking may use, and how much room to add for it. */
+internal data class GeminiThinking(val budget: Int?, val allowance: Int)

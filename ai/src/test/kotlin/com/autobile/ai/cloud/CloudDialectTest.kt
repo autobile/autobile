@@ -177,6 +177,46 @@ class CloudDialectTest {
     }
 
     @Test
+    fun `a reasoning model is asked for low effort and given room to reason before answering`() {
+        val body = CloudDialect.OPENAI.requestBody("gpt-5-mini", system, prompt, null, 0f, 1024, true)
+
+        // gpt-5 family models reject any temperature but the default with HTTP 400.
+        assertThat(body).doesNotContain("temperature")
+        assertThat(body).contains("\"reasoning_effort\":\"low\"")
+        // Hidden reasoning counts against this cap; the answer's size alone came back empty.
+        assertThat(body).contains("\"max_completion_tokens\":5120")
+    }
+
+    @Test
+    fun `a chat model keeps its sampling controls and exact cap`() {
+        val body = CloudDialect.OPENAI.requestBody("deepseek-chat", system, prompt, null, 0.2f, 256, true)
+
+        assertThat(body).contains("\"temperature\":0.2")
+        assertThat(body).contains("\"max_completion_tokens\":256")
+        assertThat(body).doesNotContain("reasoning_effort")
+    }
+
+    @Test
+    fun `reasoning families are recognised by name, chat snapshots are not`() {
+        assertThat(CloudDialect.isOpenAiReasoningModel("gpt-5")).isTrue()
+        assertThat(CloudDialect.isOpenAiReasoningModel("openai/o4-mini")).isTrue()
+        assertThat(CloudDialect.isOpenAiReasoningModel("gpt-5-chat-latest")).isFalse()
+        assertThat(CloudDialect.isOpenAiReasoningModel("gpt-4.1")).isFalse()
+    }
+
+    @Test
+    fun `a thinking Gemini model gets a bounded thinking budget on top of the answer`() {
+        val flash = CloudDialect.GEMINI.requestBody("gemini-2.5-flash", system, prompt, null, 0f, 1024, true)
+        val lite = CloudDialect.GEMINI.requestBody("gemini-2.5-flash-lite", system, prompt, null, 0f, 1024, true)
+
+        assertThat(flash).contains("\"thinkingBudget\":1024")
+        assertThat(flash).contains("\"maxOutputTokens\":2048")
+        // Lite models only think when asked, so they are left as they are.
+        assertThat(lite).doesNotContain("thinkingConfig")
+        assertThat(lite).contains("\"maxOutputTokens\":1024")
+    }
+
+    @Test
     fun `a subscription request omits the controls that surface rejects`() {
         val body = CloudDialect.CHATGPT.requestBody("gpt-6-astra", system, prompt, null, 0.2f, 256, true)
 
