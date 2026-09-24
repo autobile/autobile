@@ -405,8 +405,11 @@ class AgentOrchestrator(
      */
     private suspend fun updateConfidence(skill: SemanticSkill, outcome: TaskOutcome) {
         // One-off commands deliberately are not persisted as learned automations.
-        if (skillStore.get(skill.id) == null) return
-        val current = skill.confidence
+        // The stored copy is read again rather than the one the run started with: a run
+        // can save a new version of its own automation, such as a route it learned, and
+        // writing the old copy back would silently undo that.
+        val stored = skillStore.get(skill.id) ?: return
+        val current = stored.confidence
         val succeeded = outcome.status == OutcomeStatus.SUCCESS
         val recovered = outcome.stepResults.any { it.recovered }
 
@@ -427,7 +430,7 @@ class AgentOrchestrator(
             lastUiMatchScore = outcome.stepResults.map { it.validation.confidence }.average().toFloat()
                 .takeIf { !it.isNaN() } ?: current.lastUiMatchScore,
         )
-        skillStore.save(skill.copy(confidence = updated))
+        skillStore.save(stored.copy(confidence = updated))
     }
 
     private suspend fun recordMetrics(

@@ -236,6 +236,15 @@ class CloudDialectTest {
     }
 
     @Test
+    fun `a subscription request carries a reasoning effort only when one is chosen`() {
+        val chosen = CloudDialect.CHATGPT.requestBody("fast", system, prompt, null, 0f, 256, true, reasoningEffort = "low")
+        val unchosen = CloudDialect.CHATGPT.requestBody("fast", system, prompt, null, 0f, 256, true)
+
+        assertThat(chosen).contains("\"reasoning\":{\"effort\":\"low\"}")
+        assertThat(unchosen).doesNotContain("reasoning\"")
+    }
+
+    @Test
     fun `a request with no system prompt still carries an instruction`() {
         // An empty instruction is refused rather than defaulted by the service.
         val body = CloudDialect.CHATGPT.requestBody("gpt-6-astra", null, prompt, null, 0.2f, 256, false)

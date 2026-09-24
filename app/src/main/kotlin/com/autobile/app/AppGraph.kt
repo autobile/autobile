@@ -254,7 +254,7 @@ class AppGraph(val appContext: Context) : AutobileServices, Closeable {
      * Only apps with a launcher entry are candidates: they are the ones a person means by
      * a name, and the only ones the agent could open anyway. Autobile itself is excluded.
      */
-    private fun resolveAppPackage(appHint: String): String? {
+    fun resolveAppPackage(appHint: String): String? {
         if (appHint.isBlank()) return null
         return runCatching {
             val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)

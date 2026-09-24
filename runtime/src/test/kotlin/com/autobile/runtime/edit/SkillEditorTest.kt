@@ -551,6 +551,46 @@ class SkillEditorTest {
         assertThat(preview).isInstanceOf(SkillEditPreview.Rejected::class.java)
     }
 
+    @Test
+    fun `explicit step changes preview without a model and apply as a new version`() = runTest {
+        val saved = store.save(
+            skill().copy(
+                steps = listOf(
+                    SkillStep("a", StepIntent.SELECT_ITEM, TargetSemantics("A"), action = ActionSpec.Click),
+                    SkillStep("b", StepIntent.SELECT_ITEM, TargetSemantics("B"), action = ActionSpec.Click),
+                ),
+            ),
+        )
+
+        val preview = editor.previewStepChanges(saved, listOf(StepChange.Move("b", -1)), "Moved step: B")
+
+        assertThat(preview).isInstanceOf(SkillEditPreview.Ready::class.java)
+        val applied = editor.apply(preview as SkillEditPreview.Ready) as SkillEditApplyResult.Applied
+        assertThat(applied.skill.steps.map { it.id }).containsExactly("b", "a").inOrder()
+        assertThat(applied.skill.version).isEqualTo(saved.version + 1)
+        assertThat(applied.skill.history.last().reason).isEqualTo("Moved step: B")
+    }
+
+    @Test
+    fun `an added step is built from the same vocabulary as a spoken edit`() {
+        val preview = editor.previewStepChanges(
+            skill().copy(
+                steps = listOf(SkillStep("a", StepIntent.SELECT_ITEM, TargetSemantics("A"), action = ActionSpec.Click)),
+            ),
+            listOf(
+                StepChange.Insert(
+                    "a",
+                    after = true,
+                    edit = SkillStepEdit(SkillStepEditKind.INSERT_AFTER, "", EditableStepAction.WAIT, durationMs = 1_500),
+                ),
+            ),
+            "Added step: Wait",
+        ) as SkillEditPreview.Ready
+
+        assertThat(preview.updated.steps.last().action).isEqualTo(ActionSpec.Wait(1_500))
+        assertThat(preview.meaningChanged).isTrue()
+    }
+
     private fun noteSkill(): SemanticSkill {
         val taughtAt = LocalDateTime.of(2026, 9, 12, 14, 56)
         return skill().copy(

@@ -39,6 +39,8 @@ import com.autobile.runtime.agent.RunResult
 import com.autobile.runtime.compiler.CompilationResult
 import com.autobile.runtime.edit.SkillEditApplyResult
 import com.autobile.runtime.edit.SkillEditPreview
+import com.autobile.runtime.edit.StepChange
+import com.autobile.ai.task.EditableStepAction
 import com.autobile.runtime.teach.RecordingState
 import com.autobile.app.AppGraph
 import com.autobile.app.R
@@ -446,6 +448,48 @@ class AppViewModel(private val graph: AppGraph) : ViewModel() {
             is CommandResolution.NotUnderstood -> _state.update {
                 it.copy(loading = false, message = resolution.reason)
             }
+        }
+    }
+
+    /**
+     * Applies explicit step changes to a saved automation straight away.
+     *
+     * No model and no preview: the person chose the exact change on the step list, and it
+     * is recorded as a new version, so the version history is the undo.
+     */
+    fun changeSteps(skill: SemanticSkill, changes: List<StepChange>, summary: String) = launchAction {
+        when (val preview = graph.skillEditor.previewStepChanges(skill, changes.withResolvedApps(), summary)) {
+            is SkillEditPreview.Rejected -> showMessage(preview.reason)
+            is SkillEditPreview.Ready -> when (val result = graph.skillEditor.apply(preview)) {
+                is SkillEditApplyResult.Applied -> refreshAppliedSkill(result.skill, summary)
+                is SkillEditApplyResult.Rejected -> showMessage(result.reason)
+            }
+        }
+    }
+
+    /** The same explicit step changes, on the demonstration still under review. */
+    fun changeDraftSteps(changes: List<StepChange>, summary: String) {
+        val draft = _state.value.compilation ?: return
+        when (val preview = graph.skillEditor.previewStepChanges(draft.skill, changes.withResolvedApps(), summary)) {
+            is SkillEditPreview.Rejected -> showMessage(preview.reason)
+            is SkillEditPreview.Ready -> _state.update { state ->
+                state.copy(
+                    compilation = state.compilation?.copy(
+                        // Still unsaved, so it keeps the draft's version.
+                        skill = preview.updated.copy(version = draft.skill.version),
+                    ),
+                )
+            }
+        }
+    }
+
+    /** A step added to open an app names it the way a person does; the step needs its package. */
+    private fun List<StepChange>.withResolvedApps(): List<StepChange> = map { change ->
+        if (change is StepChange.Insert && change.edit.action == EditableStepAction.LAUNCH_APP) {
+            val named = change.edit.packageName.trim()
+            change.copy(edit = change.edit.copy(packageName = graph.resolveAppPackage(named) ?: named))
+        } else {
+            change
         }
     }
 

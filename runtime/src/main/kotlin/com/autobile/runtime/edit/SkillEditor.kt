@@ -133,6 +133,36 @@ class SkillEditor(
         )
     }
 
+    /**
+     * Previews explicit step changes, with no model involved.
+     *
+     * Every change names the step it applies to by id, so the result is exactly what was
+     * asked for or a rejection naming what could not be done; nothing is guessed. A change
+     * set that would leave the automation without any step is rejected, because an
+     * automation with no steps is a different thing — a goal the agent drives — and
+     * turning one into the other should not happen by deleting rows.
+     */
+    fun previewStepChanges(
+        skill: SemanticSkill,
+        changes: List<StepChange>,
+        summary: String,
+    ): SkillEditPreview {
+        if (changes.isEmpty()) return SkillEditPreview.Rejected("Nothing to change")
+        val patched = applyStepChanges(skill, changes) { edit -> buildEditedStep(skill, edit, Ids.step()) }
+            ?: return SkillEditPreview.Rejected("Those step changes could not be applied")
+        if (patched == skill) return SkillEditPreview.Rejected("The requested change did not alter this automation")
+        val beforeById = skill.steps.associateBy { it.id }
+        val afterById = patched.steps.associateBy { it.id }
+        val changed = (beforeById.keys + afterById.keys).filter { beforeById[it] != afterById[it] }
+        return SkillEditPreview.Ready(
+            original = skill,
+            updated = patched.copy(version = skill.version + 1),
+            summary = summary,
+            meaningChanged = changes.any { it.changesMeaning },
+            changedStepIds = changed,
+        )
+    }
+
     /** Handles obvious time changes without spending battery or exposing text to a model. */
     private fun parseDeterministic(request: String): SkillEdit? {
         if (hasCurrentMomentIntent(request)) {

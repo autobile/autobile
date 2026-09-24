@@ -14,6 +14,8 @@ import com.autobile.core.model.ActionSpec
 import com.autobile.core.model.AutonomyLevel
 import com.autobile.core.model.ExecutionEvent
 import com.autobile.core.model.InferenceErrorKind
+import com.autobile.core.model.PerceptionResult
+import com.autobile.core.model.ScreenSnapshot
 import com.autobile.core.model.RiskDecision
 import com.autobile.core.model.RiskPolicy
 import com.autobile.core.model.SemanticSkill
@@ -24,6 +26,8 @@ import com.autobile.core.model.TargetSemantics
 import com.autobile.runtime.FakeScreen
 import com.autobile.runtime.ScriptedProvider
 import com.autobile.runtime.node
+import com.autobile.runtime.control.ScreenActuator
+import com.autobile.runtime.perception.ScreenObserver
 import com.autobile.runtime.perception.ScreenshotCapture
 import com.autobile.runtime.risk.RiskEngine
 import com.autobile.runtime.routerWith
@@ -125,24 +129,101 @@ class GoalAgentTest {
         val outcome = agent(screen, provider).pursue(mission(), skill(), step(), 0, Observer(), localOnly = false)
 
         assertThat(outcome.completed).isTrue()
+        assertThat(provider.requestedLabels.count { it == LABEL }).isEqualTo(2)
+    }
+
+    @Test
+    fun `completion on a screen that stays put is confirmed without a second model call`() = runTest {
+        val screen = FakeScreen(current = screen("com.example.sudoku", "Board", node("cell", text = "Cell")))
+        val provider = ScriptedProvider().answerSequence(LABEL, complete(), complete())
+
+        val outcome = agent(screen, provider).pursue(mission(), skill(), step(), 0, Observer(), localOnly = false)
+
+        assertThat(outcome.completed).isTrue()
+        assertThat(provider.requestedLabels.count { it == LABEL }).isEqualTo(1)
+    }
+
+    @Test
+    fun `completion on a screen that moved has to be reported again`() = runTest {
+        val fake = FakeScreen(current = screen("com.example.sudoku", "Board", node("done", text = "Solved")))
+        val drifting = DriftingScreen(
+            fake,
+            ArrayDeque(
+                listOf(
+                    screen("com.example.sudoku", "Board", node("cell", text = "Checking")),
+                    screen("com.example.sudoku", "Board", node("done", text = "Solved")),
+                ),
+            ),
+        )
+        val provider = ScriptedProvider().answerSequence(
+            LABEL,
+            complete(),
+            act(AgentAction(AgentActionType.WAIT, durationMs = 100)),
+            complete(),
+        )
+        val agent = GoalAgent(drifting, drifting, routerWith(provider), riskEngine, ownPackage = "com.autobile")
+
+        val outcome = agent.pursue(mission(), skill(), step(), 0, Observer(), localOnly = false)
+
+        assertThat(outcome.completed).isTrue()
         assertThat(provider.requestedLabels.count { it == LABEL }).isEqualTo(3)
     }
 
     @Test
-    fun `completion is only accepted on two consecutive observations`() = runTest {
-        val screen = FakeScreen(current = screen("com.example.sudoku", "Board", node("cell", text = "Cell")))
+    fun `a route found by named controls is returned as replayable steps`() = runTest {
+        val close = node("close", text = "Close", resourceId = "com.example.sudoku:id/close")
+        val hard = node("hard", text = "Hard", resourceId = "com.example.sudoku:id/hard")
+        val screen = FakeScreen(current = screen("com.example.sudoku", "Menu", close, hard))
         val provider = ScriptedProvider().answerSequence(
             LABEL,
-            complete(),
-            act(AgentAction(AgentActionType.TAP, x = 0.5f, y = 0.5f)),
-            complete(),
+            act(
+                AgentAction(AgentActionType.TAP, element = 0, label = "Close"),
+                AgentAction(AgentActionType.TAP, element = 1, label = "Hard"),
+            ),
             complete(),
         )
 
         val outcome = agent(screen, provider).pursue(mission(), skill(), step(), 0, Observer(), localOnly = false)
 
         assertThat(outcome.completed).isTrue()
-        assertThat(provider.requestedLabels.count { it == LABEL }).isEqualTo(4)
+        assertThat(outcome.learnedRoute.map { it.action }).containsExactly(ActionSpec.Click, ActionSpec.Click)
+        assertThat(outcome.learnedRoute.map { it.target.intentLabel }).containsExactly("Close", "Hard").inOrder()
+        assertThat(outcome.learnedRoute.last().target.locators.first().value).isEqualTo("com.example.sudoku:id/hard")
+    }
+
+    @Test
+    fun `a route with a coordinate tap is not learned`() = runTest {
+        val screen = FakeScreen(current = screen("com.example.sudoku", "Board", node("cell", text = "Cell")))
+        val provider = ScriptedProvider().answerSequence(
+            LABEL,
+            act(AgentAction(AgentActionType.TAP, x = 0.4f, y = 0.5f)),
+            complete(),
+        )
+
+        val outcome = agent(screen, provider).pursue(mission(), skill(), step(), 0, Observer(), localOnly = false)
+
+        assertThat(outcome.completed).isTrue()
+        assertThat(outcome.learnedRoute).isEmpty()
+    }
+
+    @Test
+    fun `a screen whose controls are all named is decided without a screenshot`() = runTest {
+        val frame = ScreenshotCapture.Success(Bitmap.createBitmap(60, 120, Bitmap.Config.ARGB_8888))
+        val screen = FakeScreen(
+            current = screen(
+                "com.example.sudoku",
+                "Menu",
+                node("a", text = "New game"),
+                node("b", text = "Continue"),
+                node("c", text = "Settings"),
+            ),
+            screenshot = frame,
+        )
+        val provider = ScriptedProvider().answerSequence(LABEL, complete())
+
+        agent(screen, provider).pursue(mission(), skill(), step(), 0, Observer(), localOnly = false)
+
+        assertThat(provider.requestedImageDimensions).isEmpty()
     }
 
     @Test
@@ -245,7 +326,7 @@ class GoalAgentTest {
 
         assertThat(outcome.completed).isTrue()
         assertThat(screen.launched).containsExactly("com.example.sudoku")
-        assertThat(provider.requestedLabels.count { it == LABEL }).isEqualTo(2)
+        assertThat(provider.requestedLabels.count { it == LABEL }).isEqualTo(1)
     }
 
     @Test
@@ -378,6 +459,15 @@ class GoalAgentTest {
         confidence = 0.9f,
         reason = "a password is required",
     )
+
+    /** Shows [frames] in turn before settling on [fake]'s screen, as an animating app does. */
+    private class DriftingScreen(
+        private val fake: FakeScreen,
+        private val frames: ArrayDeque<ScreenSnapshot>,
+    ) : ScreenObserver by fake, ScreenActuator by fake {
+        override suspend fun observe(settleMs: Long): PerceptionResult =
+            frames.removeFirstOrNull()?.let { PerceptionResult.Success(it) } ?: fake.observe(settleMs)
+    }
 
     private class Observer(
         private val approve: Boolean = true,

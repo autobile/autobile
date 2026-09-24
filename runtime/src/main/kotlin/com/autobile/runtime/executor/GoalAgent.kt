@@ -82,6 +82,12 @@ data class AgentOutcome(
      * nothing on screen, so the failure that led to it is the one worth reporting.
      */
     val decided: Boolean = false,
+    /**
+     * The route this pursuit took, as steps that replay without a model, when it reached
+     * the goal and every action it performed can be found again by meaning. Empty
+     * otherwise: a route with even one coordinate tap in it is not a route.
+     */
+    val learnedRoute: List<SkillStep> = emptyList(),
 )
 
 /**
@@ -101,8 +107,9 @@ data class AgentOutcome(
  * sustained failure to make progress, an exhausted budget, a protected screen, or the
  * user stopping it ends a pursuit early.
  *
- * Completion is never taken on a single say-so. Two consecutive turns, each on a freshly
- * observed screen, must both report the completion criteria as visibly met.
+ * Completion is never taken on a single say-so. After a turn reports the criteria as
+ * met, the screen is observed again: if it is unchanged the report stands, and if
+ * anything moved the model has to report completion again on the new screen.
  */
 class GoalAgent(
     private val perception: ScreenObserver,
@@ -151,6 +158,11 @@ class GoalAgent(
         private var previousSignature: String? = null
         private var awaitingEffect = false
         private var decisions = 0
+        private var lastTurnRejected = false
+        private var completionSignature: String? = null
+        private var completionFrame: Bitmap? = null
+        private val route = mutableListOf<SkillStep>()
+        private var routeReplayable = true
 
         suspend fun run(): AgentOutcome {
             val requirements = InferenceRequirements(localOnly = localOnly)
@@ -197,13 +209,22 @@ class GoalAgent(
                     val opened = controller.launchApp(primary)
                     record(ExecutionEventType.ACTION_EXECUTED, "returned to $primary: ${opened.describe}", opened.succeeded)
                     if (!opened.succeeded) return end(opened.describe)
+                    route += RouteLearner.launchStep(primary)
                     feedback += "The executor reopened $primary because another app was in front."
                     delay(APP_LAUNCH_SETTLE_MS)
                     resetEffectTracking()
                     continue
                 }
 
-                val capture = if (canSee) perception.captureScreenshot() else null
+                val elements = minimizer.agentElements(snapshot)
+                // A screenshot is the slowest part of a turn to send and to read. A screen
+                // whose controls are all named is decided from their list; pixels are sent
+                // when there is little to name, when the last actions changed nothing the
+                // list can see, or when a completion claim has to be checked against them.
+                val readable = elements.count { it.isActionable() && it.label().isNotBlank() } >= MIN_READABLE_ELEMENTS
+                val stalled = awaitingEffect && previousSignature == snapshot.signature()
+                val wantPixels = !readable || stalled || lastTurnRejected || completionFrame != null
+                val capture = if (canSee && wantPixels) perception.captureScreenshot() else null
                 if (capture is ScreenshotCapture.SecureWindowBlocked) return end(PROTECTED_SCREEN, blocked = true)
                 val frame = (capture as? ScreenshotCapture.Success)?.bitmap
                 if (capture is ScreenshotCapture.Unavailable && snapshot.nodes.isEmpty()) {
@@ -225,7 +246,23 @@ class GoalAgent(
                     unchangedTurns = 0
                 }
 
-                val elements = minimizer.agentElements(snapshot)
+                // Completion was reported on the previous look. If nothing has moved since,
+                // that judgement stands on this fresh observation too, and asking a model
+                // to repeat it would only add a round trip.
+                if (confirmations == 1 && completionSignature == snapshot.signature() &&
+                    (completionFrame == null || frame == null || !VisualChangeDetector.changed(completionFrame!!, frame))
+                ) {
+                    record(
+                        ExecutionEventType.VALIDATION_RESULT,
+                        "completion confirmation 2/$REQUIRED_CONFIRMATIONS: screen unchanged since completion was reported",
+                        success = true,
+                    )
+                    return end(COMPLETED, completed = true)
+                }
+                completionSignature = null
+                completionFrame = null
+                lastTurnRejected = false
+
                 val prompt = AiTasks.agentTurnPrompt(
                     AgentTurnContext(
                         objective = mission.objective,
@@ -330,6 +367,8 @@ class GoalAgent(
                             success = confirmed,
                         )
                         if (confirmed) return end(COMPLETED, completed = true)
+                        completionSignature = snapshot.signature()
+                        completionFrame = frame
                         awaitingEffect = false
                         delay(COMPLETION_RECHECK_MS)
                     }
@@ -352,6 +391,7 @@ class GoalAgent(
                             is Batch.Stop -> return batch.outcome
                             is Batch.Done -> {
                                 rejectedTurns = if (batch.performed == 0) rejectedTurns + 1 else 0
+                                lastTurnRejected = batch.performed == 0
                                 if (rejectedTurns >= MAX_REJECTED_TURNS) {
                                     return end("The agent kept proposing actions that could not be performed")
                                 }
@@ -406,6 +446,14 @@ class GoalAgent(
                     feedback += "Failed: ${action.summary()}: ${result.describe}"
                     break
                 }
+                val learned = RouteLearner.stepFor(
+                    action = action,
+                    element = elements.getOrNull(action.element),
+                    packageName = snapshot.packageName,
+                    windowTitle = snapshot.windowTitle,
+                    openedPackage = if (action.type == AgentActionType.OPEN_APP) resolvePackage(action.app) else null,
+                )
+                if (learned == null) routeReplayable = false else route += learned
                 performed++
                 actionsPerformed++
                 recent += "${action.summary()} (${action.label.ifBlank { turn.progress }.take(60)})"
@@ -644,6 +692,7 @@ class GoalAgent(
             awaitingReasoning = awaitingReasoning,
             cancelled = cancelled,
             decided = decisions > 0,
+            learnedRoute = if (completed && routeReplayable) route.toList() else emptyList(),
         )
 
         private fun now(): String = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(
@@ -735,6 +784,7 @@ class GoalAgent(
         private const val MAX_REJECTED_TURNS = 5
         private const val MAX_UNCHANGED_TURNS = 8
         private const val MAX_TURNS_OUTSIDE = 2
+        private const val MIN_READABLE_ELEMENTS = 3
         private const val MAX_RELAUNCHES = 4
 
         /**

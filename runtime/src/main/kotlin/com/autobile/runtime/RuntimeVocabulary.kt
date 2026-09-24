@@ -49,6 +49,9 @@ interface RuntimeVocabulary {
     fun stepFailed(): String
     fun screenProtected(): String
 
+    /** A route the agent proved was written back as [count] replayable steps. */
+    fun learnedRoute(count: Int): String
+
     // What an action could not do.
     fun couldNotDetermineText(): String
     fun actionNeedsAnElement(): String
@@ -108,6 +111,8 @@ object EnglishRuntimeVocabulary : RuntimeVocabulary {
         "Autobile's own screen is in front, so this step has nothing to act on"
     override fun couldNotComplete(step: String) = "Could not complete \"$step\""
     override fun awaitingRuntime(step: String) = "Waiting for a runtime that can decide \"$step\""
+    override fun learnedRoute(count: Int) =
+        "Learned $count steps from this run; the next run replays them without a model"
     override fun stopped() = "Stopped"
     override fun stepFailed() = "Step failed"
     override fun screenProtected() = "This screen is protected and cannot be read"

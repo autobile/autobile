@@ -90,4 +90,22 @@ class ChatGptModelCatalogTest {
         assertThat(CloudHttpErrorClassifier.classify(400, "invalid request"))
             .isEqualTo(InferenceErrorKind.UNKNOWN)
     }
+
+    @Test
+    fun `low reasoning effort is requested only from a model that advertises it`() {
+        val catalog = ChatGptModelCatalog.parse(
+            """{"models":[
+                {"slug":"fast","supported_reasoning_levels":[{"effort":"low","description":"quick"},{"effort":"medium"}]},
+                {"slug":"strings","supported_reasoning_levels":["LOW","high"]},
+                {"slug":"high-only","supported_reasoning_levels":[{"effort":"high"}]},
+                {"slug":"silent"}
+            ]}""",
+        )!!
+
+        assertThat(catalog.preferredEffort("fast")).isEqualTo("low")
+        assertThat(catalog.preferredEffort("strings")).isEqualTo("low")
+        assertThat(catalog.preferredEffort("high-only")).isNull()
+        assertThat(catalog.preferredEffort("silent")).isNull()
+        assertThat(catalog.preferredEffort("unknown")).isNull()
+    }
 }

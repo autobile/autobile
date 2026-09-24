@@ -2,6 +2,43 @@
 
 All notable changes to Autobile are documented here. Releases follow semantic versioning.
 
+## [0.12.0] - 2026-09-24
+
+### Added
+
+- Edit an automation's steps directly, on the review screen after a demonstration and on
+  its page afterwards: move, edit (description, text to enter, wait time), make optional
+  or required, remove, or add a tap, text entry, wait, back, app launch or goal step after
+  any other. Changes are applied without a model and saved as a new version.
+- Learn replayable steps from the goal agent. A pursuit that reaches its goal using only
+  named controls, back, waits and app launches returns its route as steps with recorded
+  locators.
+  - An automation the agent drove from the start is rewritten to that route and switched
+    to steps-first execution.
+  - A recovered step gets the controls the agent cleared in front of it, such as a pop-up
+    close button, as optional steps that never consult a model.
+  - When the agent finished the goal after a second failure, its route replaces the
+    remaining steps.
+  - Automations set to `Run low-risk steps` or `Fully trusted` adopt the route
+    immediately; the rest, and any route whose controls name a purchase, payment,
+    transfer or subscription, show it as a repair to review. One-off instructions and
+    coordinate taps are never learned.
+- Ask ChatGPT subscription models for low reasoning effort when their catalog entry
+  advertises it.
+
+### Changed
+
+- The agent reads the named controls first and captures a screenshot only when fewer than
+  three are named, the previous actions changed nothing the tree can see, every proposal
+  of the previous turn was refused, or a completion claim is being checked.
+- A completion claim is confirmed without a second model call when a fresh observation
+  shows the same screen and frame; a screen that moved still needs a new claim.
+
+### Fixed
+
+- Keep versions saved during a run, such as a learned route, when the run's confidence
+  update is written. The update previously wrote back the copy the run started with.
+
 ## [0.11.0] - 2026-09-24
 
 ### Added

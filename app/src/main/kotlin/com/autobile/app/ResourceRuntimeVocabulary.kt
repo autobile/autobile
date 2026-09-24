@@ -43,6 +43,7 @@ class ResourceRuntimeVocabulary(private val context: Context) : RuntimeVocabular
         context.getString(R.string.run_awaiting_runtime, step)
 
     override fun stopped(): String = context.getString(R.string.run_stopped)
+    override fun learnedRoute(count: Int): String = context.getString(R.string.run_learned_route, count)
     override fun stepFailed(): String = context.getString(R.string.run_step_failed)
     override fun screenProtected(): String = context.getString(R.string.run_screen_protected)
 
