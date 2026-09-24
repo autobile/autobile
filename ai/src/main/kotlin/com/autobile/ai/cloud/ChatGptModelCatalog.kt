@@ -7,7 +7,22 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /** A small, fail-closed view of the subscription model catalog. */
 internal data class ChatGptModelCatalog(val models: List<Model>) {
-    data class Model(val slug: String, val acceptsImages: Boolean?)
+    data class Model(
+        val slug: String,
+        val acceptsImages: Boolean?,
+        /** Reasoning efforts the model advertises; empty when the catalog says nothing. */
+        val reasoningEfforts: Set<String> = emptySet(),
+    )
+
+    /**
+     * The effort to request from [slug], or null to leave the model's default.
+     *
+     * Autobile's questions are short and structured, and a phone operated one turn at a
+     * time feels every second of deliberation. Low effort is asked for only when the
+     * model advertises it: an effort the model does not accept fails the whole request.
+     */
+    fun preferredEffort(slug: String): String? =
+        models.firstOrNull { it.slug == slug }?.reasoningEfforts?.firstOrNull { it == PREFERRED_EFFORT }
 
     fun select(requested: String, needsVision: Boolean = false, preferAdvanced: Boolean = false): String {
         return candidates(requested, needsVision, preferAdvanced).firstOrNull().orEmpty()
@@ -28,6 +43,8 @@ internal data class ChatGptModelCatalog(val models: List<Model>) {
     }
 
     companion object {
+        private const val PREFERRED_EFFORT = "low"
+
         fun parse(body: String): ChatGptModelCatalog? {
             val root = runCatching { AutobileJson.parseToJsonElement(body) as? JsonObject }.getOrNull()
                 ?: return null
@@ -39,7 +56,7 @@ internal data class ChatGptModelCatalog(val models: List<Model>) {
                     val slug = (model["slug"] as? JsonPrimitive)?.content
                         ?.takeIf { supported && it.isNotBlank() }
                         ?: return@mapNotNull null
-                    Model(slug, model.acceptsImages())
+                    Model(slug, model.acceptsImages(), model.reasoningEfforts())
                 }
                 ?.distinctBy { it.slug }
                 .orEmpty()
@@ -47,6 +64,20 @@ internal data class ChatGptModelCatalog(val models: List<Model>) {
         }
     }
 }
+
+/** Accepts both `["low", ...]` and `[{"effort": "low", ...}, ...]`. */
+private fun JsonObject.reasoningEfforts(): Set<String> =
+    (get("supported_reasoning_levels") as? JsonArray)
+        ?.mapNotNull { level ->
+            when (level) {
+                is JsonPrimitive -> level.content
+                is JsonObject -> (level["effort"] as? JsonPrimitive)?.content
+                else -> null
+            }
+        }
+        ?.map { it.lowercase() }
+        ?.toSet()
+        .orEmpty()
 
 /** Catalog revisions have used both a boolean and a modality list. Unknown stays eligible. */
 private fun JsonObject.acceptsImages(): Boolean? {

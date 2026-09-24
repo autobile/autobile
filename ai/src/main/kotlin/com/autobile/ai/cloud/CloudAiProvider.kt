@@ -201,6 +201,8 @@ class CloudAiProvider(
                 temperature = temperature,
                 maxOutputTokens = maxOutputTokens,
                 forceJson = forceJson,
+                reasoningEffort = chatGptCatalog?.catalog?.preferredEffort(model)
+                    ?.takeIf { cfg.service == CloudService.CHATGPT },
             )
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
@@ -320,7 +322,7 @@ class CloudAiProvider(
 
     private companion object {
         const val JPEG_QUALITY = 70
-        const val CLIENT_VERSION = "0.11.0"
+        const val CLIENT_VERSION = "0.12.0"
         const val MAX_MODEL_CANDIDATES = 4
     }
 

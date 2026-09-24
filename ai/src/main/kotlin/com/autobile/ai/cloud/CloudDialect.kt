@@ -92,11 +92,12 @@ enum class CloudDialect {
         temperature: Float,
         maxOutputTokens: Int,
         forceJson: Boolean,
+        reasoningEffort: String? = null,
     ): String = when (this) {
         GEMINI -> gemini(model, systemInstruction, prompt, imageBase64, temperature, maxOutputTokens, forceJson)
         OPENAI -> openAi(model, systemInstruction, prompt, imageBase64, temperature, maxOutputTokens, forceJson)
         ANTHROPIC -> anthropic(model, systemInstruction, prompt, imageBase64, temperature, maxOutputTokens)
-        CHATGPT -> chatGpt(model, systemInstruction, prompt, imageBase64)
+        CHATGPT -> chatGpt(model, systemInstruction, prompt, imageBase64, reasoningEffort)
     }
 
     /**
@@ -280,8 +281,10 @@ enum class CloudDialect {
         systemInstruction: String?,
         prompt: String,
         imageBase64: String?,
+        reasoningEffort: String?,
     ) = buildJsonObject {
         put("model", model)
+        reasoningEffort?.let { effort -> putJsonObject("reasoning") { put("effort", effort) } }
         // Refused outright when true — this surface never stores a conversation.
         put("store", false)
         put("stream", true)
