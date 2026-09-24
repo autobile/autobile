@@ -85,6 +85,14 @@ correction cannot be expressed as recorded steps, Autobile keeps it as an instru
 follows it on every run, with the demonstration as the route it was shown rather than a
 script it must replay. You can add more the same way from the automation's page later.
 
+### Edit the steps directly
+
+Words are not always the fastest way to say it. The step list on the review screen and on
+every automation's page can be edited directly: move a step, change what it types or how
+long it waits, make it optional so it is skipped when its target is absent, remove it, or
+add a tap, text entry, wait, back, app launch or goal step after any other. Each change
+applies at once, with no model involved, and becomes a new version you can roll back.
+
 ### Or just ask
 
 Type what you want on the home screen — "finish today's sudoku", "turn on dark mode in
@@ -118,7 +126,9 @@ end here.
 when you taught it, a tutorial after an update, a puzzle whose next move depends on the
 board, a button that moved three screens deeper. Each turn the agent looks at the screen,
 chooses the next few actions — tap, long-press, swipe, type, scroll, back, wait, or open
-an app — and is told on the next turn what they did. The first failure is treated as an
+an app — and is told on the next turn what they did. It reads the screen's named
+controls first and sends a screenshot only when they are not enough: a canvas, a screen
+that did not react, or a completion that has to be checked. The first failure is treated as an
 interruption: the agent gets past it and hands back to the route. A second one means the
 route no longer fits, and the agent finishes the goal itself. Automations with
 instructions the route cannot express, and requests you only typed, are driven by the
@@ -133,7 +143,16 @@ The agent is never given the run. Every action it proposes is checked before it 
   posting or deleting
 - A rejected or failed action is reported back to it instead of ending the run; running
   out of budget, making no visible progress, a protected screen, or your stop button do
-- It may only report success after two consecutive fresh looks at the screen agree
+- It may only report success once completion is still visible on a fresh look at the
+  screen; if anything moved in between, it has to report completion again
+
+**What the agent works out is written back as steps.** When it reaches the goal using
+controls it can name, the route it took becomes steps that replay without a model. A pop-up
+it closed is kept in front of the step it was blocking as an optional check that costs
+nothing when the pop-up is absent. An automation the agent drove from start to finish is
+rewritten to the route it proved and replays it from then on. Automations you have allowed
+to act on their own adopt the new steps immediately; the rest show them as a repair to
+review. Taps on a canvas are never learned, because one frame of a game is not a route.
 
 Reasoning runs on the cheapest runtime that can answer:
 
